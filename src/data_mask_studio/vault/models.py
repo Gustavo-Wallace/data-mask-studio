@@ -31,6 +31,17 @@ class VaultRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class DecryptedVaultMapping:
+    code: str
+    prefix: str
+    source_header: str
+    original_value: str = field(repr=False)
+    first_seen: str = ""
+    last_seen: str = ""
+    occurrence_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class VaultUpdateSummary:
     new_mappings: int = 0
     updated_mappings: int = 0

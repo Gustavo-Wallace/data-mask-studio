@@ -24,6 +24,9 @@ def test_application_and_main_window_startup() -> None:
     assert window.path_field.isReadOnly()
     assert window.select_button.text() == "Selecionar CSV"
     assert window.clear_button.text() == "Limpar seleção"
+    assert window.tabs.tabText(0) == "Anonimizar CSV"
+    assert window.tabs.tabText(1) == "Consultar cofre"
+    assert not window.consultant_widget.copy_button.isEnabled()
     assert not window.isVisible()
 
     window.close()

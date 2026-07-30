@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -35,6 +36,7 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
     paths_refer_to_same_file,
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
+from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.security import KeyProvider, KeyProviderError, LocalKeyProvider
 from data_mask_studio.vault import (
     VaultError,
@@ -204,9 +206,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
 
-        central_widget = QWidget()
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
+        anonymization_widget = QWidget()
+        anonymization_widget.setLayout(layout)
+        self.consultant_widget = ConsultantWidget(self._vault_repository_factory)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(anonymization_widget, "Anonimizar CSV")
+        self.tabs.addTab(self.consultant_widget, "Consultar cofre")
+        self.setCentralWidget(self.tabs)
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -575,6 +581,7 @@ class MainWindow(QMainWindow):
                     is_error=False,
                 )
                 return
+        self.consultant_widget.clear_consultation()
         super().closeEvent(event)
 
     def _set_status(self, message: str, *, is_error: bool) -> None:

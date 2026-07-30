@@ -9,6 +9,7 @@ from data_mask_studio.vault.database import connect, initialize_schema
 from data_mask_studio.vault.encryption import VaultCipher
 from data_mask_studio.vault.exceptions import VaultCollisionError, VaultError
 from data_mask_studio.vault.models import (
+    DecryptedVaultMapping,
     MappingCandidate,
     VaultRecord,
     VaultUpdateSummary,
@@ -63,6 +64,36 @@ class VaultRepository:
             raise VaultError("Não foi possível consultar o cofre local.") from error
         finally:
             connection.close()
+
+    def get_decrypted_mapping(self, code: str) -> DecryptedVaultMapping | None:
+        """Recupera um único código exato com autenticação AES-GCM."""
+        record = self.get_record(code)
+        if record is None:
+            return None
+        if (
+            record.code != code
+            or not record.prefix
+            or not record.source_header
+            or not record.first_seen
+            or not record.last_seen
+            or record.occurrence_count <= 0
+        ):
+            raise VaultError("Foi encontrado um registro inconsistente no cofre local.")
+        original_value = self._cipher.decrypt(
+            record.code,
+            record.prefix,
+            record.encrypted_value,
+            record.nonce,
+        )
+        return DecryptedVaultMapping(
+            code=record.code,
+            prefix=record.prefix,
+            source_header=record.source_header,
+            original_value=original_value,
+            first_seen=record.first_seen,
+            last_seen=record.last_seen,
+            occurrence_count=record.occurrence_count,
+        )
 
 
 class VaultTransaction:
