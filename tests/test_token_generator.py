@@ -1,6 +1,6 @@
 import re
 
-from data_mask_studio.anonymization import generate_token
+from data_mask_studio.anonymization import TokenGenerator, generate_token
 
 KEY = b"fixed-test-key-with-at-least-32b"
 
@@ -10,8 +10,22 @@ def test_token_is_stable_with_the_same_key() -> None:
     second = generate_token(KEY, "CPF_ID", "123.456.789-00")
 
     assert first == second
-    assert re.fullmatch(r"CPF_ID-[0-9A-F]{24}", first)
+    assert re.fullmatch(r"CPF_ID-[A-Z2-7]{12}", first)
+    assert first == "CPF_ID-IQPEWAE2ES36"
     assert "123" not in first
+
+
+def test_complete_token_has_prefix_and_exact_base32_code() -> None:
+    token = generate_token(KEY, "CPF_ID", "123.456.789-00")
+    prefix, code = token.rsplit("-", maxsplit=1)
+
+    assert prefix == "CPF_ID"
+    assert len(code) == 12
+    assert re.fullmatch(r"[A-Z2-7]{12}", code)
+    assert "=" not in token
+    assert "/" not in token
+    assert "+" not in token
+    assert token == token.upper()
 
 
 def test_different_keys_generate_different_codes() -> None:
@@ -19,6 +33,24 @@ def test_different_keys_generate_different_codes() -> None:
     second = generate_token(b"B" * 32, "CLIENTE", "Ana")
 
     assert first != second
+
+
+def test_new_generators_with_the_same_key_are_deterministic() -> None:
+    first_generator = TokenGenerator(KEY)
+    second_generator = TokenGenerator(KEY)
+
+    assert first_generator.generate("NOME", "Ana") == second_generator.generate(
+        "NOME", "Ana"
+    )
+
+
+def test_new_generators_with_different_keys_generate_different_codes() -> None:
+    first_generator = TokenGenerator(b"A" * 32)
+    second_generator = TokenGenerator(b"B" * 32)
+
+    assert first_generator.generate("NOME", "Ana") != second_generator.generate(
+        "NOME", "Ana"
+    )
 
 
 def test_same_value_with_different_prefixes_generates_different_codes() -> None:
@@ -43,7 +75,13 @@ def test_value_containing_only_spaces_is_preserved() -> None:
 
 
 def test_original_value_is_not_normalized() -> None:
-    variants = ["José", "JOSE", " José", "José!"]
+    variants = [
+        "José",
+        "JOSE",
+        " José",
+        "José!",
+        "123.456.789-00",
+        "12345678900",
+    ]
 
-    assert len({generate_token(KEY, "NOME", value) for value in variants}) == 4
-
+    assert len({generate_token(KEY, "NOME", value) for value in variants}) == 6

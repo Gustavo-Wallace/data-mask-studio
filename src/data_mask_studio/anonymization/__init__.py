@@ -11,13 +11,14 @@ from data_mask_studio.anonymization.models import (
     ConfigurationValidationResult,
 )
 from data_mask_studio.anonymization.prefix_rules import normalize_prefix
-from data_mask_studio.anonymization.token_generator import generate_token
+from data_mask_studio.anonymization.token_generator import TokenGenerator, generate_token
 
 __all__ = [
     "AnonymizationResult",
     "ColumnConfig",
     "ColumnValidationResult",
     "ConfigurationValidationResult",
+    "TokenGenerator",
     "create_column_configs",
     "generate_token",
     "normalize_prefix",

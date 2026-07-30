@@ -1,4 +1,5 @@
 from threading import Event
+from collections.abc import Callable
 
 from PySide6.QtCore import QThread, Signal
 
@@ -12,6 +13,9 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
 )
 from data_mask_studio.csv_tools.models import CSVInspectionResult
 from data_mask_studio.security import KeyProvider
+from data_mask_studio.vault import VaultRepository, create_default_vault_repository
+
+VaultRepositoryFactory = Callable[[], VaultRepository]
 
 
 class AnonymizationWorker(QThread):
@@ -28,6 +32,7 @@ class AnonymizationWorker(QThread):
         output_path: str,
         configurations: list[ColumnConfig],
         key_provider: KeyProvider,
+        vault_repository_factory: VaultRepositoryFactory = create_default_vault_repository,
         *,
         overwrite: bool,
     ) -> None:
@@ -39,6 +44,7 @@ class AnonymizationWorker(QThread):
             for item in configurations
         ]
         self._key_provider = key_provider
+        self._vault_repository_factory = vault_repository_factory
         self._overwrite = overwrite
         self._cancel_requested = Event()
 
@@ -48,6 +54,7 @@ class AnonymizationWorker(QThread):
     def run(self) -> None:
         try:
             secret_key = self._key_provider.get_key()
+            vault_repository = self._vault_repository_factory()
             result = anonymize_csv(
                 self._inspection.path,
                 self._output_path,
@@ -58,6 +65,7 @@ class AnonymizationWorker(QThread):
                 overwrite=self._overwrite,
                 progress_callback=self.progress.emit,
                 should_cancel=self._cancel_requested.is_set,
+                vault_repository=vault_repository,
             )
         except ProcessingCancelled:
             self.cancelled.emit()
@@ -65,4 +73,3 @@ class AnonymizationWorker(QThread):
             self.failed.emit(error)
         else:
             self.completed.emit(result)
-

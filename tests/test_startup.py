@@ -5,6 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
+from data_mask_studio.vault import VaultCipher, VaultRepository
 
 
 class FixedKeyProvider:
@@ -118,7 +119,12 @@ def test_window_generates_csv_in_background(tmp_path: Path) -> None:
     csv_path.write_text("name,age\nAna,30\nBruna,40\n", encoding="utf-8")
     output_path = tmp_path / "people_anonymized.csv"
     application = create_application([])
-    window = MainWindow(key_provider=FixedKeyProvider())
+    window = MainWindow(
+        key_provider=FixedKeyProvider(),
+        vault_repository_factory=lambda: VaultRepository(
+            tmp_path / "vault.db", VaultCipher(b"V" * 32)
+        ),
+    )
     window.load_csv(str(csv_path))
     window._checkboxes[0].setChecked(True)
     window.validate_button.click()
@@ -135,6 +141,8 @@ def test_window_generates_csv_in_background(tmp_path: Path) -> None:
     assert str(output_path) in window.output_path_label.text()
     assert window.processed_count_label.text() == "2 registros processados"
     assert not window.open_folder_button.isHidden()
+    assert "2 novos mapeamentos" in window.status_label.text()
+    assert "cofre local foi atualizado" in window.status_label.text()
 
     window.close()
     application.quit()

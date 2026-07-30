@@ -1,13 +1,18 @@
 import csv
+import hmac
 import os
 import tempfile
 import time
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from pathlib import Path
 
 from data_mask_studio.anonymization.anonymizer import anonymize_row
 from data_mask_studio.anonymization.column_config import validate_configuration
 from data_mask_studio.anonymization.models import AnonymizationResult, ColumnConfig
+from data_mask_studio.vault import MappingCandidate, VaultCollisionError, VaultError
+from data_mask_studio.vault.models import VaultUpdateSummary
+from data_mask_studio.vault.repository import VaultRepository, VaultTransaction
 
 ProgressCallback = Callable[[int], None]
 CancellationCheck = Callable[[], bool]
@@ -32,52 +37,84 @@ def anonymize_csv(
     overwrite: bool = False,
     progress_callback: ProgressCallback | None = None,
     should_cancel: CancellationCheck | None = None,
+    vault_repository: VaultRepository | None = None,
+    mapping_batch_size: int = 500,
 ) -> AnonymizationResult:
     """Processa um CSV linha a linha e publica o resultado de forma atômica."""
     source = Path(source_path).expanduser().absolute()
     destination = Path(destination_path).expanduser().absolute()
-    _validate_request(source, destination, configurations, secret_key, overwrite)
+    _validate_request(
+        source,
+        destination,
+        configurations,
+        secret_key,
+        overwrite,
+        mapping_batch_size,
+    )
 
     temporary_path: Path | None = None
     started_at = time.perf_counter()
     records_processed = 0
+    vault_summary = VaultUpdateSummary()
     input_encoding = "cp1252" if encoding == "windows-1252" else encoding
+    pending_mappings: dict[str, MappingCandidate] = {}
+    transaction_context = (
+        vault_repository.transaction()
+        if vault_repository is not None
+        else nullcontext(None)
+    )
 
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8-sig",
-            newline="",
-            prefix=f".{destination.name}.",
-            suffix=".tmp",
-            dir=destination.parent,
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            writer = csv.writer(temporary_file, delimiter=delimiter)
-            with source.open("r", encoding=input_encoding, newline="") as source_file:
-                reader = csv.reader(source_file, delimiter=delimiter, strict=True)
-                headers = next(reader)
-                expected_headers = [configuration.header for configuration in configurations]
-                if headers != expected_headers:
-                    raise CSVAnonymizationError(
-                        "Os cabeçalhos do arquivo foram alterados desde a seleção."
-                    )
-                writer.writerow(headers)
+        with transaction_context as vault_transaction:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8-sig",
+                newline="",
+                prefix=f".{destination.name}.",
+                suffix=".tmp",
+                dir=destination.parent,
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                writer = csv.writer(temporary_file, delimiter=delimiter)
+                with source.open("r", encoding=input_encoding, newline="") as source_file:
+                    reader = csv.reader(source_file, delimiter=delimiter, strict=True)
+                    headers = next(reader)
+                    expected_headers = [
+                        configuration.header for configuration in configurations
+                    ]
+                    if headers != expected_headers:
+                        raise CSVAnonymizationError(
+                            "Os cabeçalhos do arquivo foram alterados desde a seleção."
+                        )
+                    writer.writerow(headers)
 
-                for row in reader:
-                    if should_cancel is not None and should_cancel():
-                        raise ProcessingCancelled("A geração do CSV foi cancelada.")
-                    writer.writerow(anonymize_row(row, configurations, secret_key))
-                    records_processed += 1
-                    if progress_callback is not None:
-                        progress_callback(records_processed)
+                    for row in reader:
+                        if should_cancel is not None and should_cancel():
+                            raise ProcessingCancelled("A geração do CSV foi cancelada.")
+                        anonymized_row = anonymize_row(row, configurations, secret_key)
+                        if vault_transaction is not None:
+                            _collect_mappings(
+                                row,
+                                anonymized_row,
+                                configurations,
+                                pending_mappings,
+                            )
+                            if len(pending_mappings) >= mapping_batch_size:
+                                _flush_mappings(vault_transaction, pending_mappings)
+                        writer.writerow(anonymized_row)
+                        records_processed += 1
+                        if progress_callback is not None:
+                            progress_callback(records_processed)
 
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
+                if vault_transaction is not None:
+                    _flush_mappings(vault_transaction, pending_mappings)
+                    vault_summary = vault_transaction.summary()
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+                if should_cancel is not None and should_cancel():
+                    raise ProcessingCancelled("A geração do CSV foi cancelada.")
 
-        if should_cancel is not None and should_cancel():
-            raise ProcessingCancelled("A geração do CSV foi cancelada.")
         if destination.exists() and not overwrite:
             raise CSVAnonymizationError("O arquivo de destino já existe.")
         os.replace(temporary_path, destination)
@@ -86,6 +123,8 @@ def anonymize_csv(
         raise
     except CSVAnonymizationError:
         raise
+    except VaultError as error:
+        raise CSVAnonymizationError(str(error)) from error
     except (OSError, UnicodeError, csv.Error, StopIteration) as error:
         raise CSVAnonymizationError(
             "Não foi possível gerar o arquivo CSV anonimizado."
@@ -105,7 +144,52 @@ def anonymize_csv(
         output_path=destination,
         records_processed=records_processed,
         duration_seconds=time.perf_counter() - started_at,
+        new_mappings=vault_summary.new_mappings,
+        updated_mappings=vault_summary.updated_mappings,
     )
+
+
+def _collect_mappings(
+    original_row: Sequence[str],
+    anonymized_row: Sequence[str],
+    configurations: Sequence[ColumnConfig],
+    pending: dict[str, MappingCandidate],
+) -> None:
+    for index, configuration in enumerate(configurations):
+        if not configuration.anonymize or index >= len(original_row):
+            continue
+        original_value = original_row[index]
+        if original_value == "" or original_value.isspace():
+            continue
+        code = anonymized_row[index]
+        existing = pending.get(code)
+        if existing is None:
+            pending[code] = MappingCandidate(
+                code=code,
+                prefix=configuration.prefix,
+                original_value=original_value,
+                source_header=configuration.header,
+            )
+            continue
+        values_match = hmac.compare_digest(
+            existing.original_value.encode("utf-8"),
+            original_value.encode("utf-8"),
+        )
+        if existing.prefix != configuration.prefix or not values_match:
+            raise VaultCollisionError(
+                "Foi detectado um conflito de código no cofre local."
+            )
+        existing.occurrences += 1
+
+
+def _flush_mappings(
+    transaction: VaultTransaction,
+    pending: dict[str, MappingCandidate],
+) -> None:
+    if not pending:
+        return
+    transaction.upsert_batch(list(pending.values()))
+    pending.clear()
 
 
 def paths_refer_to_same_file(first: str | Path, second: str | Path) -> bool:
@@ -128,6 +212,7 @@ def _validate_request(
     configurations: Sequence[ColumnConfig],
     secret_key: bytes,
     overwrite: bool,
+    mapping_batch_size: int,
 ) -> None:
     if paths_refer_to_same_file(source, destination):
         raise CSVAnonymizationError(
@@ -146,3 +231,5 @@ def _validate_request(
         raise CSVAnonymizationError(
             validation.error_message or "A configuração das colunas é inválida."
         )
+    if mapping_batch_size <= 0:
+        raise CSVAnonymizationError("O tamanho do lote de mapeamentos é inválido.")

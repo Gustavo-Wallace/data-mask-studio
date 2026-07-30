@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices
@@ -35,6 +36,11 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.security import KeyProvider, KeyProviderError, LocalKeyProvider
+from data_mask_studio.vault import (
+    VaultError,
+    VaultRepository,
+    create_default_vault_repository,
+)
 
 SEPARATOR_NAMES = {
     ",": "Vírgula (,)",
@@ -47,7 +53,11 @@ SEPARATOR_NAMES = {
 class MainWindow(QMainWindow):
     """Janela principal do Data Mask Studio."""
 
-    def __init__(self, key_provider: KeyProvider | None = None) -> None:
+    def __init__(
+        self,
+        key_provider: KeyProvider | None = None,
+        vault_repository_factory: Callable[[], VaultRepository] | None = None,
+    ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
         self.resize(900, 600)
@@ -147,6 +157,9 @@ class MainWindow(QMainWindow):
         self._inspection_result: CSVInspectionResult | None = None
         self._configuration_validated = False
         self._key_provider = key_provider or LocalKeyProvider()
+        self._vault_repository_factory = (
+            vault_repository_factory or create_default_vault_repository
+        )
         self._worker: AnonymizationWorker | None = None
         self._last_output_path: Path | None = None
         self._last_processing_error: Exception | None = None
@@ -454,6 +467,7 @@ class MainWindow(QMainWindow):
             str(destination),
             self._column_configs,
             self._key_provider,
+            self._vault_repository_factory,
             overwrite=overwrite,
         )
         self._worker = worker
@@ -482,8 +496,11 @@ class MainWindow(QMainWindow):
         self.open_folder_button.setVisible(True)
         self.open_folder_button.setEnabled(True)
         self._set_status(
-            "CSV anonimizado gerado com sucesso em "
-            f"aproximadamente {result.duration_seconds:.2f} segundos.",
+            "CSV anonimizado gerado com sucesso. "
+            f"{result.records_processed} registros processados; "
+            f"{result.new_mappings} novos mapeamentos; "
+            f"{result.updated_mappings} mapeamentos existentes atualizados. "
+            "O cofre local foi atualizado.",
             is_error=False,
         )
 
@@ -498,7 +515,7 @@ class MainWindow(QMainWindow):
         self._set_processing_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        if isinstance(error, (CSVAnonymizationError, KeyProviderError)):
+        if isinstance(error, (CSVAnonymizationError, KeyProviderError, VaultError)):
             message = str(error)
         else:
             message = "Não foi possível gerar o arquivo CSV anonimizado."

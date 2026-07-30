@@ -1,17 +1,28 @@
 import codecs
 import csv
+import re
 from pathlib import Path
 
 import pytest
 
-from data_mask_studio.anonymization import ColumnConfig
+from data_mask_studio.anonymization import ColumnConfig, generate_token
 from data_mask_studio.csv_tools.csv_anonymizer import (
     CSVAnonymizationError,
     ProcessingCancelled,
     anonymize_csv,
 )
+from data_mask_studio.vault import (
+    MappingCandidate,
+    VaultCipher,
+    VaultRepository,
+)
 
 KEY = b"K" * 32
+VAULT_KEY = b"V" * 32
+
+
+def make_vault(tmp_path: Path) -> VaultRepository:
+    return VaultRepository(tmp_path / "vault.db", VaultCipher(VAULT_KEY))
 
 
 def test_anonymization_preserves_structure_and_original_file(tmp_path: Path) -> None:
@@ -55,6 +66,60 @@ def test_anonymization_preserves_structure_and_original_file(tmp_path: Path) -> 
     assert len(rows) == 4
     assert result.records_processed == 3
     assert progress == [1, 2, 3]
+
+
+def test_repeated_processing_of_same_file_produces_same_tokens(tmp_path: Path) -> None:
+    source = tmp_path / "input.csv"
+    source.write_text("name\nAna\nBruna\nAna\n", encoding="utf-8")
+    first_output = tmp_path / "first.csv"
+    second_output = tmp_path / "second.csv"
+    configurations = [ColumnConfig("name", anonymize=True, prefix="NOME")]
+
+    for destination in (first_output, second_output):
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=configurations,
+            secret_key=KEY,
+        )
+
+    assert first_output.read_bytes() == second_output.read_bytes()
+    with first_output.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    assert rows[1][0] == rows[3][0]
+    assert re_full_base32_token(rows[1][0], "NOME")
+
+
+def test_same_value_in_different_files_produces_same_token(tmp_path: Path) -> None:
+    first_source = tmp_path / "first-input.csv"
+    second_source = tmp_path / "second-input.csv"
+    first_source.write_text("name\nAna\n", encoding="utf-8")
+    second_source.write_text("name\nAna\n", encoding="utf-8")
+    configurations = [ColumnConfig("name", anonymize=True, prefix="NOME")]
+    generated_tokens: list[str] = []
+
+    for index, source in enumerate((first_source, second_source)):
+        destination = tmp_path / f"output-{index}.csv"
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=configurations,
+            secret_key=KEY,
+        )
+        with destination.open(
+            "r", encoding="utf-8-sig", newline=""
+        ) as output_file:
+            generated_tokens.append(list(csv.reader(output_file))[1][0])
+
+    assert generated_tokens[0] == generated_tokens[1]
+
+
+def re_full_base32_token(token: str, prefix: str) -> bool:
+    return re.fullmatch(rf"{prefix}-[A-Z2-7]{{12}}", token) is not None
 
 
 def test_semicolon_separator_is_preserved(tmp_path: Path) -> None:
@@ -242,3 +307,135 @@ def test_original_path_cannot_be_used_as_destination(tmp_path: Path) -> None:
         )
 
     assert source.read_bytes() == original_content
+
+
+def test_csv_processing_creates_and_updates_vault_mappings(tmp_path: Path) -> None:
+    source = tmp_path / "people.csv"
+    source.write_text("name\nAna\nAna\nBruna\n", encoding="utf-8")
+    repository = make_vault(tmp_path)
+    configuration = [ColumnConfig("name", True, "NOME")]
+
+    first_result = anonymize_csv(
+        source,
+        tmp_path / "first-output.csv",
+        encoding="utf-8",
+        delimiter=",",
+        configurations=configuration,
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    ana_code = generate_token(KEY, "NOME", "Ana")
+    bruna_code = generate_token(KEY, "NOME", "Bruna")
+    ana_record = repository.get_record(ana_code)
+    bruna_record = repository.get_record(bruna_code)
+    assert first_result.new_mappings == 2
+    assert first_result.updated_mappings == 0
+    assert repository.count() == 2
+    assert ana_record is not None and ana_record.occurrence_count == 2
+    assert bruna_record is not None and bruna_record.occurrence_count == 1
+
+    second_result = anonymize_csv(
+        source,
+        tmp_path / "second-output.csv",
+        encoding="utf-8",
+        delimiter=",",
+        configurations=configuration,
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    ana_record = repository.get_record(ana_code)
+    assert second_result.new_mappings == 0
+    assert second_result.updated_mappings == 2
+    assert repository.count() == 2
+    assert ana_record is not None and ana_record.occurrence_count == 4
+
+
+def test_vault_rolls_back_after_processing_error(tmp_path: Path) -> None:
+    source = tmp_path / "input.csv"
+    source.write_text("name\nAna\nBruna\n", encoding="utf-8")
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+
+    def fail_after_first_row(_: int) -> None:
+        raise RuntimeError("forced failure")
+
+    with pytest.raises(CSVAnonymizationError):
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("name", True, "NOME")],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=1,
+            progress_callback=fail_after_first_row,
+        )
+
+    assert repository.count() == 0
+    assert not destination.exists()
+
+
+def test_vault_rolls_back_after_cancellation(tmp_path: Path) -> None:
+    source = tmp_path / "input.csv"
+    source.write_text("name\nAna\nBruna\n", encoding="utf-8")
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+    processed = 0
+
+    def update_progress(value: int) -> None:
+        nonlocal processed
+        processed = value
+
+    with pytest.raises(ProcessingCancelled):
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("name", True, "NOME")],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=1,
+            progress_callback=update_progress,
+            should_cancel=lambda: processed == 1,
+        )
+
+    assert repository.count() == 0
+    assert not destination.exists()
+
+
+def test_vault_collision_blocks_csv_without_exposing_values(tmp_path: Path) -> None:
+    source = tmp_path / "input.csv"
+    original_content = b"name\nAna\n"
+    source.write_bytes(original_content)
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+    code = generate_token(KEY, "NOME", "Ana")
+    sensitive_sentinel = "SENSITIVE_SENTINEL"
+    with repository.transaction() as transaction:
+        transaction.upsert_batch(
+            [MappingCandidate(code, "NOME", sensitive_sentinel, "name")]
+        )
+
+    with pytest.raises(CSVAnonymizationError) as captured:
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("name", True, "NOME")],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=1,
+        )
+
+    visible_error = str(captured.value)
+    technical_cause = str(captured.value.__cause__)
+    assert "Ana" not in visible_error + technical_cause
+    assert sensitive_sentinel not in visible_error + technical_cause
+    assert source.read_bytes() == original_content
+    assert repository.count() == 1
+    assert not destination.exists()

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from data_mask_studio.security.key_provider import KEY_SIZE, LocalKeyProvider
+from data_mask_studio.vault.key_provider import VaultKeyProvider
 
 
 class FakeProtector:
@@ -43,3 +44,21 @@ def test_default_key_directory_uses_local_app_data(
     provider = LocalKeyProvider(protector=FakeProtector())
 
     assert provider.key_path == tmp_path / "DataMaskStudio" / "secret.key"
+
+
+def test_vault_key_is_created_separately_and_protected(tmp_path: Path) -> None:
+    protector = FakeProtector()
+    storage = tmp_path / "DataMaskStudio"
+    hmac_provider = LocalKeyProvider(storage, protector)
+    provider = VaultKeyProvider(storage, protector)
+
+    hmac_key = hmac_provider.get_key()
+    vault_key = provider.get_key()
+
+    assert provider.key_path.name == "vault_key.dpapi"
+    assert hmac_provider.key_path.name == "secret.key"
+    assert provider.key_path != hmac_provider.key_path
+    assert vault_key != hmac_key
+    assert provider.key_path.exists()
+    assert provider.key_path.read_bytes() != vault_key
+    assert len(vault_key) == KEY_SIZE

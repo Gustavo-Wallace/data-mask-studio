@@ -37,3 +37,5 @@ class AnonymizationResult:
     output_path: Path
     records_processed: int
     duration_seconds: float
+    new_mappings: int = 0
+    updated_mappings: int = 0

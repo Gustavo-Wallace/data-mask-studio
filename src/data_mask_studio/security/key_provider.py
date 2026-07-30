@@ -31,13 +31,16 @@ class LocalKeyProvider:
         self,
         storage_directory: Path | None = None,
         protector: DataProtector | None = None,
+        *,
+        key_file_name: str = KEY_FILE_NAME,
     ) -> None:
         self._storage_directory = storage_directory or _default_storage_directory()
         self._protector = protector or WindowsDPAPIProtector()
+        self._key_file_name = key_file_name
 
     @property
     def key_path(self) -> Path:
-        return self._storage_directory / KEY_FILE_NAME
+        return self._storage_directory / self._key_file_name
 
     def get_key(self) -> bytes:
         try:
@@ -84,4 +87,3 @@ def _default_storage_directory() -> Path:
     if not local_app_data:
         raise KeyProviderError("A pasta LOCALAPPDATA do Windows não está disponível.")
     return Path(local_app_data) / "DataMaskStudio"
-
