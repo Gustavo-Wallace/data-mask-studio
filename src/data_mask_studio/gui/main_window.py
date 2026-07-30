@@ -1,7 +1,7 @@
 from pathlib import Path
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHeaderView,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -38,11 +39,18 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
-from data_mask_studio.security import KeyProvider, KeyProviderError, LocalKeyProvider
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
     NormalizationRule,
 )
+from data_mask_studio.profiles import (
+    ConfigurationProfile,
+    ProfileError,
+    ProfileColumn,
+    ProfileRepository,
+    ProfileService,
+)
+from data_mask_studio.security import KeyProvider, KeyProviderError, LocalKeyProvider
 from data_mask_studio.vault import (
     VaultError,
     VaultRepository,
@@ -64,6 +72,7 @@ class MainWindow(QMainWindow):
         self,
         key_provider: KeyProvider | None = None,
         vault_repository_factory: Callable[[], VaultRepository] | None = None,
+        profile_service: ProfileService | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
@@ -110,6 +119,30 @@ class MainWindow(QMainWindow):
 
         configuration_label = QLabel("Configuração das colunas")
         configuration_label.setStyleSheet("font-size: 16px; font-weight: 600;")
+
+        profile_label = QLabel("Perfil de configuração")
+        profile_label.setStyleSheet("font-size: 16px; font-weight: 600;")
+        self.profile_combo = QComboBox()
+        self.profile_combo.setMinimumWidth(180)
+        self.apply_profile_button = QPushButton("Aplicar perfil")
+        self.apply_profile_button.clicked.connect(self.apply_selected_profile)
+        self.save_profile_button = QPushButton("Salvar como perfil")
+        self.save_profile_button.clicked.connect(self.save_as_profile)
+        self.update_profile_button = QPushButton("Atualizar perfil")
+        self.update_profile_button.clicked.connect(self.update_selected_profile)
+        self.rename_profile_button = QPushButton("Renomear")
+        self.rename_profile_button.clicked.connect(self.rename_selected_profile)
+        self.delete_profile_button = QPushButton("Excluir")
+        self.delete_profile_button.clicked.connect(self.delete_selected_profile)
+        self.profile_combo.currentIndexChanged.connect(self._update_profile_actions)
+
+        profile_layout = QHBoxLayout()
+        profile_layout.addWidget(self.profile_combo, stretch=1)
+        profile_layout.addWidget(self.apply_profile_button)
+        profile_layout.addWidget(self.save_profile_button)
+        profile_layout.addWidget(self.update_profile_button)
+        profile_layout.addWidget(self.rename_profile_button)
+        profile_layout.addWidget(self.delete_profile_button)
 
         self.select_all_button = QPushButton("Selecionar todas")
         self.select_all_button.clicked.connect(self.select_all_columns)
@@ -165,10 +198,19 @@ class MainWindow(QMainWindow):
         self._normalization_fields: list[QComboBox] = []
         self._inspection_result: CSVInspectionResult | None = None
         self._configuration_validated = False
+        self._configuration_dirty = False
         self._key_provider = key_provider or LocalKeyProvider()
         self._vault_repository_factory = (
             vault_repository_factory or create_default_vault_repository
         )
+        self._profile_service: ProfileService | None = profile_service
+        self._profile_initialization_error: str | None = None
+        if self._profile_service is None:
+            try:
+                self._profile_service = ProfileService(ProfileRepository())
+            except ProfileError as error:
+                self._profile_initialization_error = str(error)
+        self._profiles: list[ConfigurationProfile] = []
         self._worker: AnonymizationWorker | None = None
         self._last_output_path: Path | None = None
         self._last_processing_error: Exception | None = None
@@ -204,6 +246,8 @@ class MainWindow(QMainWindow):
         layout.addSpacing(8)
         layout.addLayout(button_layout)
         layout.addLayout(details_layout)
+        layout.addWidget(profile_label)
+        layout.addLayout(profile_layout)
         layout.addWidget(configuration_label)
         layout.addLayout(selection_layout)
         layout.addWidget(self.config_table, stretch=1)
@@ -220,6 +264,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(anonymization_widget, "Anonimizar CSV")
         self.tabs.addTab(self.consultant_widget, "Consultar cofre")
         self.setCentralWidget(self.tabs)
+        self._refresh_profiles()
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -246,6 +291,7 @@ class MainWindow(QMainWindow):
     def _show_result(self, result: CSVInspectionResult) -> None:
         self._inspection_result = result
         self._configuration_validated = False
+        self._configuration_dirty = False
         self.generate_button.setEnabled(False)
         self._clear_output_result()
         self.file_name_label.setText(result.path.name)
@@ -255,6 +301,7 @@ class MainWindow(QMainWindow):
         self.column_count_label.setText(str(len(result.headers)))
         self._build_configuration_table(result.headers)
         self.clear_button.setEnabled(True)
+        self._update_profile_actions()
         self._set_status("Cabeçalhos lidos com sucesso.", is_error=False)
 
     def _show_error(self, file_path: str, message: str) -> None:
@@ -278,6 +325,7 @@ class MainWindow(QMainWindow):
     def _reset_details(self) -> None:
         self._inspection_result = None
         self._configuration_validated = False
+        self._configuration_dirty = False
         self.generate_button.setEnabled(False)
         self._clear_output_result()
         self.file_name_label.setText("—")
@@ -287,6 +335,7 @@ class MainWindow(QMainWindow):
         self.column_count_label.setText("—")
         self._clear_configuration_table()
         self.clear_button.setEnabled(False)
+        self._update_profile_actions()
 
     def _build_configuration_table(self, headers: list[str]) -> None:
         self._clear_configuration_table()
@@ -383,6 +432,7 @@ class MainWindow(QMainWindow):
 
     def _configuration_changed(self) -> None:
         self._configuration_validated = False
+        self._configuration_dirty = True
         self.generate_button.setEnabled(False)
         self._set_status(
             "Configuração alterada. Use “Validar configuração” para conferir.",
@@ -440,6 +490,224 @@ class MainWindow(QMainWindow):
             self._configuration_validated = False
             self.generate_button.setEnabled(False)
             self._set_status(result.error_message or "Configuração inválida.", is_error=True)
+
+    def _refresh_profiles(self, selected_identifier: str | None = None) -> None:
+        if self._profile_service is None:
+            self._profiles = []
+            self.profile_combo.clear()
+            self._update_profile_actions()
+            self._set_status(
+                self._profile_initialization_error
+                or "Os perfis de configuração não estão disponíveis.",
+                is_error=True,
+            )
+            return
+        try:
+            self._profiles = self._profile_service.list_profiles()
+        except ProfileError as error:
+            self._profiles = []
+            self.profile_combo.clear()
+            self._update_profile_actions()
+            self._set_status(str(error), is_error=True)
+            return
+
+        blocker = QSignalBlocker(self.profile_combo)
+        self.profile_combo.clear()
+        for profile in self._profiles:
+            self.profile_combo.addItem(profile.name, profile.identifier)
+        if selected_identifier is not None:
+            index = self.profile_combo.findData(selected_identifier)
+            if index >= 0:
+                self.profile_combo.setCurrentIndex(index)
+        del blocker
+        self._update_profile_actions()
+
+    def _selected_profile(self) -> ConfigurationProfile | None:
+        identifier = self.profile_combo.currentData()
+        return next(
+            (profile for profile in self._profiles if profile.identifier == identifier),
+            None,
+        )
+
+    def _update_profile_actions(self, *_args: object) -> None:
+        has_profile = self._selected_profile() is not None
+        has_csv = self._inspection_result is not None
+        has_service = self._profile_service is not None
+        self.apply_profile_button.setEnabled(has_profile and has_csv)
+        self.save_profile_button.setEnabled(has_service and has_csv)
+        self.update_profile_button.setEnabled(has_profile and has_csv)
+        self.rename_profile_button.setEnabled(has_profile)
+        self.delete_profile_button.setEnabled(has_profile)
+
+    def save_as_profile(self) -> None:
+        if (
+            self._profile_service is None
+            or self._inspection_result is None
+            or not self._configuration_validated
+        ):
+            self._set_status(
+                "Selecione um CSV e valide a configuração antes de salvar o perfil.",
+                is_error=True,
+            )
+            return
+        name, accepted = QInputDialog.getText(
+            self, "Salvar perfil", "Nome do perfil:"
+        )
+        if not accepted:
+            return
+        try:
+            profile = self._profile_service.create(name, self._column_configs)
+        except ProfileError as error:
+            self._set_status(str(error), is_error=True)
+            return
+        self._refresh_profiles(profile.identifier)
+        self._set_status(f"Perfil “{profile.name}” salvo com sucesso.", is_error=False)
+
+    def update_selected_profile(self) -> None:
+        profile = self._selected_profile()
+        if (
+            profile is None
+            or self._profile_service is None
+            or self._inspection_result is None
+            or not self._configuration_validated
+        ):
+            self._set_status(
+                "Selecione um perfil, um CSV e uma configuração válida.",
+                is_error=True,
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "Atualizar perfil",
+            f"Substituir a configuração do perfil “{profile.name}”?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            updated = self._profile_service.update(
+                profile.identifier, self._column_configs
+            )
+        except ProfileError as error:
+            self._set_status(str(error), is_error=True)
+            return
+        self._refresh_profiles(updated.identifier)
+        self._set_status(f"Perfil “{updated.name}” atualizado.", is_error=False)
+
+    def apply_selected_profile(self) -> None:
+        profile = self._selected_profile()
+        if (
+            profile is None
+            or self._profile_service is None
+            or self._inspection_result is None
+        ):
+            self._set_status("Selecione um CSV e um perfil compatível.", is_error=True)
+            return
+        if self._configuration_dirty:
+            answer = QMessageBox.question(
+                self,
+                "Substituir configuração",
+                "A configuração atual foi alterada e será substituída. Continuar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
+        application = self._profile_service.apply(
+            profile, self._inspection_result.headers
+        )
+        if not application.has_matches:
+            self._set_status(
+                "O perfil não é compatível com o CSV selecionado.", is_error=True
+            )
+            return
+
+        self._apply_profile_configurations(application.configurations)
+        self._configuration_dirty = False
+        if application.is_complete:
+            self.validate_current_configuration()
+            self._configuration_dirty = False
+            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False)
+            return
+
+        self._configuration_validated = False
+        self.generate_button.setEnabled(False)
+        missing = ", ".join(application.missing_headers)
+        self._set_status(
+            "O perfil foi aplicado parcialmente. "
+            f"Cabeçalhos não encontrados: {missing}.",
+            is_error=True,
+        )
+
+    def _apply_profile_configurations(
+        self, configurations: tuple[ProfileColumn, ...]
+    ) -> None:
+        for row, profile_column in enumerate(configurations):
+            configuration = self._column_configs[row]
+            checkbox = self._checkboxes[row]
+            prefix_field = self._prefix_fields[row]
+            normalization_field = self._normalization_fields[row]
+            blockers = (
+                QSignalBlocker(checkbox),
+                QSignalBlocker(prefix_field),
+                QSignalBlocker(normalization_field),
+            )
+            configuration.anonymize = profile_column.anonymize
+            configuration.prefix = profile_column.prefix
+            configuration.normalization_rule = profile_column.normalization_rule
+            checkbox.setChecked(profile_column.anonymize)
+            prefix_field.setText(profile_column.prefix)
+            prefix_field.setEnabled(profile_column.anonymize)
+            normalization_field.setCurrentIndex(
+                normalization_field.findData(profile_column.normalization_rule.value)
+            )
+            normalization_field.setEnabled(profile_column.anonymize)
+            del blockers
+        self._update_selected_count()
+        self._refresh_row_statuses()
+
+    def rename_selected_profile(self) -> None:
+        profile = self._selected_profile()
+        if profile is None or self._profile_service is None:
+            return
+        name, accepted = QInputDialog.getText(
+            self,
+            "Renomear perfil",
+            "Novo nome:",
+            text=profile.name,
+        )
+        if not accepted:
+            return
+        try:
+            renamed = self._profile_service.rename(profile.identifier, name)
+        except ProfileError as error:
+            self._set_status(str(error), is_error=True)
+            return
+        self._refresh_profiles(renamed.identifier)
+        self._set_status(f"Perfil renomeado para “{renamed.name}”.", is_error=False)
+
+    def delete_selected_profile(self) -> None:
+        profile = self._selected_profile()
+        if profile is None or self._profile_service is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Excluir perfil",
+            f"Excluir somente o perfil “{profile.name}”?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._profile_service.delete(profile.identifier)
+        except ProfileError as error:
+            self._set_status(str(error), is_error=True)
+            return
+        self._refresh_profiles()
+        self._set_status(f"Perfil “{profile.name}” excluído.", is_error=False)
 
     def _choose_output_file(self) -> None:
         if self._inspection_result is None or not self._configuration_validated:
@@ -578,6 +846,18 @@ class MainWindow(QMainWindow):
         self.generate_button.setEnabled(
             not processing and has_file and self._configuration_validated
         )
+        self.profile_combo.setEnabled(not processing)
+        if processing:
+            for button in (
+                self.apply_profile_button,
+                self.save_profile_button,
+                self.update_profile_button,
+                self.rename_profile_button,
+                self.delete_profile_button,
+            ):
+                button.setEnabled(False)
+        else:
+            self._update_profile_actions()
         self.cancel_button.setVisible(processing)
         self.cancel_button.setEnabled(processing)
 

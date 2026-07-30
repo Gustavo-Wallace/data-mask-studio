@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.normalization import NormalizationRule
+from data_mask_studio.profiles import ProfileRepository, ProfileService
 from data_mask_studio.vault import VaultCipher, VaultRepository
 
 
@@ -14,9 +15,13 @@ class FixedKeyProvider:
         return b"T" * 32
 
 
-def test_application_and_main_window_startup() -> None:
+def profile_service(tmp_path: Path) -> ProfileService:
+    return ProfileService(ProfileRepository(tmp_path / "profiles.json"))
+
+
+def test_application_and_main_window_startup(tmp_path: Path) -> None:
     application = create_application([])
-    window = MainWindow()
+    window = MainWindow(profile_service=profile_service(tmp_path))
 
     assert application.applicationName() == "Data Mask Studio"
     assert window.windowTitle() == "Data Mask Studio"
@@ -38,7 +43,7 @@ def test_window_displays_and_clears_csv(tmp_path: Path) -> None:
     csv_path = tmp_path / "people.csv"
     csv_path.write_text("name,age\nAna,30\n", encoding="utf-8")
     application = create_application([])
-    window = MainWindow()
+    window = MainWindow(profile_service=profile_service(tmp_path))
 
     window.load_csv(str(csv_path))
 
@@ -67,7 +72,7 @@ def test_window_configures_and_validates_columns(tmp_path: Path) -> None:
     csv_path = tmp_path / "people.csv"
     csv_path.write_text("Nome Completo,CPF/ID\nAna,123\n", encoding="utf-8")
     application = create_application([])
-    window = MainWindow()
+    window = MainWindow(profile_service=profile_service(tmp_path))
     window.load_csv(str(csv_path))
 
     window.select_all_button.click()
@@ -108,7 +113,7 @@ def test_loading_another_csv_discards_column_configuration(tmp_path: Path) -> No
     second_csv = tmp_path / "second.csv"
     second_csv.write_text("Cidade,Estado\nRecife,PE\n", encoding="utf-8")
     application = create_application([])
-    window = MainWindow()
+    window = MainWindow(profile_service=profile_service(tmp_path))
     window.load_csv(str(first_csv))
     window.select_all_button.click()
     window._prefix_fields[0].setText("PESSOA")
@@ -136,6 +141,7 @@ def test_window_generates_csv_in_background(tmp_path: Path) -> None:
         vault_repository_factory=lambda: VaultRepository(
             tmp_path / "vault.db", VaultCipher(b"V" * 32)
         ),
+        profile_service=profile_service(tmp_path),
     )
     window.load_csv(str(csv_path))
     window._checkboxes[0].setChecked(True)
