@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# PySide6 / Qt
+.qt_for_python/
+*.qmlc
+*.jsc
+.qmake.stash
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# Pacotes e builds
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Variáveis de ambiente e logs
+.env
+.env.*
+*.log
+
+# Arquivos criptográficos e locais do Data Mask Studio
+secret.key
+vault_key.dpapi
+*.dpapi
+vault.db
+vault.db-journal
+vault.db-wal
+vault.db-shm
+
+# Arquivos locais que não devem ficar na raiz do repositório
+/profiles.json
+
+# Saídas geradas pela aplicação
+*_anonimizado.csv
+*_restaurado.csv
+*.tmp
