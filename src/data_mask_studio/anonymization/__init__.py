@@ -5,18 +5,21 @@ from data_mask_studio.anonymization.column_config import (
     validate_configuration,
 )
 from data_mask_studio.anonymization.models import (
+    AnonymizationResult,
     ColumnConfig,
     ColumnValidationResult,
     ConfigurationValidationResult,
 )
 from data_mask_studio.anonymization.prefix_rules import normalize_prefix
+from data_mask_studio.anonymization.token_generator import generate_token
 
 __all__ = [
+    "AnonymizationResult",
     "ColumnConfig",
     "ColumnValidationResult",
     "ConfigurationValidationResult",
     "create_column_configs",
+    "generate_token",
     "normalize_prefix",
     "validate_configuration",
 ]
-

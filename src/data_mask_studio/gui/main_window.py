@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -20,12 +22,19 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.anonymization import (
+    AnonymizationResult,
     ColumnConfig,
     create_column_configs,
     normalize_prefix,
     validate_configuration,
 )
 from data_mask_studio.csv_tools import CSVInspectionError, CSVInspectionResult, inspect_csv
+from data_mask_studio.csv_tools.csv_anonymizer import (
+    CSVAnonymizationError,
+    paths_refer_to_same_file,
+)
+from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
+from data_mask_studio.security import KeyProvider, KeyProviderError, LocalKeyProvider
 
 SEPARATOR_NAMES = {
     ",": "Vírgula (,)",
@@ -38,7 +47,7 @@ SEPARATOR_NAMES = {
 class MainWindow(QMainWindow):
     """Janela principal do Data Mask Studio."""
 
-    def __init__(self) -> None:
+    def __init__(self, key_provider: KeyProvider | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
         self.resize(900, 600)
@@ -118,9 +127,49 @@ class MainWindow(QMainWindow):
         self.validate_button.clicked.connect(self.validate_current_configuration)
         self.validate_button.setEnabled(False)
 
+        self.generate_button = QPushButton("Gerar CSV anonimizado")
+        self.generate_button.clicked.connect(self._choose_output_file)
+        self.generate_button.setEnabled(False)
+
+        self.cancel_button = QPushButton("Cancelar")
+        self.cancel_button.clicked.connect(self.cancel_processing)
+        self.cancel_button.setVisible(False)
+
+        action_layout = QHBoxLayout()
+        action_layout.addWidget(self.validate_button)
+        action_layout.addWidget(self.generate_button)
+        action_layout.addWidget(self.cancel_button)
+        action_layout.addStretch()
+
         self._column_configs: list[ColumnConfig] = []
         self._checkboxes: list[QCheckBox] = []
         self._prefix_fields: list[QLineEdit] = []
+        self._inspection_result: CSVInspectionResult | None = None
+        self._configuration_validated = False
+        self._key_provider = key_provider or LocalKeyProvider()
+        self._worker: AnonymizationWorker | None = None
+        self._last_output_path: Path | None = None
+        self._last_processing_error: Exception | None = None
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.processed_count_label = QLabel("0 registros processados")
+        self.processed_count_label.setVisible(False)
+
+        progress_layout = QHBoxLayout()
+        progress_layout.addWidget(self.progress_bar, stretch=1)
+        progress_layout.addWidget(self.processed_count_label)
+
+        self.output_path_label = QLabel()
+        self.output_path_label.setWordWrap(True)
+        self.output_path_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.output_path_label.setVisible(False)
+
+        self.open_folder_button = QPushButton("Abrir pasta do arquivo")
+        self.open_folder_button.clicked.connect(self.open_output_folder)
+        self.open_folder_button.setVisible(False)
 
         self.status_label = QLabel("Selecione um arquivo CSV para começar.")
         self.status_label.setWordWrap(True)
@@ -136,7 +185,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(configuration_label)
         layout.addLayout(selection_layout)
         layout.addWidget(self.config_table, stretch=1)
-        layout.addWidget(self.validate_button)
+        layout.addLayout(action_layout)
+        layout.addLayout(progress_layout)
+        layout.addWidget(self.output_path_label)
+        layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
 
         central_widget = QWidget()
@@ -166,6 +218,10 @@ class MainWindow(QMainWindow):
         self._show_result(result)
 
     def _show_result(self, result: CSVInspectionResult) -> None:
+        self._inspection_result = result
+        self._configuration_validated = False
+        self.generate_button.setEnabled(False)
+        self._clear_output_result()
         self.file_name_label.setText(result.path.name)
         self.path_field.setText(str(result.path))
         self.encoding_label.setText(result.encoding)
@@ -194,6 +250,10 @@ class MainWindow(QMainWindow):
         self._set_status(status, is_error=is_error)
 
     def _reset_details(self) -> None:
+        self._inspection_result = None
+        self._configuration_validated = False
+        self.generate_button.setEnabled(False)
+        self._clear_output_result()
         self.file_name_label.setText("—")
         self.path_field.clear()
         self.encoding_label.setText("—")
@@ -275,6 +335,8 @@ class MainWindow(QMainWindow):
         self._configuration_changed()
 
     def _configuration_changed(self) -> None:
+        self._configuration_validated = False
+        self.generate_button.setEnabled(False)
         self._set_status(
             "Configuração alterada. Use “Validar configuração” para conferir.",
             is_error=False,
@@ -320,13 +382,183 @@ class MainWindow(QMainWindow):
         result = validate_configuration(self._column_configs)
         self._refresh_row_statuses()
         if result.is_valid:
+            self._configuration_validated = True
+            self.generate_button.setEnabled(True)
             suffix = "coluna" if result.selected_count == 1 else "colunas"
             self._set_status(
                 f"Configuração válida para {result.selected_count} {suffix}.",
                 is_error=False,
             )
         else:
+            self._configuration_validated = False
+            self.generate_button.setEnabled(False)
             self._set_status(result.error_message or "Configuração inválida.", is_error=True)
+
+    def _choose_output_file(self) -> None:
+        if self._inspection_result is None or not self._configuration_validated:
+            self._set_status("Valide a configuração antes de gerar o arquivo.", is_error=True)
+            return
+        if self._worker is not None and self._worker.isRunning():
+            return
+
+        source = self._inspection_result.path
+        suggested_path = source.with_name(f"{source.stem}_anonimizado.csv")
+        selected_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar CSV anonimizado",
+            str(suggested_path),
+            "Arquivos CSV (*.csv)",
+        )
+        if not selected_path:
+            self._set_status("Geração do arquivo cancelada.", is_error=False)
+            return
+
+        destination = Path(selected_path)
+        if destination.suffix.lower() != ".csv":
+            destination = destination.with_suffix(".csv")
+        if paths_refer_to_same_file(source, destination):
+            self._set_status(
+                "O arquivo de saída não pode ser o mesmo CSV original.",
+                is_error=True,
+            )
+            return
+
+        overwrite = destination.exists()
+        if overwrite:
+            answer = QMessageBox.question(
+                self,
+                "Confirmar substituição",
+                "O arquivo de saída já existe. Deseja substituí-lo?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self._set_status("O arquivo existente não foi alterado.", is_error=False)
+                return
+
+        self._start_processing(destination, overwrite=overwrite)
+
+    def _start_processing(self, destination: Path, *, overwrite: bool) -> None:
+        if self._inspection_result is None:
+            return
+        self._clear_output_result()
+        self._set_processing_state(True)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(True)
+        self.processed_count_label.setText("0 registros processados")
+        self.processed_count_label.setVisible(True)
+        self._set_status("Gerando o CSV anonimizado...", is_error=False)
+
+        worker = AnonymizationWorker(
+            self._inspection_result,
+            str(destination),
+            self._column_configs,
+            self._key_provider,
+            overwrite=overwrite,
+        )
+        self._worker = worker
+        worker.progress.connect(self._processing_progress)
+        worker.completed.connect(self._processing_completed)
+        worker.cancelled.connect(self._processing_cancelled)
+        worker.failed.connect(self._processing_failed)
+        worker.finished.connect(self._worker_finished)
+        worker.start()
+
+    def _processing_progress(self, records_processed: int) -> None:
+        self.processed_count_label.setText(
+            f"{records_processed} registros processados"
+        )
+
+    def _processing_completed(self, result: AnonymizationResult) -> None:
+        self._set_processing_state(False)
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(1)
+        self.processed_count_label.setText(
+            f"{result.records_processed} registros processados"
+        )
+        self._last_output_path = result.output_path
+        self.output_path_label.setText(f"Arquivo gerado: {result.output_path}")
+        self.output_path_label.setVisible(True)
+        self.open_folder_button.setVisible(True)
+        self.open_folder_button.setEnabled(True)
+        self._set_status(
+            "CSV anonimizado gerado com sucesso em "
+            f"aproximadamente {result.duration_seconds:.2f} segundos.",
+            is_error=False,
+        )
+
+    def _processing_cancelled(self) -> None:
+        self._set_processing_state(False)
+        self.progress_bar.setVisible(False)
+        self.processed_count_label.setVisible(False)
+        self._set_status("A geração do CSV foi cancelada.", is_error=False)
+
+    def _processing_failed(self, error: Exception) -> None:
+        self._last_processing_error = error
+        self._set_processing_state(False)
+        self.progress_bar.setVisible(False)
+        self.processed_count_label.setVisible(False)
+        if isinstance(error, (CSVAnonymizationError, KeyProviderError)):
+            message = str(error)
+        else:
+            message = "Não foi possível gerar o arquivo CSV anonimizado."
+        self._set_status(message, is_error=True)
+
+    def _worker_finished(self) -> None:
+        worker = self._worker
+        self._worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def cancel_processing(self) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.request_cancel()
+            self.cancel_button.setEnabled(False)
+            self._set_status("Cancelamento solicitado...", is_error=False)
+
+    def _set_processing_state(self, processing: bool) -> None:
+        has_file = self._inspection_result is not None
+        self.select_button.setEnabled(not processing)
+        self.clear_button.setEnabled(not processing and has_file)
+        self.config_table.setEnabled(not processing)
+        self.select_all_button.setEnabled(not processing and has_file)
+        self.unselect_all_button.setEnabled(not processing and has_file)
+        self.validate_button.setEnabled(not processing and has_file)
+        self.generate_button.setEnabled(
+            not processing and has_file and self._configuration_validated
+        )
+        self.cancel_button.setVisible(processing)
+        self.cancel_button.setEnabled(processing)
+
+    def _clear_output_result(self) -> None:
+        self._last_output_path = None
+        self.output_path_label.clear()
+        self.output_path_label.setVisible(False)
+        self.open_folder_button.setVisible(False)
+        self.open_folder_button.setEnabled(False)
+        self.progress_bar.setVisible(False)
+        self.processed_count_label.setVisible(False)
+
+    def open_output_folder(self) -> None:
+        if self._last_output_path is None:
+            return
+        opened = QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(self._last_output_path.parent))
+        )
+        if not opened:
+            self._set_status("Não foi possível abrir a pasta do arquivo.", is_error=True)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.request_cancel()
+            if not self._worker.wait(5000):
+                event.ignore()
+                self._set_status(
+                    "Aguarde o cancelamento do processamento antes de fechar.",
+                    is_error=False,
+                )
+                return
+        super().closeEvent(event)
 
     def _set_status(self, message: str, *, is_error: bool) -> None:
         color = "#b42318" if is_error else "#276749"

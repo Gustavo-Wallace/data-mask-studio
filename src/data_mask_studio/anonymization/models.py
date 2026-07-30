@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -28,3 +29,11 @@ class ConfigurationValidationResult:
     column_results: list[ColumnValidationResult]
     error_message: str | None = None
 
+
+@dataclass(frozen=True, slots=True)
+class AnonymizationResult:
+    """Resumo de um arquivo CSV anonimizado com sucesso."""
+
+    output_path: Path
+    records_processed: int
+    duration_seconds: float

@@ -7,6 +7,11 @@ from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
 
 
+class FixedKeyProvider:
+    def get_key(self) -> bytes:
+        return b"T" * 32
+
+
 def test_application_and_main_window_startup() -> None:
     application = create_application([])
     window = MainWindow()
@@ -66,6 +71,14 @@ def test_window_configures_and_validates_columns(tmp_path: Path) -> None:
     window.validate_button.click()
 
     assert window.status_label.text() == "Configuração válida para 2 colunas."
+    assert window.generate_button.isEnabled()
+
+    window._prefix_fields[0].setText("INVALID-prefix")
+
+    assert not window.generate_button.isEnabled()
+
+    window._prefix_fields[0].setText("NOME_COMPLETO")
+    window.validate_button.click()
 
     window.unselect_all_button.click()
     window.validate_button.click()
@@ -95,6 +108,33 @@ def test_loading_another_csv_discards_column_configuration(tmp_path: Path) -> No
     assert all(not checkbox.isChecked() for checkbox in window._checkboxes)
     assert all(not field.isEnabled() for field in window._prefix_fields)
     assert all(field.text() == "" for field in window._prefix_fields)
+
+    window.close()
+    application.quit()
+
+
+def test_window_generates_csv_in_background(tmp_path: Path) -> None:
+    csv_path = tmp_path / "people.csv"
+    csv_path.write_text("name,age\nAna,30\nBruna,40\n", encoding="utf-8")
+    output_path = tmp_path / "people_anonymized.csv"
+    application = create_application([])
+    window = MainWindow(key_provider=FixedKeyProvider())
+    window.load_csv(str(csv_path))
+    window._checkboxes[0].setChecked(True)
+    window.validate_button.click()
+
+    window._start_processing(output_path, overwrite=False)
+    worker = window._worker
+
+    assert worker is not None
+    assert worker.wait(5000)
+    application.processEvents()
+
+    assert output_path.exists()
+    assert "gerado com sucesso" in window.status_label.text()
+    assert str(output_path) in window.output_path_label.text()
+    assert window.processed_count_label.text() == "2 registros processados"
+    assert not window.open_folder_button.isHidden()
 
     window.close()
     application.quit()
