@@ -38,6 +38,7 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
     paths_refer_to_same_file,
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
+from data_mask_studio.gui.batch_widget import BatchWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -259,12 +260,23 @@ class MainWindow(QMainWindow):
 
         anonymization_widget = QWidget()
         anonymization_widget.setLayout(layout)
+        self.batch_widget = BatchWidget(
+            self._profile_service,
+            self._key_provider,
+            self._vault_repository_factory,
+        )
         self.consultant_widget = ConsultantWidget(self._vault_repository_factory)
         self.tabs = QTabWidget()
         self.tabs.addTab(anonymization_widget, "Anonimizar CSV")
+        self.tabs.addTab(self.batch_widget, "Anonimização em lote")
         self.tabs.addTab(self.consultant_widget, "Consultar cofre")
+        self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)
         self._refresh_profiles()
+
+    def _tab_changed(self, index: int) -> None:
+        if index == 1:
+            self.batch_widget.refresh_profiles()
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -521,6 +533,8 @@ class MainWindow(QMainWindow):
                 self.profile_combo.setCurrentIndex(index)
         del blocker
         self._update_profile_actions()
+        if hasattr(self, "batch_widget"):
+            self.batch_widget.refresh_profiles()
 
     def _selected_profile(self) -> ConfigurationProfile | None:
         identifier = self.profile_combo.currentData()
@@ -889,6 +903,12 @@ class MainWindow(QMainWindow):
                     is_error=False,
                 )
                 return
+        if not self.batch_widget.stop_workers():
+            event.ignore()
+            self._set_status(
+                "Aguarde o cancelamento do lote antes de fechar.", is_error=False
+            )
+            return
         self.consultant_widget.clear_consultation()
         super().closeEvent(event)
 
