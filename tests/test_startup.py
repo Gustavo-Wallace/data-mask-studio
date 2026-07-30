@@ -5,6 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
+from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.vault import VaultCipher, VaultRepository
 
 
@@ -47,6 +48,9 @@ def test_window_displays_and_clears_csv(tmp_path: Path) -> None:
     assert window.config_table.rowCount() == 2
     assert window.config_table.item(0, 1).text() == "name"
     assert window.config_table.item(1, 1).text() == "age"
+    assert window.config_table.columnCount() == 5
+    assert window._normalization_fields[0].currentText() == "Valor exato"
+    assert not window._normalization_fields[0].isEnabled()
     assert window.status_label.text() == "Cabeçalhos lidos com sucesso."
 
     window.clear_button.click()
@@ -71,6 +75,11 @@ def test_window_configures_and_validates_columns(tmp_path: Path) -> None:
     assert window._prefix_fields[0].text() == "NOME_COMPLETO"
     assert window._prefix_fields[1].text() == "CPF_ID"
     assert window.selected_count_label.text() == "2 de 2 colunas selecionadas"
+    assert window._normalization_fields[0].isEnabled()
+    cpf_index = window._normalization_fields[0].findData(NormalizationRule.CPF.value)
+    window._normalization_fields[0].setCurrentIndex(cpf_index)
+    assert window._column_configs[0].normalization_rule is NormalizationRule.CPF
+    window._normalization_fields[0].setCurrentIndex(0)
 
     window.validate_button.click()
 

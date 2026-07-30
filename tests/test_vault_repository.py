@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.vault import (
     MappingCandidate,
     VaultCipher,
@@ -42,8 +43,13 @@ def test_database_and_versioned_schema_are_created_automatically(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
             ("vault_mappings",),
         ).fetchone()
-    assert version == 1
+        variations_table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+            ("vault_variations",),
+        ).fetchone()
+    assert version == 2
     assert table == ("vault_mappings",)
+    assert variations_table == ("vault_variations",)
     repository_connection = connect(repository.database_path)
     try:
         assert repository_connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -167,3 +173,40 @@ def test_multiple_prefixes_and_headers_are_preserved(tmp_path: Path) -> None:
     assert first is not None and second is not None
     assert (first.prefix, first.source_header) == ("NOME", "Nome Completo")
     assert (second.prefix, second.source_header) == ("EMAIL", "E-mail Corporativo")
+
+
+def test_variations_can_preserve_different_normalization_rules(
+    tmp_path: Path,
+) -> None:
+    repository, _ = make_repository(tmp_path)
+    exact = MappingCandidate(
+        "ID-ABCDEFGHI234",
+        "ID",
+        "123",
+        "Identificador",
+        canonical_value="123",
+        normalization_rule=NormalizationRule.EXACT,
+    )
+    digits = MappingCandidate(
+        "ID-ABCDEFGHI234",
+        "ID",
+        "ID-123",
+        "Identificador",
+        canonical_value="123",
+        normalization_rule=NormalizationRule.DIGITS_ONLY,
+    )
+
+    with repository.transaction() as transaction:
+        transaction.upsert_batch([exact])
+    with repository.transaction() as transaction:
+        transaction.upsert_batch([digits])
+
+    mapping = repository.get_decrypted_mapping("ID-ABCDEFGHI234")
+
+    assert mapping is not None
+    assert [item.original_value for item in mapping.variations] == ["123", "ID-123"]
+    assert [item.normalization_rule for item in mapping.variations] == [
+        NormalizationRule.EXACT,
+        NormalizationRule.DIGITS_ONLY,
+    ]
+    assert mapping.occurrence_count == 2

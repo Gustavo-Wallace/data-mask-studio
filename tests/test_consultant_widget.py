@@ -5,6 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
+from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.vault import MappingCandidate, VaultCipher, VaultRepository
 
 CODE = "NOME-ABCDEFGHI234"
@@ -43,8 +44,8 @@ def test_consult_copy_and_clear_interface(tmp_path: Path) -> None:
 
     displayed = widget.results_output.toPlainText()
     assert f"Código: {CODE}" in displayed
-    assert f"Valor original: {ORIGINAL_VALUE}" in displayed
-    assert "Ocorrências: 2" in displayed
+    assert f"Valor original principal: {ORIGINAL_VALUE}" in displayed
+    assert "Ocorrências totais: 2" in displayed
     assert widget.copy_button.isEnabled()
 
     widget.copy_button.click()
@@ -79,4 +80,52 @@ def test_new_widget_has_no_persisted_query_history(tmp_path: Path) -> None:
     assert not second_widget.copy_button.isEnabled()
 
     second_widget.close()
+    application.quit()
+
+
+def test_consultant_displays_normalization_and_multiple_variations(
+    tmp_path: Path,
+) -> None:
+    application = create_application([])
+    repository = VaultRepository(tmp_path / "vault.db", VaultCipher(b"G" * 32))
+    with repository.transaction() as transaction:
+        transaction.upsert_batch(
+            [
+                MappingCandidate(
+                    CODE,
+                    "NOME",
+                    "João  da Silva",
+                    "Nome",
+                    canonical_value="João da Silva",
+                    normalization_rule=NormalizationRule.COLLAPSE_WHITESPACE,
+                )
+            ]
+        )
+    with repository.transaction() as transaction:
+        transaction.upsert_batch(
+            [
+                MappingCandidate(
+                    CODE,
+                    "NOME",
+                    " João da Silva ",
+                    "Nome",
+                    occurrences=2,
+                    canonical_value="João da Silva",
+                    normalization_rule=NormalizationRule.COLLAPSE_WHITESPACE,
+                )
+            ]
+        )
+    widget = ConsultantWidget(lambda: repository)
+    widget.codes_input.setPlainText(CODE)
+
+    widget.consult()
+
+    displayed = widget.results_output.toPlainText()
+    assert "Regra de normalização: Texto sem espaços extras" in displayed
+    assert "Valor original principal: João  da Silva" in displayed
+    assert "Outra variação original 1:  João da Silva " in displayed
+    assert "Ocorrências da variação: 2" in displayed
+    assert "Ocorrências totais: 3" in displayed
+
+    widget.close()
     application.quit()

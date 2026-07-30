@@ -6,6 +6,7 @@ from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QHeaderView,
@@ -38,6 +39,10 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.security import KeyProvider, KeyProviderError, LocalKeyProvider
+from data_mask_studio.normalization import (
+    NORMALIZATION_OPTIONS,
+    NormalizationRule,
+)
 from data_mask_studio.vault import (
     VaultError,
     VaultRepository,
@@ -122,9 +127,9 @@ class MainWindow(QMainWindow):
         selection_layout.addStretch()
         selection_layout.addWidget(self.selected_count_label)
 
-        self.config_table = QTableWidget(0, 4)
+        self.config_table = QTableWidget(0, 5)
         self.config_table.setHorizontalHeaderLabels(
-            ["Anonimizar", "Cabeçalho", "Prefixo", "Status"]
+            ["Anonimizar", "Cabeçalho", "Prefixo", "Normalização", "Status"]
         )
         self.config_table.setAlternatingRowColors(True)
         self.config_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -133,7 +138,8 @@ class MainWindow(QMainWindow):
         table_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         table_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         table_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        table_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        table_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        table_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
         self.validate_button = QPushButton("Validar configuração")
         self.validate_button.clicked.connect(self.validate_current_configuration)
@@ -156,6 +162,7 @@ class MainWindow(QMainWindow):
         self._column_configs: list[ColumnConfig] = []
         self._checkboxes: list[QCheckBox] = []
         self._prefix_fields: list[QLineEdit] = []
+        self._normalization_fields: list[QComboBox] = []
         self._inspection_result: CSVInspectionResult | None = None
         self._configuration_validated = False
         self._key_provider = key_provider or LocalKeyProvider()
@@ -306,9 +313,16 @@ class MainWindow(QMainWindow):
             prefix_field.setPlaceholderText("Marque a coluna para definir")
             self.config_table.setCellWidget(row, 2, prefix_field)
 
+            normalization_field = QComboBox()
+            for rule, label in NORMALIZATION_OPTIONS:
+                normalization_field.addItem(label, rule.value)
+            normalization_field.setCurrentIndex(0)
+            normalization_field.setEnabled(False)
+            self.config_table.setCellWidget(row, 3, normalization_field)
+
             status_item = QTableWidgetItem("Não selecionada")
             status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.config_table.setItem(row, 3, status_item)
+            self.config_table.setItem(row, 4, status_item)
 
             checkbox.toggled.connect(
                 lambda checked, current_row=row: self._column_toggled(
@@ -318,8 +332,14 @@ class MainWindow(QMainWindow):
             prefix_field.textChanged.connect(
                 lambda text, current_row=row: self._prefix_changed(current_row, text)
             )
+            normalization_field.currentIndexChanged.connect(
+                lambda _index, current_row=row: self._normalization_changed(
+                    current_row
+                )
+            )
             self._checkboxes.append(checkbox)
             self._prefix_fields.append(prefix_field)
+            self._normalization_fields.append(normalization_field)
 
         has_headers = bool(headers)
         self.select_all_button.setEnabled(has_headers)
@@ -332,6 +352,7 @@ class MainWindow(QMainWindow):
         self._column_configs = []
         self._checkboxes = []
         self._prefix_fields = []
+        self._normalization_fields = []
         self.select_all_button.setEnabled(False)
         self.unselect_all_button.setEnabled(False)
         self.validate_button.setEnabled(False)
@@ -340,8 +361,10 @@ class MainWindow(QMainWindow):
     def _column_toggled(self, row: int, checked: bool) -> None:
         configuration = self._column_configs[row]
         prefix_field = self._prefix_fields[row]
+        normalization_field = self._normalization_fields[row]
         configuration.anonymize = checked
         prefix_field.setEnabled(checked)
+        normalization_field.setEnabled(checked)
         if checked and not prefix_field.text():
             prefix_field.setText(normalize_prefix(configuration.header))
         self._update_selected_count()
@@ -351,6 +374,11 @@ class MainWindow(QMainWindow):
     def _prefix_changed(self, row: int, text: str) -> None:
         self._column_configs[row].prefix = text
         self._refresh_row_statuses()
+        self._configuration_changed()
+
+    def _normalization_changed(self, row: int) -> None:
+        value = self._normalization_fields[row].currentData()
+        self._column_configs[row].normalization_rule = NormalizationRule(value)
         self._configuration_changed()
 
     def _configuration_changed(self) -> None:
@@ -382,7 +410,7 @@ class MainWindow(QMainWindow):
         for row, (configuration, row_result) in enumerate(
             zip(self._column_configs, result.column_results, strict=True)
         ):
-            status_item = self.config_table.item(row, 3)
+            status_item = self.config_table.item(row, 4)
             prefix_field = self._prefix_fields[row]
             if not configuration.anonymize:
                 status_item.setText("Não selecionada")

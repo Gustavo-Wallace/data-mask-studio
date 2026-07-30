@@ -72,12 +72,12 @@ def test_tampered_mapping_fails_safely_without_sensitive_details(
     repository = make_repository(tmp_path)
     with sqlite3.connect(repository.database_path) as connection:
         encrypted = connection.execute(
-            "SELECT encrypted_value FROM vault_mappings WHERE code = ?",
+            "SELECT encrypted_value FROM vault_variations WHERE code = ?",
             (EXISTING_CODE,),
         ).fetchone()[0]
         tampered = bytes([encrypted[0] ^ 1]) + encrypted[1:]
         connection.execute(
-            "UPDATE vault_mappings SET encrypted_value = ? WHERE code = ?",
+            "UPDATE vault_variations SET encrypted_value = ? WHERE code = ?",
             (tampered, EXISTING_CODE),
         )
     service = ConsultantService(lambda: repository)
@@ -96,4 +96,3 @@ def test_tampered_mapping_fails_safely_without_sensitive_details(
     ]
     visible_text = f"{result.message} {result!r}"
     assert all(fragment not in visible_text for fragment in forbidden_fragments)
-

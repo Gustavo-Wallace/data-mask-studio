@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from data_mask_studio.anonymization import ColumnConfig, generate_token
+from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.csv_tools.csv_anonymizer import (
     CSVAnonymizationError,
     ProcessingCancelled,
@@ -437,5 +438,159 @@ def test_vault_collision_blocks_csv_without_exposing_values(tmp_path: Path) -> N
     assert "Ana" not in visible_error + technical_cause
     assert sensitive_sentinel not in visible_error + technical_cause
     assert source.read_bytes() == original_content
+    assert repository.count() == 1
+    assert not destination.exists()
+
+
+def test_cpf_variations_generate_same_token_and_are_preserved(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "cpf.csv"
+    source.write_text(
+        "CPF\n123.456.789-00\n12345678900\n123.456.789-00\n",
+        encoding="utf-8",
+    )
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+    configuration = [
+        ColumnConfig(
+            "CPF",
+            True,
+            "CPF",
+            NormalizationRule.CPF,
+        )
+    ]
+
+    anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=configuration,
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    assert rows[1][0] == rows[2][0] == rows[3][0]
+    mapping = repository.get_decrypted_mapping(rows[1][0])
+    assert mapping is not None
+    assert mapping.normalization_rule is NormalizationRule.CPF
+    assert mapping.occurrence_count == 3
+    assert len(mapping.variations) == 2
+    occurrences = {
+        variation.original_value: variation.occurrence_count
+        for variation in mapping.variations
+    }
+    assert occurrences == {"123.456.789-00": 2, "12345678900": 1}
+    for database_file in tmp_path.glob("vault.db*"):
+        stored_bytes = database_file.read_bytes()
+        assert b"12345678900" not in stored_bytes
+        assert b"123.456.789-00" not in stored_bytes
+
+
+def test_same_canonical_value_with_different_prefixes_has_different_tokens(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "cpf.csv"
+    source.write_text(
+        "primary,secondary\n123.456.789-00,12345678900\n",
+        encoding="utf-8",
+    )
+    destination = tmp_path / "output.csv"
+    configurations = [
+        ColumnConfig("primary", True, "CPF_A", NormalizationRule.CPF),
+        ColumnConfig("secondary", True, "CPF_B", NormalizationRule.CPF),
+    ]
+
+    anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=configurations,
+        secret_key=KEY,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        row = list(csv.reader(output_file))[1]
+    assert row[0] != row[1]
+    assert row[0].startswith("CPF_A-")
+    assert row[1].startswith("CPF_B-")
+
+
+def test_normalization_error_rolls_back_vault_and_removes_output(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "cpf.csv"
+    original_content = b"CPF\n123.456.789-00\ninvalid-sensitive-value\n"
+    source.write_bytes(original_content)
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+
+    with pytest.raises(CSVAnonymizationError) as captured:
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[
+                ColumnConfig("CPF", True, "CPF", NormalizationRule.CPF)
+            ],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=1,
+        )
+
+    message = str(captured.value)
+    cause_messages: list[str] = []
+    cause = captured.value.__cause__
+    while cause is not None:
+        cause_messages.append(str(cause))
+        cause = cause.__cause__
+    assert "coluna ‘CPF’" in message
+    assert "linha 3" in message
+    assert "invalid-sensitive-value" not in message
+    assert all("invalid-sensitive-value" not in text for text in cause_messages)
+    assert repository.count() == 0
+    assert source.read_bytes() == original_content
+    assert not destination.exists()
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_real_collision_compares_canonical_value(tmp_path: Path) -> None:
+    source = tmp_path / "cpf.csv"
+    source.write_text("CPF\n123.456.789-00\n", encoding="utf-8")
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+    code = generate_token(KEY, "CPF", "12345678900")
+    with repository.transaction() as transaction:
+        transaction.upsert_batch(
+            [
+                MappingCandidate(
+                    code,
+                    "CPF",
+                    "different-sensitive-value",
+                    "CPF",
+                    canonical_value="00000000000",
+                    normalization_rule=NormalizationRule.CPF,
+                )
+            ]
+        )
+
+    with pytest.raises(CSVAnonymizationError, match="conflito de código"):
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[
+                ColumnConfig("CPF", True, "CPF", NormalizationRule.CPF)
+            ],
+            secret_key=KEY,
+            vault_repository=repository,
+        )
+
     assert repository.count() == 1
     assert not destination.exists()

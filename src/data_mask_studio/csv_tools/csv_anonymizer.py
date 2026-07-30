@@ -7,7 +7,10 @@ from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from pathlib import Path
 
-from data_mask_studio.anonymization.anonymizer import anonymize_row
+from data_mask_studio.anonymization.anonymizer import (
+    ColumnNormalizationError,
+    anonymize_row_with_canonical_values,
+)
 from data_mask_studio.anonymization.column_config import validate_configuration
 from data_mask_studio.anonymization.models import AnonymizationResult, ColumnConfig
 from data_mask_studio.vault import MappingCandidate, VaultCollisionError, VaultError
@@ -92,15 +95,31 @@ def anonymize_csv(
                     for row in reader:
                         if should_cancel is not None and should_cancel():
                             raise ProcessingCancelled("A geração do CSV foi cancelada.")
-                        anonymized_row = anonymize_row(row, configurations, secret_key)
+                        try:
+                            anonymized_row, canonical_values = (
+                                anonymize_row_with_canonical_values(
+                                    row, configurations, secret_key
+                                )
+                            )
+                        except ColumnNormalizationError as error:
+                            configuration = configurations[error.column_index]
+                            raise CSVAnonymizationError(
+                                "Não foi possível normalizar um valor da coluna "
+                                f"‘{configuration.header}’ na linha "
+                                f"{reader.line_num}."
+                            ) from error
                         if vault_transaction is not None:
                             _collect_mappings(
                                 row,
                                 anonymized_row,
+                                canonical_values,
                                 configurations,
                                 pending_mappings,
                             )
-                            if len(pending_mappings) >= mapping_batch_size:
+                            if (
+                                len(pending_mappings) >= mapping_batch_size
+                                or (records_processed + 1) % mapping_batch_size == 0
+                            ):
                                 _flush_mappings(vault_transaction, pending_mappings)
                         writer.writerow(anonymized_row)
                         records_processed += 1
@@ -152,11 +171,16 @@ def anonymize_csv(
 def _collect_mappings(
     original_row: Sequence[str],
     anonymized_row: Sequence[str],
+    canonical_values: dict[int, str],
     configurations: Sequence[ColumnConfig],
     pending: dict[str, MappingCandidate],
 ) -> None:
     for index, configuration in enumerate(configurations):
-        if not configuration.anonymize or index >= len(original_row):
+        if (
+            not configuration.anonymize
+            or index >= len(original_row)
+            or index not in canonical_values
+        ):
             continue
         original_value = original_row[index]
         if original_value == "" or original_value.isspace():
@@ -169,17 +193,19 @@ def _collect_mappings(
                 prefix=configuration.prefix,
                 original_value=original_value,
                 source_header=configuration.header,
+                canonical_value=canonical_values[index],
+                normalization_rule=configuration.normalization_rule,
             )
             continue
-        values_match = hmac.compare_digest(
-            existing.original_value.encode("utf-8"),
-            original_value.encode("utf-8"),
+        canonical_matches = hmac.compare_digest(
+            (existing.canonical_value or "").encode("utf-8"),
+            canonical_values[index].encode("utf-8"),
         )
-        if existing.prefix != configuration.prefix or not values_match:
+        if existing.prefix != configuration.prefix or not canonical_matches:
             raise VaultCollisionError(
                 "Foi detectado um conflito de código no cofre local."
             )
-        existing.occurrences += 1
+        existing.add_variation(original_value, configuration.normalization_rule)
 
 
 def _flush_mappings(

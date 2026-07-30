@@ -40,7 +40,12 @@ class AnonymizationWorker(QThread):
         self._inspection = inspection
         self._output_path = output_path
         self._configurations = [
-            ColumnConfig(item.header, item.anonymize, item.prefix)
+            ColumnConfig(
+                item.header,
+                item.anonymize,
+                item.prefix,
+                item.normalization_rule,
+            )
             for item in configurations
         ]
         self._key_provider = key_provider

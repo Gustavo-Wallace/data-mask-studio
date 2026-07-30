@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from data_mask_studio.normalization import NormalizationRule
+
 
 @dataclass(slots=True)
 class ColumnConfig:
@@ -9,6 +11,7 @@ class ColumnConfig:
     header: str
     anonymize: bool = False
     prefix: str = ""
+    normalization_rule: NormalizationRule = NormalizationRule.EXACT
 
 
 @dataclass(frozen=True, slots=True)

@@ -16,6 +16,7 @@ from data_mask_studio.consultant import (
     ConsultationResult,
     ConsultationStatus,
 )
+from data_mask_studio.normalization import normalization_label
 from data_mask_studio.vault import VaultRepository
 
 
@@ -128,15 +129,28 @@ def _render_result(result: ConsultationResult) -> str:
         return f"Código: {result.code}\n{result.message or 'Consulta indisponível.'}"
 
     mapping = result.mapping
-    return "\n".join(
-        (
-            f"Código: {mapping.code}",
-            f"Prefixo: {mapping.prefix}",
-            f"Cabeçalho de origem: {mapping.source_header}",
-            f"Valor original: {mapping.original_value}",
-            f"Primeira aparição: {mapping.first_seen}",
-            f"Última aparição: {mapping.last_seen}",
-            f"Ocorrências: {mapping.occurrence_count}",
+    primary = mapping.variations[0]
+    lines = [
+        f"Código: {mapping.code}",
+        f"Prefixo: {mapping.prefix}",
+        f"Cabeçalho de origem: {mapping.source_header}",
+        f"Regra de normalização: {normalization_label(mapping.normalization_rule)}",
+        f"Primeira aparição do código: {mapping.first_seen}",
+        f"Última aparição do código: {mapping.last_seen}",
+        f"Valor original principal: {primary.original_value}",
+        f"Primeira aparição da variação: {primary.first_seen}",
+        f"Última aparição da variação: {primary.last_seen}",
+        f"Ocorrências desta variação: {primary.occurrence_count}",
+    ]
+    for index, variation in enumerate(mapping.variations[1:], start=1):
+        lines.extend(
+            (
+                "",
+                f"Outra variação original {index}: {variation.original_value}",
+                f"Primeira aparição da variação: {variation.first_seen}",
+                f"Última aparição da variação: {variation.last_seen}",
+                f"Ocorrências da variação: {variation.occurrence_count}",
+            )
         )
-    )
-
+    lines.extend(("", f"Ocorrências totais: {mapping.occurrence_count}"))
+    return "\n".join(lines)
