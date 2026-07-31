@@ -10,7 +10,12 @@ from data_mask_studio.normalization import (
     NormalizationRule,
     normalize_value,
 )
-from data_mask_studio.vault.database import connect, initialize_schema
+from data_mask_studio.vault.database import (
+    SCHEMA_VERSION,
+    connect,
+    connect_read_only,
+    initialize_schema,
+)
 from data_mask_studio.vault.encryption import VaultCipher
 from data_mask_studio.vault.exceptions import VaultCollisionError, VaultError
 from data_mask_studio.vault.models import (
@@ -27,13 +32,49 @@ from data_mask_studio.vault.models import (
 class VaultRepository:
     """Persiste valores canônicos e suas variações originais criptografadas."""
 
-    def __init__(self, database_path: str | Path, cipher: VaultCipher) -> None:
+    def __init__(
+        self,
+        database_path: str | Path,
+        cipher: VaultCipher,
+        *,
+        read_only: bool = False,
+    ) -> None:
         self.database_path = Path(database_path)
         self._cipher = cipher
-        initialize_schema(self.database_path, cipher)
+        self._read_only = read_only
+        if read_only:
+            self._validate_read_only_schema()
+        else:
+            initialize_schema(self.database_path, cipher)
+
+    def as_read_only(self) -> "VaultRepository":
+        """Cria uma visao que o SQLite impede de alterar."""
+        if self._read_only:
+            return self
+        return VaultRepository(self.database_path, self._cipher, read_only=True)
+
+    def _validate_read_only_schema(self) -> None:
+        connection = connect_read_only(self.database_path)
+        try:
+            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if version != SCHEMA_VERSION:
+                raise VaultError("A versao do cofre local nao e compativel.")
+        except sqlite3.Error as error:
+            raise VaultError("Nao foi possivel consultar o cofre local.") from error
+        finally:
+            connection.close()
+
+    def _connect_for_read(self) -> sqlite3.Connection:
+        return (
+            connect_read_only(self.database_path)
+            if self._read_only
+            else connect(self.database_path)
+        )
 
     @contextmanager
     def transaction(self) -> Iterator["VaultTransaction"]:
+        if self._read_only:
+            raise VaultError("O cofre esta aberto somente para leitura.")
         connection = connect(self.database_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -50,7 +91,7 @@ class VaultRepository:
             connection.close()
 
     def get_record(self, code: str) -> VaultRecord | None:
-        connection = connect(self.database_path)
+        connection = self._connect_for_read()
         try:
             row = connection.execute(
                 "SELECT code, prefix, "
@@ -67,7 +108,7 @@ class VaultRepository:
             connection.close()
 
     def count(self) -> int:
-        connection = connect(self.database_path)
+        connection = self._connect_for_read()
         try:
             return int(
                 connection.execute("SELECT COUNT(*) FROM vault_mappings").fetchone()[0]
@@ -147,10 +188,11 @@ class VaultRepository:
             occurrence_count=record.occurrence_count,
             normalization_rule=record.normalization_rule,
             variations=decrypted_variations,
+            canonical_value=canonical_value,
         )
 
     def _get_variations(self, code: str) -> list[VaultVariationRecord]:
-        connection = connect(self.database_path)
+        connection = self._connect_for_read()
         try:
             rows = connection.execute(
                 "SELECT identifier, code, encrypted_value, nonce, first_seen, "

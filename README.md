@@ -10,6 +10,9 @@ Data Mask Studio é uma aplicação desktop local para anonimização reversíve
 - consultar valores pelo cofre local criptografado;
 - criar backups criptografados;
 - recuperar o cofre, as chaves e os perfis.
+- restaurar CSVs anonimizados usando o cofre local.
+
+A versão atual permite restaurar seletivamente CSVs anonimizados com os mapeamentos do cofre local.
 
 A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI para proteger as chaves locais.
 
@@ -44,6 +47,7 @@ Fluxo resumido:
 4. Valide a configuração.
 5. Gere o CSV anonimizado.
 6. Use o consultor local quando precisar recuperar um valor específico.
+7. Na aba “Restaurar CSV”, escolha um arquivo anonimizado e as colunas que deseja restaurar.
 
 Perfis salvos também podem ser utilizados na aba de anonimização em lote.
 

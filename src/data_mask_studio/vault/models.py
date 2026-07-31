@@ -105,6 +105,7 @@ class DecryptedVaultMapping:
     occurrence_count: int = 0
     normalization_rule: NormalizationRule = NormalizationRule.EXACT
     variations: tuple[DecryptedVariation, ...] = field(default_factory=tuple, repr=False)
+    canonical_value: str = field(default="", repr=False)
 
 
 @dataclass(frozen=True, slots=True)

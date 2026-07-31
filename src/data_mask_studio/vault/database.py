@@ -67,6 +67,27 @@ def connect(database_path: Path) -> sqlite3.Connection:
         raise VaultError("Não foi possível abrir o cofre local.") from error
 
 
+def connect_read_only(database_path: Path) -> sqlite3.Connection:
+    """Abre um cofre existente sem permitir qualquer alteracao."""
+    try:
+        if not database_path.is_file():
+            raise VaultError("O cofre local nao foi encontrado.")
+        connection = sqlite3.connect(
+            f"{database_path.resolve().as_uri()}?mode=ro",
+            uri=True,
+            timeout=SQLITE_TIMEOUT_SECONDS,
+            isolation_level=None,
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only = ON")
+        connection.execute("PRAGMA busy_timeout = 30000")
+        return connection
+    except VaultError:
+        raise
+    except (OSError, sqlite3.Error) as error:
+        raise VaultError("Nao foi possivel abrir o cofre local.") from error
+
+
 def initialize_schema(database_path: Path, cipher: VaultCipher) -> None:
     connection = connect(database_path)
     try:

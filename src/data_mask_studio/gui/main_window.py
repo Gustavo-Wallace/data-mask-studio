@@ -42,6 +42,7 @@ from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.gui.backup_widget import BackupWidget
 from data_mask_studio.gui.batch_widget import BatchWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
+from data_mask_studio.gui.restoration_widget import RestorationWidget
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
     NormalizationRule,
@@ -65,6 +66,7 @@ from data_mask_studio.vault import (
     VaultKeyProvider,
     VaultRepository,
     create_default_vault_repository,
+    create_default_read_only_vault_repository,
 )
 
 SEPARATOR_NAMES = {
@@ -216,6 +218,11 @@ class MainWindow(QMainWindow):
         self._vault_repository_factory = (
             vault_repository_factory or create_default_vault_repository
         )
+        self._restoration_repository_factory = (
+            create_default_read_only_vault_repository
+            if vault_repository_factory is None
+            else lambda: vault_repository_factory().as_read_only()
+        )
         self._backup_paths = backup_paths or default_environment_paths()
         self._vault_key_provider = vault_key_provider or VaultKeyProvider(
             self._backup_paths.directory
@@ -292,11 +299,15 @@ class MainWindow(QMainWindow):
         self.backup_widget.busy_changed.connect(self._backup_busy_changed)
         self.backup_widget.environment_restored.connect(self._environment_restored)
         self.consultant_widget = ConsultantWidget(self._vault_repository_factory)
+        self.restoration_widget = RestorationWidget(
+            self._restoration_repository_factory
+        )
         self.tabs = QTabWidget()
         self.tabs.addTab(anonymization_widget, "Anonimizar CSV")
         self.tabs.addTab(self.batch_widget, "Anonimização em lote")
-        self.tabs.addTab(self.backup_widget, "Backup e recuperação")
+        self.tabs.addTab(self.restoration_widget, "Restaurar CSV")
         self.tabs.addTab(self.consultant_widget, "Consultar cofre")
+        self.tabs.addTab(self.backup_widget, "Backup e recuperação")
         self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)
         self._refresh_profiles()
@@ -307,7 +318,11 @@ class MainWindow(QMainWindow):
 
     def _prepare_restore(self) -> bool:
         individual_running = self._worker is not None and self._worker.isRunning()
-        if individual_running or self.batch_widget.has_running_workers():
+        if (
+            individual_running
+            or self.batch_widget.has_running_workers()
+            or self.restoration_widget.has_running_worker()
+        ):
             return False
         self.consultant_widget.clear_consultation()
         return True
@@ -959,6 +974,12 @@ class MainWindow(QMainWindow):
             self._set_status(
                 "Aguarde a conclusão segura do backup ou restauração.",
                 is_error=False,
+            )
+            return
+        if not self.restoration_widget.stop_worker():
+            event.ignore()
+            self._set_status(
+                "Aguarde o cancelamento da restauração de CSV.", is_error=False
             )
             return
         self.consultant_widget.clear_consultation()

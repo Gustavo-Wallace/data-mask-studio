@@ -1,6 +1,9 @@
 """Cofre local criptografado de mapeamentos anonimizados."""
 
-from data_mask_studio.vault.defaults import create_default_vault_repository
+from data_mask_studio.vault.defaults import (
+    create_default_read_only_vault_repository,
+    create_default_vault_repository,
+)
 from data_mask_studio.vault.encryption import VaultCipher
 from data_mask_studio.vault.exceptions import (
     VaultCollisionError,
@@ -21,5 +24,5 @@ __all__ = [
     "VaultRepository",
     "VaultUpdateSummary",
     "create_default_vault_repository",
+    "create_default_read_only_vault_repository",
 ]
-
