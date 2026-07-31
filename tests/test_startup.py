@@ -3,6 +3,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtWidgets import QLineEdit
+
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.normalization import NormalizationRule
@@ -32,7 +34,13 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
     assert window.clear_button.text() == "Limpar seleção"
     assert window.tabs.tabText(0) == "Anonimizar CSV"
     assert window.tabs.tabText(1) == "Anonimização em lote"
-    assert window.tabs.tabText(2) == "Consultar cofre"
+    assert window.tabs.tabText(2) == "Backup e recuperação"
+    assert window.tabs.tabText(3) == "Consultar cofre"
+    assert not window.backup_widget.restore_button.isEnabled()
+    assert (
+        window.backup_widget.create_password_field.echoMode()
+        is QLineEdit.EchoMode.Password
+    )
     assert not window.consultant_widget.copy_button.isEnabled()
     assert not window.isVisible()
 

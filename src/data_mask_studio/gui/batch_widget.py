@@ -468,6 +468,12 @@ class BatchWidget(QWidget):
                 stopped = False
         return stopped
 
+    def has_running_workers(self) -> bool:
+        return any(
+            worker is not None and worker.isRunning()
+            for worker in (self._validation_worker, self._processing_worker)
+        )
+
     def _set_status(self, message: str, *, is_error: bool) -> None:
         self.status_label.setText(message)
         self.status_label.setStyleSheet(

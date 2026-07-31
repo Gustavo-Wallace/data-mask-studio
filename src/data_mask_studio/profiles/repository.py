@@ -55,6 +55,16 @@ class ProfileRepository:
                 "O arquivo de perfis está inválido ou não pôde ser lido."
             ) from error
 
+    @staticmethod
+    def parse_bytes(data: bytes) -> list[ConfigurationProfile]:
+        """Valida um documento de perfis recebido sem acessar o perfil local."""
+        try:
+            return _parse_document(json.loads(data.decode("utf-8")))
+        except ProfileFormatError:
+            raise
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise ProfileFormatError("O arquivo de perfis possui formato inválido.") from error
+
     def save(self, profiles: list[ConfigurationProfile]) -> None:
         try:
             validate_unique_names(profiles)

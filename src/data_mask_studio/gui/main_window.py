@@ -32,12 +32,14 @@ from data_mask_studio.anonymization import (
     normalize_prefix,
     validate_configuration,
 )
+from data_mask_studio.backup import EnvironmentPaths, default_environment_paths
 from data_mask_studio.csv_tools import CSVInspectionError, CSVInspectionResult, inspect_csv
 from data_mask_studio.csv_tools.csv_anonymizer import (
     CSVAnonymizationError,
     paths_refer_to_same_file,
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
+from data_mask_studio.gui.backup_widget import BackupWidget
 from data_mask_studio.gui.batch_widget import BatchWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.normalization import (
@@ -51,9 +53,16 @@ from data_mask_studio.profiles import (
     ProfileRepository,
     ProfileService,
 )
-from data_mask_studio.security import KeyProvider, KeyProviderError, LocalKeyProvider
+from data_mask_studio.security import (
+    DataProtector,
+    KeyProvider,
+    KeyProviderError,
+    LocalKeyProvider,
+    WindowsDPAPIProtector,
+)
 from data_mask_studio.vault import (
     VaultError,
+    VaultKeyProvider,
     VaultRepository,
     create_default_vault_repository,
 )
@@ -74,6 +83,9 @@ class MainWindow(QMainWindow):
         key_provider: KeyProvider | None = None,
         vault_repository_factory: Callable[[], VaultRepository] | None = None,
         profile_service: ProfileService | None = None,
+        backup_paths: EnvironmentPaths | None = None,
+        vault_key_provider: KeyProvider | None = None,
+        data_protector: DataProtector | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
@@ -204,6 +216,11 @@ class MainWindow(QMainWindow):
         self._vault_repository_factory = (
             vault_repository_factory or create_default_vault_repository
         )
+        self._backup_paths = backup_paths or default_environment_paths()
+        self._vault_key_provider = vault_key_provider or VaultKeyProvider(
+            self._backup_paths.directory
+        )
+        self._data_protector = data_protector or WindowsDPAPIProtector()
         self._profile_service: ProfileService | None = profile_service
         self._profile_initialization_error: str | None = None
         if self._profile_service is None:
@@ -265,10 +282,20 @@ class MainWindow(QMainWindow):
             self._key_provider,
             self._vault_repository_factory,
         )
+        self.backup_widget = BackupWidget(
+            self._backup_paths,
+            self._key_provider,
+            self._vault_key_provider,
+            self._data_protector,
+            self._prepare_restore,
+        )
+        self.backup_widget.busy_changed.connect(self._backup_busy_changed)
+        self.backup_widget.environment_restored.connect(self._environment_restored)
         self.consultant_widget = ConsultantWidget(self._vault_repository_factory)
         self.tabs = QTabWidget()
         self.tabs.addTab(anonymization_widget, "Anonimizar CSV")
         self.tabs.addTab(self.batch_widget, "Anonimização em lote")
+        self.tabs.addTab(self.backup_widget, "Backup e recuperação")
         self.tabs.addTab(self.consultant_widget, "Consultar cofre")
         self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)
@@ -277,6 +304,24 @@ class MainWindow(QMainWindow):
     def _tab_changed(self, index: int) -> None:
         if index == 1:
             self.batch_widget.refresh_profiles()
+
+    def _prepare_restore(self) -> bool:
+        individual_running = self._worker is not None and self._worker.isRunning()
+        if individual_running or self.batch_widget.has_running_workers():
+            return False
+        self.consultant_widget.clear_consultation()
+        return True
+
+    def _backup_busy_changed(self, busy: bool) -> None:
+        backup_index = self.tabs.indexOf(self.backup_widget)
+        for index in range(self.tabs.count()):
+            if index != backup_index:
+                self.tabs.setTabEnabled(index, not busy)
+
+    def _environment_restored(self) -> None:
+        self.clear_selection(status="Ambiente local restaurado com sucesso.")
+        self.consultant_widget.clear_consultation()
+        self._refresh_profiles()
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -907,6 +952,13 @@ class MainWindow(QMainWindow):
             event.ignore()
             self._set_status(
                 "Aguarde o cancelamento do lote antes de fechar.", is_error=False
+            )
+            return
+        if not self.backup_widget.stop_worker():
+            event.ignore()
+            self._set_status(
+                "Aguarde a conclusão segura do backup ou restauração.",
+                is_error=False,
             )
             return
         self.consultant_widget.clear_consultation()

@@ -63,6 +63,7 @@ vault.db-shm
 /profiles.json
 
 # Saídas geradas pela aplicação
+*.dmsbackup
 *_anonimizado.csv
 *_restaurado.csv
 *.tmp

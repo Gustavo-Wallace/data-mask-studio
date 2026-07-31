@@ -7,7 +7,9 @@ Data Mask Studio é uma aplicação desktop local para anonimização reversíve
 - gerar CSVs anonimizados;
 - processar arquivos em lote;
 - salvar perfis;
-- consultar valores pelo cofre local criptografado.
+- consultar valores pelo cofre local criptografado;
+- criar backups criptografados;
+- recuperar o cofre, as chaves e os perfis.
 
 A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI para proteger as chaves locais.
 
@@ -44,3 +46,5 @@ Fluxo resumido:
 6. Use o consultor local quando precisar recuperar um valor específico.
 
 Perfis salvos também podem ser utilizados na aba de anonimização em lote.
+
+A aba de backup permite gerar um arquivo `.dmsbackup` protegido por senha.
