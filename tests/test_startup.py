@@ -35,10 +35,12 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
     assert window.tabs.tabText(0) == "Anonimizar CSV"
     assert window.tabs.tabText(1) == "Anonimização em lote"
     assert window.tabs.tabText(2) == "Restaurar CSV"
-    assert window.tabs.tabText(3) == "Consultar cofre"
-    assert window.tabs.tabText(4) == "Backup e recuperação"
+    assert window.tabs.tabText(3) == "Restaurar HTML"
+    assert window.tabs.tabText(4) == "Consultar cofre"
+    assert window.tabs.tabText(5) == "Backup e recuperação"
     assert window.restoration_widget.path_field.isReadOnly()
     assert not window.restoration_widget.generate_button.isEnabled()
+    assert not window.html_restoration_widget.generate_button.isEnabled()
     assert not window.backup_widget.restore_button.isEnabled()
     assert (
         window.backup_widget.create_password_field.echoMode()

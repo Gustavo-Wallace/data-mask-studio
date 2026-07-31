@@ -42,6 +42,7 @@ from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.gui.backup_widget import BackupWidget
 from data_mask_studio.gui.batch_widget import BatchWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
+from data_mask_studio.gui.html_restoration_widget import HTMLRestorationWidget
 from data_mask_studio.gui.restoration_widget import RestorationWidget
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -302,10 +303,14 @@ class MainWindow(QMainWindow):
         self.restoration_widget = RestorationWidget(
             self._restoration_repository_factory
         )
+        self.html_restoration_widget = HTMLRestorationWidget(
+            self._restoration_repository_factory
+        )
         self.tabs = QTabWidget()
         self.tabs.addTab(anonymization_widget, "Anonimizar CSV")
         self.tabs.addTab(self.batch_widget, "Anonimização em lote")
         self.tabs.addTab(self.restoration_widget, "Restaurar CSV")
+        self.tabs.addTab(self.html_restoration_widget, "Restaurar HTML")
         self.tabs.addTab(self.consultant_widget, "Consultar cofre")
         self.tabs.addTab(self.backup_widget, "Backup e recuperação")
         self.tabs.currentChanged.connect(self._tab_changed)
@@ -322,6 +327,7 @@ class MainWindow(QMainWindow):
             individual_running
             or self.batch_widget.has_running_workers()
             or self.restoration_widget.has_running_worker()
+            or self.html_restoration_widget.has_running_worker()
         ):
             return False
         self.consultant_widget.clear_consultation()
@@ -980,6 +986,12 @@ class MainWindow(QMainWindow):
             event.ignore()
             self._set_status(
                 "Aguarde o cancelamento da restauração de CSV.", is_error=False
+            )
+            return
+        if not self.html_restoration_widget.stop_worker():
+            event.ignore()
+            self._set_status(
+                "Aguarde o cancelamento da restauração de HTML.", is_error=False
             )
             return
         self.consultant_widget.clear_consultation()
