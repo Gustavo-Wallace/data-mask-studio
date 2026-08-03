@@ -32,8 +32,16 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
     CSVAnonymizationError,
     paths_refer_to_same_file,
 )
+from data_mask_studio.detection import (
+    ColumnSuggestion,
+    DetectionError,
+    DetectionResult,
+    SuggestedType,
+)
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.gui.column_configuration_table import ColumnConfigurationTable
+from data_mask_studio.gui.detection_dialog import DetectionDialog
+from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -98,9 +106,14 @@ class AnonymizationWidget(QWidget):
         self.clear_button.clicked.connect(self.clear_selection)
         self.clear_button.setEnabled(False)
 
+        self.analyze_button = QPushButton("Analisar colunas")
+        self.analyze_button.clicked.connect(self.analyze_columns)
+        self.analyze_button.setEnabled(False)
+
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.select_button)
         button_layout.addWidget(self.clear_button)
+        button_layout.addWidget(self.analyze_button)
         button_layout.addStretch()
 
         self.path_field = QLineEdit()
@@ -193,6 +206,11 @@ class AnonymizationWidget(QWidget):
                 self._profile_initialization_error = str(error)
         self._profiles: list[ConfigurationProfile] = []
         self._worker: AnonymizationWorker | None = None
+        self._detection_worker: DetectionWorker | None = None
+        self._detection_dialog: DetectionDialog | None = None
+        self._suggestions: tuple[ColumnSuggestion, ...] = ()
+        self._manually_changed_rows: set[int] = set()
+        self._applying_suggestion = False
         self._last_output_path: Path | None = None
         self._last_processing_error: Exception | None = None
 
@@ -263,6 +281,7 @@ class AnonymizationWidget(QWidget):
         self._show_result(result)
 
     def _show_result(self, result: CSVInspectionResult) -> None:
+        self._clear_detection_suggestions()
         self._inspection_result = result
         self._configuration_validated = False
         self._configuration_dirty = False
@@ -275,6 +294,7 @@ class AnonymizationWidget(QWidget):
         self.column_count_label.setText(str(len(result.headers)))
         self._build_configuration_table(result.headers)
         self.clear_button.setEnabled(True)
+        self.analyze_button.setEnabled(True)
         self._update_profile_actions()
         self._set_status("Cabeçalhos lidos com sucesso.", is_error=False)
 
@@ -297,6 +317,7 @@ class AnonymizationWidget(QWidget):
         self._set_status(status, is_error=is_error)
 
     def _reset_details(self) -> None:
+        self._clear_detection_suggestions()
         self._inspection_result = None
         self._configuration_validated = False
         self._configuration_dirty = False
@@ -309,6 +330,7 @@ class AnonymizationWidget(QWidget):
         self.column_count_label.setText("—")
         self._clear_configuration_table()
         self.clear_button.setEnabled(False)
+        self.analyze_button.setEnabled(False)
         self._update_profile_actions()
 
     def _build_configuration_table(self, headers: list[str]) -> None:
@@ -376,12 +398,15 @@ class AnonymizationWidget(QWidget):
         self._checkboxes = []
         self._prefix_fields = []
         self._normalization_fields = []
+        self._manually_changed_rows.clear()
         self.select_all_button.setEnabled(False)
         self.unselect_all_button.setEnabled(False)
         self.validate_button.setEnabled(False)
         self.selected_count_label.setText("0 colunas selecionadas")
 
     def _column_toggled(self, row: int, checked: bool) -> None:
+        if not self._applying_suggestion:
+            self._manually_changed_rows.add(row)
         configuration = self._column_configs[row]
         prefix_field = self._prefix_fields[row]
         normalization_field = self._normalization_fields[row]
@@ -395,11 +420,15 @@ class AnonymizationWidget(QWidget):
         self._configuration_changed()
 
     def _prefix_changed(self, row: int, text: str) -> None:
+        if not self._applying_suggestion:
+            self._manually_changed_rows.add(row)
         self._column_configs[row].prefix = text
         self._refresh_row_statuses()
         self._configuration_changed()
 
     def _normalization_changed(self, row: int) -> None:
+        if not self._applying_suggestion:
+            self._manually_changed_rows.add(row)
         value = self._normalization_fields[row].currentData()
         self._column_configs[row].normalization_rule = NormalizationRule(value)
         self._configuration_changed()
@@ -464,6 +493,203 @@ class AnonymizationWidget(QWidget):
             self._configuration_validated = False
             self.generate_button.setEnabled(False)
             self._set_status(result.error_message or "Configuração inválida.", is_error=True)
+
+    def analyze_columns(self) -> None:
+        if self._detection_worker is not None and self._detection_worker.isRunning():
+            self._detection_worker.request_cancel()
+            self.analyze_button.setEnabled(False)
+            self._set_status("Cancelamento da análise solicitado...", is_error=False)
+            return
+        if self._inspection_result is None or self.has_running_worker():
+            return
+
+        self._clear_detection_suggestions()
+        self._set_detection_state(True)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(True)
+        self.processed_count_label.setText("Analisando no máximo 100 linhas")
+        self.processed_count_label.setVisible(True)
+        self._set_status("Analisando cabeçalhos e padrões agregados...", is_error=False)
+
+        worker = DetectionWorker(self._inspection_result, row_limit=100)
+        self._detection_worker = worker
+        worker.completed.connect(self._detection_completed)
+        worker.cancelled.connect(self._detection_cancelled)
+        worker.failed.connect(self._detection_failed)
+        worker.finished.connect(self._detection_worker_finished)
+        worker.start()
+
+    def _detection_completed(self, result: DetectionResult) -> None:
+        self._set_detection_state(False)
+        self.progress_bar.setVisible(False)
+        self.processed_count_label.setVisible(False)
+        self._suggestions = result.suggestions
+        dialog = DetectionDialog(result.suggestions, result.rows_analyzed, self)
+        dialog.individual_requested.connect(self.apply_detection_suggestion)
+        dialog.bulk_requested.connect(self.apply_detection_suggestions)
+        dialog.suggestions_cleared.connect(self.clear_detection_suggestions)
+        self._detection_dialog = dialog
+        dialog.show()
+        self._set_status(
+            "Análise concluída. Revise as sugestões antes de aplicá-las.",
+            is_error=False,
+        )
+
+    def _detection_cancelled(self) -> None:
+        self._set_detection_state(False)
+        self.progress_bar.setVisible(False)
+        self.processed_count_label.setVisible(False)
+        self._set_status("A análise das colunas foi cancelada.", is_error=False)
+
+    def _detection_failed(self, error: Exception) -> None:
+        self._set_detection_state(False)
+        self.progress_bar.setVisible(False)
+        self.processed_count_label.setVisible(False)
+        message = (
+            str(error)
+            if isinstance(error, DetectionError)
+            else "Não foi possível analisar as colunas do CSV."
+        )
+        self._set_status(message, is_error=True)
+
+    def _detection_worker_finished(self) -> None:
+        worker = self._detection_worker
+        self._detection_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def _set_detection_state(self, analyzing: bool) -> None:
+        has_file = self._inspection_result is not None
+        self.select_button.setEnabled(not analyzing)
+        self.clear_button.setEnabled(not analyzing and has_file)
+        self.config_table.setEnabled(not analyzing)
+        self.select_all_button.setEnabled(not analyzing and has_file)
+        self.unselect_all_button.setEnabled(not analyzing and has_file)
+        self.validate_button.setEnabled(not analyzing and has_file)
+        self.generate_button.setEnabled(
+            not analyzing and has_file and self._configuration_validated
+        )
+        self.profile_combo.setEnabled(not analyzing)
+        self.analyze_button.setText("Cancelar análise" if analyzing else "Analisar colunas")
+        self.analyze_button.setEnabled(has_file)
+        if analyzing:
+            for button in (
+                self.apply_profile_button,
+                self.save_profile_button,
+                self.update_profile_button,
+                self.rename_profile_button,
+                self.delete_profile_button,
+            ):
+                button.setEnabled(False)
+        else:
+            self._update_profile_actions()
+
+    def apply_detection_suggestion(self, row: int) -> None:
+        if not 0 <= row < len(self._suggestions):
+            return
+        suggestion = self._suggestions[row]
+        if suggestion.suggested_type is SuggestedType.UNKNOWN:
+            return
+        if row in self._manually_changed_rows and self._suggestion_changes_row(
+            row, suggestion
+        ):
+            answer = QMessageBox.question(
+                self,
+                "Substituir configuração manual",
+                "Esta coluna possui uma configuração alterada manualmente. "
+                "Deseja substituí-la pela sugestão?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self._apply_detection_rows((row,))
+
+    def apply_detection_suggestions(self, rows: tuple[int, ...]) -> None:
+        applicable = tuple(
+            row
+            for row in rows
+            if 0 <= row < len(self._suggestions)
+            and self._suggestions[row].suggested_type is not SuggestedType.UNKNOWN
+        )
+        if not applicable:
+            return
+        manual_changes = any(
+            row in self._manually_changed_rows
+            and self._suggestion_changes_row(row, self._suggestions[row])
+            for row in applicable
+        )
+        warning = (
+            " Algumas configurações manuais também serão substituídas."
+            if manual_changes
+            else ""
+        )
+        answer = QMessageBox.question(
+            self,
+            "Aplicar sugestões",
+            f"Aplicar {len(applicable)} sugestões selecionadas?{warning}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._apply_detection_rows(applicable)
+
+    def _suggestion_changes_row(
+        self, row: int, suggestion: ColumnSuggestion
+    ) -> bool:
+        configuration = self._column_configs[row]
+        return (
+            configuration.anonymize != suggestion.anonymize
+            or configuration.prefix != suggestion.prefix
+            or configuration.normalization_rule is not suggestion.normalization_rule
+        )
+
+    def _apply_detection_rows(self, rows: tuple[int, ...]) -> None:
+        self._applying_suggestion = True
+        try:
+            for row in rows:
+                suggestion = self._suggestions[row]
+                configuration = self._column_configs[row]
+                checkbox = self._checkboxes[row]
+                prefix_field = self._prefix_fields[row]
+                normalization_field = self._normalization_fields[row]
+                blockers = (
+                    QSignalBlocker(checkbox),
+                    QSignalBlocker(prefix_field),
+                    QSignalBlocker(normalization_field),
+                )
+                configuration.anonymize = suggestion.anonymize
+                configuration.prefix = suggestion.prefix
+                configuration.normalization_rule = suggestion.normalization_rule
+                checkbox.setChecked(suggestion.anonymize)
+                prefix_field.setText(suggestion.prefix)
+                prefix_field.setEnabled(suggestion.anonymize)
+                normalization_field.setCurrentIndex(
+                    normalization_field.findData(suggestion.normalization_rule.value)
+                )
+                normalization_field.setEnabled(suggestion.anonymize)
+                del blockers
+                self._manually_changed_rows.discard(row)
+        finally:
+            self._applying_suggestion = False
+        self._configuration_dirty = True
+        self._update_selected_count()
+        self.validate_current_configuration()
+
+    def clear_detection_suggestions(self) -> None:
+        self._clear_detection_suggestions()
+        self._set_status(
+            "Sugestões removidas. A configuração atual foi preservada.",
+            is_error=False,
+        )
+
+    def _clear_detection_suggestions(self) -> None:
+        self._suggestions = ()
+        if self._detection_dialog is not None:
+            self._detection_dialog.close()
+            self._detection_dialog.deleteLater()
+            self._detection_dialog = None
 
     def _refresh_profiles(self, selected_identifier: str | None = None) -> None:
         if self._profile_service is None:
@@ -646,6 +872,7 @@ class AnonymizationWidget(QWidget):
             )
             normalization_field.setEnabled(profile_column.anonymize)
             del blockers
+            self._manually_changed_rows.add(row)
         self._update_selected_count()
         self._refresh_row_statuses()
 
@@ -824,6 +1051,7 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(not processing and has_file)
         self.unselect_all_button.setEnabled(not processing and has_file)
         self.validate_button.setEnabled(not processing and has_file)
+        self.analyze_button.setEnabled(not processing and has_file)
         self.generate_button.setEnabled(
             not processing and has_file and self._configuration_validated
         )
@@ -861,14 +1089,22 @@ class AnonymizationWidget(QWidget):
             self._set_status("Não foi possível abrir a pasta do arquivo.", is_error=True)
 
     def has_running_worker(self) -> bool:
-        return self._worker is not None and self._worker.isRunning()
+        return (
+            self._worker is not None
+            and self._worker.isRunning()
+            or self._detection_worker is not None
+            and self._detection_worker.isRunning()
+        )
 
     def stop_worker(self) -> bool:
-        if not self.has_running_worker():
-            return True
-        assert self._worker is not None
-        self._worker.request_cancel()
-        return self._worker.wait(5000)
+        workers = tuple(
+            worker
+            for worker in (self._worker, self._detection_worker)
+            if worker is not None and worker.isRunning()
+        )
+        for worker in workers:
+            worker.request_cancel()
+        return all(worker.wait(5000) for worker in workers)
 
     def _set_status(self, message: str, *, is_error: bool) -> None:
         color = "#b42318" if is_error else "#276749"
