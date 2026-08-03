@@ -1,0 +1,33 @@
+name: Testes
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      LOCALAPPDATA: ${{ runner.temp }}\DataMaskStudio-CI
+    steps:
+      - name: Obter o código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Preparar diretório local isolado
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+
+      - name: Instalar o projeto e dependências de desenvolvimento
+        run: python -m pip install -e ".[dev]"
+
+      - name: Executar a suíte de testes
+        run: python -m pytest --basetemp "${{ runner.temp }}\data-mask-studio-pytest"

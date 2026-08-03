@@ -30,18 +30,18 @@ A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI pa
 
 ### Opção recomendada
 
-Baixe `DataMaskStudio-Setup-0.5.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
+Baixe `DataMaskStudio-Setup-0.5.1.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
 
 ### Versão portátil
 
-Baixe `DataMaskStudio-Portable-0.5.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
+Baixe `DataMaskStudio-Portable-0.5.1.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
 
 ### Código-fonte
 
 No Windows PowerShell:
 
 ```powershell
-git clone <URL_DO_REPOSITORIO>
+git clone https://github.com/Gustavo-Wallace/data-mask-studio.git
 cd data-mask-studio
 python -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -65,4 +65,4 @@ Perfis salvos também podem ser utilizados na aba de anonimização em lote.
 
 A aba de backup permite gerar um arquivo `.dmsbackup` protegido por senha.
 
-O programa é destinado atualmente ao Windows. Os executáveis da versão 0.5.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.
+O programa é destinado atualmente ao Windows. Os executáveis da versão 0.5.1 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.

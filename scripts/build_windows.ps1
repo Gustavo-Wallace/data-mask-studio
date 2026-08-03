@@ -141,9 +141,7 @@ if (-not $SkipTests) {
     try {
         $env:QT_QPA_PLATFORM = 'offscreen'
         $env:PYTHONDONTWRITEBYTECODE = '1'
-        $testTempRoot = Join-Path $projectRoot ("build\pytest-temp-" + [guid]::NewGuid())
-        New-Item -ItemType Directory -Path (Split-Path -Parent $testTempRoot) -Force | Out-Null
-        & $python -m pytest -q -p no:cacheprovider --basetemp $testTempRoot
+        & $python -m pytest -q -p no:cacheprovider
         if ($LASTEXITCODE -ne 0) {
             throw "A suíte de testes falhou."
         }
