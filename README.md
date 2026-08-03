@@ -12,6 +12,7 @@ Data Mask Studio é uma aplicação desktop local para anonimização reversíve
 - criar backups criptografados;
 - recuperar o cofre, as chaves e os perfis.
 - restaurar CSVs anonimizados usando o cofre local.
+- verificar localmente a integridade das chaves, do cofre e dos perfis sem expor dados.
 
 A versão atual permite restaurar seletivamente CSVs anonimizados com os mapeamentos do cofre local.
 Ela também restaura códigos presentes em arquivos HTML e dashboards locais sem executar o conteúdo.
@@ -31,11 +32,11 @@ A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI pa
 
 ### Opção recomendada
 
-Baixe `DataMaskStudio-Setup-0.6.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
+Baixe `DataMaskStudio-Setup-0.7.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
 
 ### Versão portátil
 
-Baixe `DataMaskStudio-Portable-0.6.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
+Baixe `DataMaskStudio-Portable-0.7.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
 
 ### Código-fonte
 
@@ -66,4 +67,6 @@ Perfis salvos também podem ser utilizados na aba de anonimização em lote.
 
 A aba de backup permite gerar um arquivo `.dmsbackup` protegido por senha.
 
-O programa é destinado atualmente ao Windows. Os executáveis da versão 0.6.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.
+Na aba “Integridade”, a verificação local produz somente um relatório técnico seguro e não altera o cofre.
+
+O programa é destinado atualmente ao Windows. Os executáveis da versão 0.7.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.

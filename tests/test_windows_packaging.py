@@ -60,8 +60,8 @@ def test_build_helper_reads_version_and_generates_versioned_names() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == (
-        "0.6.0|DataMaskStudio-Portable-0.6.0.zip|"
-        "DataMaskStudio-Setup-0.6.0.exe"
+        "0.7.0|DataMaskStudio-Portable-0.7.0.zip|"
+        "DataMaskStudio-Setup-0.7.0.exe"
     )
 
 
@@ -75,6 +75,7 @@ def test_spec_uses_onedir_windowed_application_and_generated_metadata() -> None:
     assert 'os.environ.get("DMS_VERSION_FILE")' in spec
     assert 'os.environ.get("DMS_ICON_FILE")' in spec
     assert '"pytest"' in spec and '"tests"' in spec
+    assert 'Path(item[0]).name != "direct_url.json"' in spec
 
 
 def test_inno_setup_is_per_user_upgradeable_and_preserves_local_data() -> None:
@@ -119,6 +120,26 @@ def test_build_audit_rejects_sensitive_file_without_exposing_content(
     assert not destination.exists()
 
 
+def test_build_audit_rejects_editable_install_provenance(tmp_path: Path) -> None:
+    build_root = tmp_path / "DataMaskStudio"
+    metadata = build_root / "_internal" / "package.dist-info"
+    metadata.mkdir(parents=True)
+    (build_root / "DataMaskStudio.exe").write_bytes(b"exe")
+    (metadata / "direct_url.json").write_text(
+        '{"url": "file:///private/developer/path"}', encoding="utf-8"
+    )
+    command = (
+        f". {ps_quote(HELPERS)}; "
+        f"Assert-DataMaskStudioBuildIsSafe -Root {ps_quote(build_root)}"
+    )
+
+    result = run_powershell(command)
+
+    assert result.returncode != 0
+    assert "direct_url.json" in result.stderr
+    assert "/private/developer/path" not in result.stderr
+
+
 def test_portable_zip_has_root_folder_without_tests_or_virtualenv(
     tmp_path: Path,
 ) -> None:
@@ -127,7 +148,7 @@ def test_portable_zip_has_root_folder_without_tests_or_virtualenv(
     internal.mkdir(parents=True)
     (portable / "DataMaskStudio.exe").write_bytes(b"exe")
     (internal / "library.dll").write_bytes(b"dll")
-    destination = tmp_path / "DataMaskStudio-Portable-0.6.0.zip"
+    destination = tmp_path / "DataMaskStudio-Portable-0.7.0.zip"
     command = (
         f". {ps_quote(HELPERS)}; "
         f"New-DataMaskStudioPortableArchive -PortableDirectory {ps_quote(portable)} "

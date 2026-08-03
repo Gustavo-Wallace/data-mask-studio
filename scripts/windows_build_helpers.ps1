@@ -73,7 +73,8 @@ function Assert-DataMaskStudioBuildIsSafe {
     $resolvedRoot = (Resolve-Path -LiteralPath $Root).Path
     $forbiddenNames = @(
         'secret.key', 'vault_key.dpapi', 'vault.db', 'vault.db-journal',
-        'vault.db-wal', 'vault.db-shm', 'profiles.json', '.env'
+        'vault.db-wal', 'vault.db-shm', 'profiles.json', '.env',
+        'direct_url.json'
     )
     $findings = [System.Collections.Generic.List[string]]::new()
     foreach ($file in Get-ChildItem -LiteralPath $resolvedRoot -Recurse -File -Force) {

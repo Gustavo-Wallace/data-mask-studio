@@ -56,7 +56,7 @@ def test_v1_database_is_migrated_preserving_mapping(tmp_path: Path) -> None:
         variation_count = connection.execute(
             "SELECT COUNT(*) FROM vault_variations WHERE code = ?", (CODE,)
         ).fetchone()[0]
-    assert version == 2
+    assert version == 3
     assert variation_count == 1
     assert mapping is not None
     assert mapping.normalization_rule is NormalizationRule.EXACT

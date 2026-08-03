@@ -30,7 +30,7 @@ from data_mask_studio.backup.snapshot import inspect_snapshot
 from data_mask_studio.metadata import application_version
 from data_mask_studio.profiles import ProfileRepository
 from data_mask_studio.security.key_provider import KEY_SIZE
-from data_mask_studio.vault.database import SCHEMA_VERSION
+from data_mask_studio.vault.database import RESTORABLE_SCHEMA_VERSIONS
 
 CHUNK_SIZE = 1024 * 1024
 MAX_MANIFEST_SIZE = 1024 * 1024
@@ -309,7 +309,7 @@ def _validate_extracted(
     except (KeyError, TypeError, ValueError) as error:
         raise BackupValidationError(VALIDATION_FAILURE_MESSAGE) from error
 
-    if schema_version != SCHEMA_VERSION:
+    if schema_version not in RESTORABLE_SCHEMA_VERSIONS:
         raise BackupCompatibilityError("O esquema do cofre não é compatível.")
 
     mapping_count = 0
@@ -317,7 +317,10 @@ def _validate_extracted(
         if not vault_present:
             raise BackupValidationError(VALIDATION_FAILURE_MESSAGE)
         actual_schema, mapping_count = inspect_snapshot(extracted.vault_snapshot_path)
-        if actual_schema != schema_version or schema_version != SCHEMA_VERSION:
+        if (
+            actual_schema != schema_version
+            or schema_version not in RESTORABLE_SCHEMA_VERSIONS
+        ):
             raise BackupCompatibilityError("O esquema do cofre não é compatível.")
     elif vault_present:
         raise BackupValidationError(VALIDATION_FAILURE_MESSAGE)

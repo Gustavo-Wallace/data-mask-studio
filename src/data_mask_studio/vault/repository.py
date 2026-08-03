@@ -134,17 +134,22 @@ class VaultRepository:
             raise VaultError("Foi encontrado um registro inconsistente no cofre local.")
 
         variations = self._get_variations(code)
-        canonical_value = self._cipher.decrypt(
+        canonical_value = self._cipher.decrypt_mapping(
             record.code,
             record.prefix,
+            record.source_header,
+            record.normalization_rule,
             record.encrypted_value,
             record.nonce,
         )
         decrypted_variations = tuple(
             DecryptedVariation(
-                original_value=self._cipher.decrypt(
+                original_value=self._cipher.decrypt_variation(
+                    variation.identifier,
                     record.code,
                     record.prefix,
+                    record.source_header,
+                    variation.normalization_rule,
                     variation.encrypted_value,
                     variation.nonce,
                 ),
@@ -253,9 +258,11 @@ class VaultTransaction:
             return
 
         record = _record_from_row(row)
-        existing_canonical = self._cipher.decrypt(
+        existing_canonical = self._cipher.decrypt_mapping(
             record.code,
             record.prefix,
+            record.source_header,
+            record.normalization_rule,
             record.encrypted_value,
             record.nonce,
         )
@@ -274,7 +281,7 @@ class VaultTransaction:
             "total_occurrences = total_occurrences + ? WHERE code = ?",
             (now, candidate.total_occurrences, candidate.code),
         )
-        self._upsert_variations(candidate, now)
+        self._upsert_variations(candidate, now, record)
         self._connection.execute(
             "INSERT OR IGNORE INTO processing_changes VALUES (?, 'updated')",
             (candidate.code,),
@@ -282,9 +289,11 @@ class VaultTransaction:
 
     def _insert_mapping(self, candidate: MappingCandidate, now: str) -> None:
         canonical_value = candidate.canonical_value or ""
-        encrypted = self._cipher.encrypt(
+        encrypted = self._cipher.encrypt_mapping(
             candidate.code,
             candidate.prefix,
+            candidate.source_header,
+            candidate.normalization_rule,
             canonical_value,
         )
         self._connection.execute(
@@ -308,25 +317,41 @@ class VaultTransaction:
 
     def _insert_variations(self, candidate: MappingCandidate, now: str) -> None:
         for original_value, variation in candidate.variations.items():
-            encrypted = self._cipher.encrypt(
-                candidate.code, candidate.prefix, original_value
-            )
-            self._connection.execute(
+            cursor = self._connection.execute(
                 "INSERT INTO vault_variations "
                 "(code, encrypted_value, nonce, first_seen, last_seen, "
                 "normalization_rule, occurrence_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     candidate.code,
-                    encrypted.ciphertext,
-                    encrypted.nonce,
+                    b"",
+                    b"",
                     now,
                     now,
                     variation.normalization_rule.value,
                     variation.occurrences,
                 ),
             )
+            identifier = int(cursor.lastrowid)
+            encrypted = self._cipher.encrypt_variation(
+                identifier,
+                candidate.code,
+                candidate.prefix,
+                candidate.source_header,
+                variation.normalization_rule,
+                original_value,
+            )
+            self._connection.execute(
+                "UPDATE vault_variations SET encrypted_value = ?, nonce = ? "
+                "WHERE identifier = ?",
+                (encrypted.ciphertext, encrypted.nonce, identifier),
+            )
 
-    def _upsert_variations(self, candidate: MappingCandidate, now: str) -> None:
+    def _upsert_variations(
+        self,
+        candidate: MappingCandidate,
+        now: str,
+        mapping: VaultRecord,
+    ) -> None:
         rows = self._connection.execute(
             "SELECT identifier, code, encrypted_value, nonce, first_seen, "
             "last_seen, occurrence_count, normalization_rule FROM vault_variations "
@@ -337,9 +362,12 @@ class VaultTransaction:
         decrypted = [
             (
                 variation,
-                self._cipher.decrypt(
+                self._cipher.decrypt_variation(
+                    variation.identifier,
                     candidate.code,
                     candidate.prefix,
+                    mapping.source_header,
+                    variation.normalization_rule,
                     variation.encrypted_value,
                     variation.nonce,
                 ),
@@ -360,7 +388,11 @@ class VaultTransaction:
             )
             if matching is None:
                 self._insert_single_variation(
-                    candidate, original_value, candidate_variation, now
+                    candidate,
+                    original_value,
+                    candidate_variation,
+                    now,
+                    mapping.source_header,
                 )
             else:
                 self._connection.execute(
@@ -375,23 +407,35 @@ class VaultTransaction:
         original_value: str,
         variation: VariationCandidate,
         now: str,
+        source_header: str,
     ) -> None:
-        encrypted = self._cipher.encrypt(
-            candidate.code, candidate.prefix, original_value
-        )
-        self._connection.execute(
+        cursor = self._connection.execute(
             "INSERT INTO vault_variations "
             "(code, encrypted_value, nonce, first_seen, last_seen, "
             "normalization_rule, occurrence_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 candidate.code,
-                encrypted.ciphertext,
-                encrypted.nonce,
+                b"",
+                b"",
                 now,
                 now,
                 variation.normalization_rule.value,
                 variation.occurrences,
             ),
+        )
+        identifier = int(cursor.lastrowid)
+        encrypted = self._cipher.encrypt_variation(
+            identifier,
+            candidate.code,
+            candidate.prefix,
+            source_header,
+            variation.normalization_rule,
+            original_value,
+        )
+        self._connection.execute(
+            "UPDATE vault_variations SET encrypted_value = ?, nonce = ? "
+            "WHERE identifier = ?",
+            (encrypted.ciphertext, encrypted.nonce, identifier),
         )
 
 

@@ -21,7 +21,7 @@ def test_main_window_composes_existing_tabs_and_extracted_widgets(
     service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     window = MainWindow(profile_service=service)
 
-    assert window.tabs.count() == 6
+    assert window.tabs.count() == 7
     assert window.tabs.widget(0) is window.anonymization_widget
     assert isinstance(window.anonymization_widget, AnonymizationWidget)
     assert isinstance(window.config_table, ColumnConfigurationTable)

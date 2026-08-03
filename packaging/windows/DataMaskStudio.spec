@@ -26,6 +26,12 @@ analysis = Analysis(
     optimize=1,
 )
 
+# Metadado criado por instalações editáveis; pode revelar o caminho local do
+# repositório e não é necessário para consultar a versão do pacote.
+analysis.datas = [
+    item for item in analysis.datas if Path(item[0]).name != "direct_url.json"
+]
+
 python_archive = PYZ(analysis.pure)
 
 executable = EXE(

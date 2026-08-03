@@ -47,7 +47,7 @@ def test_database_and_versioned_schema_are_created_automatically(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
             ("vault_variations",),
         ).fetchone()
-    assert version == 2
+    assert version == 3
     assert table == ("vault_mappings",)
     assert variations_table == ("vault_variations",)
     repository_connection = connect(repository.database_path)
@@ -71,8 +71,13 @@ def test_new_mapping_is_encrypted_and_can_be_validated(tmp_path: Path) -> None:
     assert summary.new_mappings == 1
     assert summary.updated_mappings == 0
     assert mapping.original_value.encode("utf-8") not in record.encrypted_value
-    assert cipher.decrypt(
-        record.code, record.prefix, record.encrypted_value, record.nonce
+    assert cipher.decrypt_mapping(
+        record.code,
+        record.prefix,
+        record.source_header,
+        record.normalization_rule,
+        record.encrypted_value,
+        record.nonce,
     ) == mapping.original_value
     database_files = repository.database_path.parent.glob("vault.db*")
     assert all(mapping.original_value.encode("utf-8") not in path.read_bytes() for path in database_files)
@@ -127,8 +132,13 @@ def test_collision_is_detected_without_overwriting_mapping(tmp_path: Path) -> No
     record = repository.get_record("NOME-ABCDEFGHI234")
     assert record is not None
     assert record.occurrence_count == 1
-    assert cipher.decrypt(
-        record.code, record.prefix, record.encrypted_value, record.nonce
+    assert cipher.decrypt_mapping(
+        record.code,
+        record.prefix,
+        record.source_header,
+        record.normalization_rule,
+        record.encrypted_value,
+        record.nonce,
     ) == "sensitive-test-value"
 
 

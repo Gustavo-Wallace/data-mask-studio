@@ -388,6 +388,9 @@ class BackupWidget(QWidget):
         self._clear_all_passwords()
         return True
 
+    def has_running_worker(self) -> bool:
+        return self._worker is not None and self._worker.isRunning()
+
     def _clear_create_passwords(self) -> None:
         self.create_password_field.clear()
         self.confirm_password_field.clear()

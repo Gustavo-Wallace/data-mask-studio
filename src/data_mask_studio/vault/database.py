@@ -6,7 +6,8 @@ from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.vault.encryption import VaultCipher
 from data_mask_studio.vault.exceptions import VaultError
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+RESTORABLE_SCHEMA_VERSIONS = frozenset({1, 2, SCHEMA_VERSION})
 DATABASE_FILE_NAME = "vault.db"
 SQLITE_TIMEOUT_SECONDS = 30.0
 
@@ -67,13 +68,16 @@ def connect(database_path: Path) -> sqlite3.Connection:
         raise VaultError("Não foi possível abrir o cofre local.") from error
 
 
-def connect_read_only(database_path: Path) -> sqlite3.Connection:
+def connect_read_only(
+    database_path: Path, *, immutable: bool = False
+) -> sqlite3.Connection:
     """Abre um cofre existente sem permitir qualquer alteracao."""
     try:
         if not database_path.is_file():
             raise VaultError("O cofre local nao foi encontrado.")
+        immutable_option = "&immutable=1" if immutable else ""
         connection = sqlite3.connect(
-            f"{database_path.resolve().as_uri()}?mode=ro",
+            f"{database_path.resolve().as_uri()}?mode=ro{immutable_option}",
             uri=True,
             timeout=SQLITE_TIMEOUT_SECONDS,
             isolation_level=None,
@@ -95,7 +99,7 @@ def initialize_schema(database_path: Path, cipher: VaultCipher) -> None:
         if version == 0:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                _create_schema_v2(connection)
+                _create_schema(connection)
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 connection.commit()
             except Exception:
@@ -103,7 +107,10 @@ def initialize_schema(database_path: Path, cipher: VaultCipher) -> None:
                 raise
         elif version == 1:
             _migrate_v1_to_v2(connection, cipher)
-        elif version != SCHEMA_VERSION:
+            version = 2
+        if version == 2:
+            _migrate_v2_to_v3(connection, cipher)
+        elif version not in (0, SCHEMA_VERSION):
             raise VaultError("A versão do cofre local não é compatível.")
     except VaultError:
         raise
@@ -113,7 +120,7 @@ def initialize_schema(database_path: Path, cipher: VaultCipher) -> None:
         connection.close()
 
 
-def _create_schema_v2(connection: sqlite3.Connection) -> None:
+def _create_schema(connection: sqlite3.Connection) -> None:
     connection.execute(CREATE_MAPPINGS_SQL)
     connection.execute(CREATE_VARIATIONS_SQL)
     connection.execute(
@@ -132,7 +139,7 @@ def _migrate_v1_to_v2(
             "first_seen, last_seen, occurrence_count FROM vault_mappings"
         ).fetchall()
         connection.execute("ALTER TABLE vault_mappings RENAME TO vault_mappings_v1")
-        _create_schema_v2(connection)
+        _create_schema(connection)
 
         for row in rows:
             code = str(row["code"])
@@ -177,6 +184,86 @@ def _migrate_v1_to_v2(
             )
 
         connection.execute("DROP TABLE vault_mappings_v1")
+        connection.execute("PRAGMA user_version = 2")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def _migrate_v2_to_v3(
+    connection: sqlite3.Connection,
+    cipher: VaultCipher,
+) -> None:
+    """Reautentica todos os registros com AAD v1 dentro de uma transação."""
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        mappings = connection.execute(
+            "SELECT code, prefix, canonical_encrypted_value, canonical_nonce, "
+            "source_header, normalization_rule FROM vault_mappings ORDER BY code"
+        ).fetchall()
+        variations = connection.execute(
+            "SELECT v.identifier, v.code, v.encrypted_value, v.nonce, "
+            "v.normalization_rule, m.prefix, m.source_header "
+            "FROM vault_variations AS v "
+            "JOIN vault_mappings AS m ON m.code = v.code "
+            "ORDER BY v.identifier"
+        ).fetchall()
+
+        decrypted_mappings = [
+            (
+                row,
+                cipher.decrypt(
+                    str(row["code"]),
+                    str(row["prefix"]),
+                    bytes(row["canonical_encrypted_value"]),
+                    bytes(row["canonical_nonce"]),
+                ),
+            )
+            for row in mappings
+        ]
+        decrypted_variations = [
+            (
+                row,
+                cipher.decrypt(
+                    str(row["code"]),
+                    str(row["prefix"]),
+                    bytes(row["encrypted_value"]),
+                    bytes(row["nonce"]),
+                ),
+            )
+            for row in variations
+        ]
+
+        for row, value in decrypted_mappings:
+            encrypted = cipher.encrypt_mapping(
+                str(row["code"]),
+                str(row["prefix"]),
+                str(row["source_header"]),
+                str(row["normalization_rule"]),
+                value,
+            )
+            connection.execute(
+                "UPDATE vault_mappings SET canonical_encrypted_value = ?, "
+                "canonical_nonce = ? WHERE code = ?",
+                (encrypted.ciphertext, encrypted.nonce, str(row["code"])),
+            )
+
+        for row, value in decrypted_variations:
+            encrypted = cipher.encrypt_variation(
+                int(row["identifier"]),
+                str(row["code"]),
+                str(row["prefix"]),
+                str(row["source_header"]),
+                str(row["normalization_rule"]),
+                value,
+            )
+            connection.execute(
+                "UPDATE vault_variations SET encrypted_value = ?, nonce = ? "
+                "WHERE identifier = ?",
+                (encrypted.ciphertext, encrypted.nonce, int(row["identifier"])),
+            )
+
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()
     except Exception:
