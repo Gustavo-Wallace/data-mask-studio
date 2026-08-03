@@ -29,10 +29,13 @@ htmlcov/
 .ruff_cache/
 
 # Pacotes e builds
-build/
-dist/
+/build/
+/dist/
+/release/
 *.egg-info/
 .eggs/
+*.toc
+/packaging/windows/Output/
 
 # IDEs
 .idea/
