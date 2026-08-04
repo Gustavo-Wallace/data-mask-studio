@@ -12,6 +12,7 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
     anonymize_csv,
 )
 from data_mask_studio.csv_tools.models import CSVInspectionResult
+from data_mask_studio.performance import BALANCED_SETTINGS, ProgressLimiter
 from data_mask_studio.security import KeyProvider
 from data_mask_studio.vault import VaultRepository, create_default_vault_repository
 
@@ -58,6 +59,12 @@ class AnonymizationWorker(QThread):
 
     def run(self) -> None:
         try:
+            limiter = ProgressLimiter(BALANCED_SETTINGS)
+
+            def report(records: int) -> None:
+                if limiter.should_emit(records):
+                    self.progress.emit(records)
+
             secret_key = self._key_provider.get_key()
             vault_repository = self._vault_repository_factory()
             result = anonymize_csv(
@@ -68,7 +75,7 @@ class AnonymizationWorker(QThread):
                 configurations=self._configurations,
                 secret_key=secret_key,
                 overwrite=self._overwrite,
-                progress_callback=self.progress.emit,
+                progress_callback=report,
                 should_cancel=self._cancel_requested.is_set,
                 vault_repository=vault_repository,
             )
@@ -77,4 +84,6 @@ class AnonymizationWorker(QThread):
         except Exception as error:
             self.failed.emit(error)
         else:
+            if limiter.should_emit(result.records_processed, force=True):
+                self.progress.emit(result.records_processed)
             self.completed.emit(result)

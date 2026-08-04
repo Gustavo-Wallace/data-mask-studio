@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+import time
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from data_mask_studio.performance import calculate_metrics
 
 from data_mask_studio.csv_tools import CSVInspectionError, CSVInspectionResult, inspect_csv
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
@@ -366,6 +368,7 @@ class RestorationWidget(QWidget):
         self.progress_label.setText("0 linhas processadas")
         self.progress_label.setVisible(True)
         self._set_status(status, is_error=False)
+        self._processing_started_at = time.perf_counter()
         worker.progress.connect(self._progress_changed)
         worker.cancelled.connect(self._cancelled)
         worker.failed.connect(self._failed)
@@ -373,11 +376,17 @@ class RestorationWidget(QWidget):
         worker.start()
 
     def _progress_changed(self, progress: RestorationProgress) -> None:
+        elapsed = time.perf_counter() - getattr(
+            self, "_processing_started_at", time.perf_counter()
+        )
+        metrics = calculate_metrics(progress.rows_processed, elapsed)
         self.progress_label.setText(
             f"{progress.rows_processed} linhas; "
             f"{progress.restored_codes} restaurados; "
             f"{progress.missing_codes} não encontrados; "
-            f"{progress.preserved_values} preservados; {progress.errors} erros"
+            f"{progress.preserved_values} preservados; {progress.errors} erros; "
+            f"{metrics.rows_per_second:,.0f} linhas/s; {metrics.elapsed_seconds:.1f} s; "
+            "estimativa indisponível"
         )
 
     def _restoration_completed(self, result: RestorationResult) -> None:

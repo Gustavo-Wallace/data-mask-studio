@@ -13,6 +13,7 @@ from data_mask_studio.anonymization.anonymizer import (
 )
 from data_mask_studio.anonymization.column_config import validate_configuration
 from data_mask_studio.anonymization.models import AnonymizationResult, ColumnConfig
+from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
 from data_mask_studio.vault import MappingCandidate, VaultCollisionError, VaultError
 from data_mask_studio.vault.models import VaultUpdateSummary
 from data_mask_studio.vault.repository import VaultRepository, VaultTransaction
@@ -41,18 +42,20 @@ def anonymize_csv(
     progress_callback: ProgressCallback | None = None,
     should_cancel: CancellationCheck | None = None,
     vault_repository: VaultRepository | None = None,
-    mapping_batch_size: int = 500,
+    mapping_batch_size: int | None = None,
+    performance_settings: PerformanceSettings = BALANCED_SETTINGS,
 ) -> AnonymizationResult:
     """Processa um CSV linha a linha e publica o resultado de forma atômica."""
     source = Path(source_path).expanduser().absolute()
     destination = Path(destination_path).expanduser().absolute()
+    effective_batch_size = mapping_batch_size or performance_settings.mapping_batch_size
     _validate_request(
         source,
         destination,
         configurations,
         secret_key,
         overwrite,
-        mapping_batch_size,
+        effective_batch_size,
     )
 
     temporary_path: Path | None = None
@@ -77,10 +80,16 @@ def anonymize_csv(
                 suffix=".tmp",
                 dir=destination.parent,
                 delete=False,
+                buffering=performance_settings.io_buffer_size,
             ) as temporary_file:
                 temporary_path = Path(temporary_file.name)
                 writer = csv.writer(temporary_file, delimiter=delimiter)
-                with source.open("r", encoding=input_encoding, newline="") as source_file:
+                with source.open(
+                    "r",
+                    encoding=input_encoding,
+                    newline="",
+                    buffering=performance_settings.io_buffer_size,
+                ) as source_file:
                     reader = csv.reader(source_file, delimiter=delimiter, strict=True)
                     headers = next(reader)
                     expected_headers = [
@@ -117,8 +126,8 @@ def anonymize_csv(
                                 pending_mappings,
                             )
                             if (
-                                len(pending_mappings) >= mapping_batch_size
-                                or (records_processed + 1) % mapping_batch_size == 0
+                                len(pending_mappings) >= effective_batch_size
+                                or (records_processed + 1) % effective_batch_size == 0
                             ):
                                 _flush_mappings(vault_transaction, pending_mappings)
                         writer.writerow(anonymized_row)
@@ -144,7 +153,9 @@ def anonymize_csv(
         raise
     except VaultError as error:
         raise CSVAnonymizationError(str(error)) from error
-    except (OSError, UnicodeError, csv.Error, StopIteration) as error:
+    except OSError as error:
+        raise CSVAnonymizationError(_safe_io_message(error)) from error
+    except (UnicodeError, csv.Error, StopIteration) as error:
         raise CSVAnonymizationError(
             "Não foi possível gerar o arquivo CSV anonimizado."
         ) from error
@@ -259,3 +270,13 @@ def _validate_request(
         )
     if mapping_batch_size <= 0:
         raise CSVAnonymizationError("O tamanho do lote de mapeamentos é inválido.")
+
+
+def _safe_io_message(error: OSError) -> str:
+    if getattr(error, "errno", None) == 28 or getattr(error, "winerror", None) == 112:
+        return "Não há espaço suficiente para concluir o arquivo de saída."
+    if isinstance(error, FileNotFoundError):
+        return "O arquivo CSV original foi removido durante o processamento."
+    if isinstance(error, PermissionError):
+        return "O arquivo está bloqueado ou a pasta de destino não permite escrita."
+    return "Falha de leitura ou escrita durante o processamento do CSV."

@@ -1,5 +1,6 @@
 import csv
-from collections.abc import Callable
+from itertools import islice
+from collections.abc import Callable, MutableMapping
 
 from data_mask_studio.restoration.code_classifier import classify_cell_format
 from data_mask_studio.restoration.exceptions import (
@@ -14,6 +15,11 @@ from data_mask_studio.restoration.models import (
     RestorationProgress,
     RestorationStage,
 )
+from data_mask_studio.performance import (
+    BALANCED_SETTINGS,
+    BoundedCache,
+    RestorationMetrics,
+)
 from data_mask_studio.vault import VaultRepository
 
 ProgressCallback = Callable[[RestorationProgress], None]
@@ -26,11 +32,14 @@ def analyze_csv(
     *,
     progress_callback: ProgressCallback | None = None,
     should_cancel: CancellationCheck | None = None,
+    metrics: RestorationMetrics | None = None,
 ) -> AnalysisResult:
     _validate_configuration(configuration)
     repository = repository.as_read_only()
     input_encoding = _python_encoding(configuration.encoding)
-    cache: dict[str, object | None] = {}
+    cache: MutableMapping[str, object | None] = BoundedCache(
+        BALANCED_SETTINGS.restoration_cache_limit
+    )
     prefixes: list[str] = []
     seen_prefixes: set[str] = set()
     incompatibilities: list[str] = []
@@ -47,50 +56,57 @@ def analyze_csv(
             )
             headers = next(reader)
             _validate_current_headers(configuration, headers)
-            for row in reader:
-                _raise_if_cancelled(should_cancel)
-                _validate_row(row, configuration, reader.line_num)
-                for column in configuration.selected_columns:
-                    cells_analyzed += 1
-                    classified = classify_cell_format(row[column.index])
-                    if classified.classification is CellClassification.EMPTY:
-                        empty_cells += 1
-                    elif classified.classification is CellClassification.COMMON:
-                        common_values += 1
-                    elif (
-                        classified.classification
-                        is CellClassification.INVALID_CODE_LIKE
-                    ):
-                        invalid_formats += 1
-                    else:
-                        valid_codes += 1
-                        assert classified.lookup_code is not None
-                        assert classified.prefix is not None
-                        if classified.prefix not in seen_prefixes:
-                            prefixes.append(classified.prefix)
-                            seen_prefixes.add(classified.prefix)
-                        mapping = _lookup(
-                            repository, classified.lookup_code, cache
-                        )
-                        if mapping is None:
-                            missing_codes += 1
-                        else:
-                            found_codes += 1
-                            if mapping.source_header != column.header:
-                                issue = (
-                                    f"Coluna '{column.header}': codigo associado "
-                                    f"originalmente ao cabecalho '{mapping.source_header}'."
-                                )
-                                if issue not in seen_incompatibilities:
-                                    incompatibilities.append(issue)
-                                    seen_incompatibilities.add(issue)
-                rows_processed += 1
-                if progress_callback is not None:
-                    progress_callback(
-                        RestorationProgress(
-                            RestorationStage.ANALYZING, rows_processed
-                        )
-                    )
+            with repository.read_session(metrics) as session:
+                while window := list(
+                    islice(reader, BALANCED_SETTINGS.restoration_window_rows)
+                ):
+                    prepared = []
+                    codes: list[str] = []
+                    first_line = reader.line_num - len(window) + 1
+                    for offset, row in enumerate(window):
+                        _raise_if_cancelled(should_cancel)
+                        _validate_row(row, configuration, first_line + offset)
+                        cells = []
+                        for column in configuration.selected_columns:
+                            classified = classify_cell_format(row[column.index])
+                            cells.append((column, classified))
+                            if classified.lookup_code is not None:
+                                codes.append(classified.lookup_code)
+                        prepared.append(cells)
+                    resolved = _bulk_lookup(session, codes, cache, metrics)
+                    for cells in prepared:
+                        _raise_if_cancelled(should_cancel)
+                        for column, classified in cells:
+                            cells_analyzed += 1
+                            if classified.classification is CellClassification.EMPTY:
+                                empty_cells += 1
+                            elif classified.classification is CellClassification.COMMON:
+                                common_values += 1
+                            elif classified.classification is CellClassification.INVALID_CODE_LIKE:
+                                invalid_formats += 1
+                            else:
+                                valid_codes += 1
+                                assert classified.lookup_code is not None
+                                assert classified.prefix is not None
+                                if classified.prefix not in seen_prefixes:
+                                    prefixes.append(classified.prefix)
+                                    seen_prefixes.add(classified.prefix)
+                                mapping = resolved[classified.lookup_code]
+                                if mapping is None:
+                                    missing_codes += 1
+                                else:
+                                    found_codes += 1
+                                    if mapping.source_header != column.header:
+                                        issue = (
+                                            f"Coluna '{column.header}': codigo associado "
+                                            f"originalmente ao cabecalho '{mapping.source_header}'."
+                                        )
+                                        if issue not in seen_incompatibilities:
+                                            incompatibilities.append(issue)
+                                            seen_incompatibilities.add(issue)
+                        rows_processed += 1
+                        if progress_callback is not None:
+                            progress_callback(RestorationProgress(RestorationStage.ANALYZING, rows_processed))
     except RestorationError:
         raise
     except (OSError, UnicodeError, csv.Error, StopIteration) as error:
@@ -112,7 +128,42 @@ def analyze_csv(
     )
 
 
-def _lookup(repository: VaultRepository, code: str, cache: dict[str, object | None]):
+def _bulk_lookup(session, codes, cache, metrics):
+    resolved = {}
+    missing = []
+    missing_seen = set()
+    for code in codes:
+        if code in resolved:
+            if metrics is not None:
+                metrics.cache_hits += 1
+            continue
+        if code in cache:
+            resolved[code] = cache[code]
+            if metrics is not None:
+                metrics.cache_hits += 1
+        elif code not in missing_seen:
+            missing.append(code)
+            missing_seen.add(code)
+            if metrics is not None:
+                metrics.cache_misses += 1
+    try:
+        fetched = session.get_many(missing)
+    except Exception as error:
+        raise RestorationSecurityError(
+            "Não foi possível recuperar um ou mais mapeamentos com segurança."
+        ) from error
+    for code in missing:
+        mapping = fetched.get(code)
+        resolved[code] = mapping
+        cache[code] = mapping
+    return resolved
+
+
+def _lookup(
+    repository: VaultRepository,
+    code: str,
+    cache: MutableMapping[str, object | None],
+):
     if code in cache:
         return cache[code]
     try:

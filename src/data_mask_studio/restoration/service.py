@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
+from data_mask_studio.performance import RestorationMetrics
 from data_mask_studio.restoration.analyzer import analyze_csv
 from data_mask_studio.restoration.csv_restorer import restore_csv
 from data_mask_studio.restoration.models import (
@@ -26,6 +27,7 @@ class RestorationService:
         *,
         progress_callback: ProgressCallback | None = None,
         should_cancel: CancellationCheck | None = None,
+        metrics: RestorationMetrics | None = None,
     ) -> AnalysisResult:
         repository = self._repository_factory().as_read_only()
         return analyze_csv(
@@ -33,6 +35,7 @@ class RestorationService:
             repository,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
+            metrics=metrics,
         )
 
     def restore(
@@ -43,6 +46,7 @@ class RestorationService:
         overwrite: bool = False,
         progress_callback: ProgressCallback | None = None,
         should_cancel: CancellationCheck | None = None,
+        metrics: RestorationMetrics | None = None,
     ) -> RestorationResult:
         repository = self._repository_factory().as_read_only()
         return restore_csv(
@@ -52,4 +56,5 @@ class RestorationService:
             overwrite=overwrite,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
+            metrics=metrics,
         )

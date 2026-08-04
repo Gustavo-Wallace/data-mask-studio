@@ -7,6 +7,7 @@ from data_mask_studio.batch_restoration import (
     BatchRestorationOptions,
     BatchRestorationService,
 )
+from data_mask_studio.performance import BALANCED_SETTINGS, ProgressLimiter
 
 
 class _BatchRestorationWorker(QThread):
@@ -77,13 +78,19 @@ class BatchRestorationProcessingWorker(_BatchRestorationWorker):
         self._options = options
 
     def run(self) -> None:
+        limiter = ProgressLimiter(BALANCED_SETTINGS)
+
+        def report(progress) -> None:
+            if limiter.should_emit(progress.current_value):
+                self.progress.emit(progress)
+
         try:
             summary = self._service.restore_files(
                 self._files,
                 self._output_directory,
                 self._options,
                 file_callback=self.file_changed.emit,
-                progress_callback=self.progress.emit,
+                progress_callback=report,
                 should_cancel=self._cancellation.is_set,
             )
         except Exception as error:

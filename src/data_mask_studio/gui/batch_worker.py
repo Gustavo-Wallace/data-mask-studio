@@ -8,6 +8,7 @@ from data_mask_studio.batch import (
     CancellationRequest,
 )
 from data_mask_studio.profiles import ConfigurationProfile
+from data_mask_studio.performance import BALANCED_SETTINGS, ProgressLimiter
 from data_mask_studio.security import KeyProvider
 from data_mask_studio.vault import VaultRepository
 
@@ -76,6 +77,12 @@ class BatchProcessingWorker(QThread):
         self._cancellation.request()
 
     def run(self) -> None:
+        limiter = ProgressLimiter(BALANCED_SETTINGS)
+
+        def report(progress) -> None:
+            if limiter.should_emit(progress.records_processed):
+                self.progress.emit(progress)
+
         try:
             summary = self._service.process(
                 self._files,
@@ -85,7 +92,7 @@ class BatchProcessingWorker(QThread):
                 self._vault_repository_factory,
                 cancellation=self._cancellation,
                 file_callback=self.file_changed.emit,
-                progress_callback=self.progress.emit,
+                progress_callback=report,
             )
         except Exception as error:
             self.failed.emit(error)

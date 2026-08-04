@@ -34,11 +34,11 @@ A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI pa
 
 ### Opção recomendada
 
-Baixe `DataMaskStudio-Setup-0.9.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
+Baixe `DataMaskStudio-Setup-0.10.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
 
 ### Versão portátil
 
-Baixe `DataMaskStudio-Portable-0.9.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
+Baixe `DataMaskStudio-Portable-0.10.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
 
 ### Código-fonte
 
@@ -73,4 +73,6 @@ A aba de backup permite gerar um arquivo `.dmsbackup` protegido por senha.
 
 Na aba “Integridade”, a verificação local produz somente um relatório técnico seguro e não altera o cofre.
 
-O programa é destinado atualmente ao Windows. Os executáveis da versão 0.9.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.
+O processamento de CSVs é realizado em fluxo, com memória e atualizações visuais limitadas para manter a interface responsiva em grandes volumes.
+
+O programa é destinado atualmente ao Windows. Os executáveis da versão 0.10.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.

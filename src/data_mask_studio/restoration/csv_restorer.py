@@ -2,12 +2,14 @@ import csv
 import os
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
+from itertools import islice
 from pathlib import Path
 
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
+from data_mask_studio.performance import BALANCED_SETTINGS, BoundedCache, RestorationMetrics
 from data_mask_studio.restoration.analyzer import (
-    _lookup,
+    _bulk_lookup,
     _python_encoding,
     _raise_if_cancelled,
     _validate_configuration,
@@ -44,6 +46,7 @@ def restore_csv(
     overwrite: bool = False,
     progress_callback: ProgressCallback | None = None,
     should_cancel: CancellationCheck | None = None,
+    metrics: RestorationMetrics | None = None,
 ) -> RestorationResult:
     """Restaura somente colunas escolhidas e publica o CSV atomicamente."""
     _validate_configuration(configuration)
@@ -55,7 +58,9 @@ def restore_csv(
     started_at = time.perf_counter()
     rows_processed = restored_codes = missing_codes = 0
     preserved_common_values = empty_cells = 0
-    cache: dict[str, object | None] = {}
+    cache: MutableMapping[str, object | None] = BoundedCache(
+        BALANCED_SETTINGS.restoration_cache_limit
+    )
 
     try:
         with tempfile.NamedTemporaryFile(
@@ -66,6 +71,7 @@ def restore_csv(
             suffix=".tmp",
             dir=destination.parent,
             delete=False,
+            buffering=BALANCED_SETTINGS.io_buffer_size,
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
             writer = csv.writer(temporary_file, delimiter=configuration.delimiter)
@@ -73,6 +79,7 @@ def restore_csv(
                 "r",
                 encoding=_python_encoding(configuration.encoding),
                 newline="",
+                buffering=BALANCED_SETTINGS.io_buffer_size,
             ) as source_file:
                 reader = csv.reader(
                     source_file, delimiter=configuration.delimiter, strict=True
@@ -80,62 +87,63 @@ def restore_csv(
                 headers = next(reader)
                 _validate_current_headers(configuration, headers)
                 writer.writerow(headers)
-                for row in reader:
-                    _raise_if_cancelled(should_cancel)
-                    _validate_row(row, configuration, reader.line_num)
-                    restored_row = list(row)
-                    for column in configuration.selected_columns:
-                        classified = classify_cell_format(row[column.index])
-                        if classified.classification is CellClassification.EMPTY:
-                            empty_cells += 1
-                            continue
-                        if classified.classification in (
-                            CellClassification.COMMON,
-                            CellClassification.INVALID_CODE_LIKE,
-                        ):
-                            preserved_common_values += 1
-                            continue
-                        assert classified.lookup_code is not None
-                        mapping = _lookup(
-                            repository, classified.lookup_code, cache
-                        )
-                        if mapping is None:
-                            missing_codes += 1
-                            if (
-                                configuration.missing_code_policy
-                                is MissingCodePolicy.EMPTY
-                            ):
-                                restored_row[column.index] = ""
-                            elif (
-                                configuration.missing_code_policy
-                                is MissingCodePolicy.ABORT
-                            ):
-                                raise MissingCodeError(
-                                    "A restauracao foi interrompida porque um codigo "
-                                    f"nao foi encontrado (coluna '{column.header}', "
-                                    f"linha {reader.line_num})."
+                with repository.read_session(metrics) as session:
+                    while window := list(
+                        islice(reader, BALANCED_SETTINGS.restoration_window_rows)
+                    ):
+                        prepared = []
+                        codes = []
+                        first_line = reader.line_num - len(window) + 1
+                        for offset, row in enumerate(window):
+                            _raise_if_cancelled(should_cancel)
+                            line_number = first_line + offset
+                            _validate_row(row, configuration, line_number)
+                            cells = []
+                            for column in configuration.selected_columns:
+                                classified = classify_cell_format(row[column.index])
+                                cells.append((column, classified))
+                                if classified.lookup_code is not None:
+                                    codes.append(classified.lookup_code)
+                            prepared.append((row, line_number, cells))
+                        resolved = _bulk_lookup(session, codes, cache, metrics)
+                        for row, line_number, cells in prepared:
+                            _raise_if_cancelled(should_cancel)
+                            restored_row = list(row)
+                            for column, classified in cells:
+                                if classified.classification is CellClassification.EMPTY:
+                                    empty_cells += 1
+                                    continue
+                                if classified.classification in (CellClassification.COMMON, CellClassification.INVALID_CODE_LIKE):
+                                    preserved_common_values += 1
+                                    continue
+                                assert classified.lookup_code is not None
+                                mapping = resolved[classified.lookup_code]
+                                if mapping is None:
+                                    missing_codes += 1
+                                    if configuration.missing_code_policy is MissingCodePolicy.EMPTY:
+                                        restored_row[column.index] = ""
+                                    elif configuration.missing_code_policy is MissingCodePolicy.ABORT:
+                                        raise MissingCodeError(
+                                            "A restauracao foi interrompida porque um codigo "
+                                            f"nao foi encontrado (coluna '{column.header}', linha {line_number})."
+                                        )
+                                    continue
+                                restored_row[column.index] = (
+                                    mapping.canonical_value
+                                    if configuration.representation_policy is RepresentationPolicy.CANONICAL
+                                    else mapping.original_value
                                 )
-                            continue
-                        if (
-                            configuration.representation_policy
-                            is RepresentationPolicy.CANONICAL
-                        ):
-                            restored_row[column.index] = mapping.canonical_value
-                        else:
-                            restored_row[column.index] = mapping.original_value
-                        restored_codes += 1
-                    writer.writerow(restored_row)
-                    rows_processed += 1
-                    if progress_callback is not None:
-                        progress_callback(
-                            RestorationProgress(
-                                RestorationStage.RESTORING,
-                                rows_processed,
-                                restored_codes,
-                                missing_codes,
-                                preserved_common_values,
-                            )
-                        )
+                                restored_codes += 1
+                            write_started = time.perf_counter()
+                            writer.writerow(restored_row)
+                            if metrics is not None:
+                                metrics.writing_seconds += time.perf_counter() - write_started
+                            rows_processed += 1
+                            if progress_callback is not None:
+                                progress_callback(RestorationProgress(
+                                    RestorationStage.RESTORING, rows_processed,
+                                    restored_codes, missing_codes, preserved_common_values,
+                                ))
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
             _raise_if_cancelled(should_cancel)
@@ -148,7 +156,9 @@ def restore_csv(
         raise
     except RestorationError:
         raise
-    except (OSError, UnicodeError, csv.Error, StopIteration) as error:
+    except OSError as error:
+        raise RestorationError(_safe_io_message(error)) from error
+    except (UnicodeError, csv.Error, StopIteration) as error:
         raise RestorationError(
             "Nao foi possivel gerar o arquivo CSV restaurado."
         ) from error
@@ -194,3 +204,13 @@ def suggested_output_path(source_path: str | Path) -> Path:
     if stem.lower().endswith(suffix):
         stem = stem[: -len(suffix)]
     return source.with_name(f"{stem}_restaurado.csv")
+
+
+def _safe_io_message(error: OSError) -> str:
+    if getattr(error, "errno", None) == 28 or getattr(error, "winerror", None) == 112:
+        return "Não há espaço suficiente para concluir o arquivo restaurado."
+    if isinstance(error, FileNotFoundError):
+        return "O arquivo CSV foi removido durante a restauração."
+    if isinstance(error, PermissionError):
+        return "O arquivo está bloqueado ou a pasta de destino não permite escrita."
+    return "Falha de leitura ou escrita durante a restauração do CSV."

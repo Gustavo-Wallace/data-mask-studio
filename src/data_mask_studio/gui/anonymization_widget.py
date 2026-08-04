@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+import time
 
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices
@@ -28,6 +29,7 @@ from data_mask_studio.anonymization import (
     validate_configuration,
 )
 from data_mask_studio.csv_tools import CSVInspectionError, CSVInspectionResult, inspect_csv
+from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.csv_tools.csv_anonymizer import (
     CSVAnonymizationError,
     paths_refer_to_same_file,
@@ -971,6 +973,7 @@ class AnonymizationWidget(QWidget):
         self.processed_count_label.setText("0 registros processados")
         self.processed_count_label.setVisible(True)
         self._set_status("Gerando o CSV anonimizado...", is_error=False)
+        self._processing_started_at = time.perf_counter()
 
         worker = AnonymizationWorker(
             self._inspection_result,
@@ -989,8 +992,13 @@ class AnonymizationWidget(QWidget):
         worker.start()
 
     def _processing_progress(self, records_processed: int) -> None:
+        elapsed = time.perf_counter() - getattr(
+            self, "_processing_started_at", time.perf_counter()
+        )
+        metrics = calculate_metrics(records_processed, elapsed)
         self.processed_count_label.setText(
-            f"{records_processed} registros processados"
+            f"{records_processed} registros; {metrics.rows_per_second:,.0f} linhas/s; "
+            f"{metrics.elapsed_seconds:.1f} s decorridos; estimativa indisponível"
         )
 
     def _processing_completed(self, result: AnonymizationResult) -> None:

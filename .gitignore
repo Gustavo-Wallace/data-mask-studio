@@ -70,3 +70,6 @@ vault.db-shm
 *_anonimizado.csv
 *_restaurado.csv
 *.tmp
+
+# Dados e relatórios sintéticos de benchmark
+/benchmarks/.data/
