@@ -40,6 +40,7 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
     assert window.tabs.tabText(5) == "Backup e recuperação"
     assert window.tabs.tabText(6) == "Integridade"
     assert window.tabs.tabText(7) == "Restauração em lote"
+    assert window.tabs.tabText(8) == "Cofre e manutenção"
     assert window.restoration_widget.path_field.isReadOnly()
     assert not window.restoration_widget.generate_button.isEnabled()
     assert not window.html_restoration_widget.generate_button.isEnabled()

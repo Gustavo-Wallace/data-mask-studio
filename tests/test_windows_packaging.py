@@ -60,8 +60,8 @@ def test_build_helper_reads_version_and_generates_versioned_names() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == (
-        "0.8.0|DataMaskStudio-Portable-0.8.0.zip|"
-        "DataMaskStudio-Setup-0.8.0.exe"
+        "0.9.0|DataMaskStudio-Portable-0.9.0.zip|"
+        "DataMaskStudio-Setup-0.9.0.exe"
     )
 
 
@@ -148,7 +148,7 @@ def test_portable_zip_has_root_folder_without_tests_or_virtualenv(
     internal.mkdir(parents=True)
     (portable / "DataMaskStudio.exe").write_bytes(b"exe")
     (internal / "library.dll").write_bytes(b"dll")
-    destination = tmp_path / "DataMaskStudio-Portable-0.8.0.zip"
+    destination = tmp_path / "DataMaskStudio-Portable-0.9.0.zip"
     command = (
         f". {ps_quote(HELPERS)}; "
         f"New-DataMaskStudioPortableArchive -PortableDirectory {ps_quote(portable)} "

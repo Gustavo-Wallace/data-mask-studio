@@ -10,6 +10,7 @@ SCHEMA_VERSION = 3
 RESTORABLE_SCHEMA_VERSIONS = frozenset({1, 2, SCHEMA_VERSION})
 DATABASE_FILE_NAME = "vault.db"
 SQLITE_TIMEOUT_SECONDS = 30.0
+MIGRATION_BATCH_SIZE = 1_000
 
 CREATE_MAPPINGS_SQL = """
 CREATE TABLE vault_mappings (
@@ -198,47 +199,50 @@ def _migrate_v2_to_v3(
     """Reautentica todos os registros com AAD v1 dentro de uma transação."""
     connection.execute("BEGIN IMMEDIATE")
     try:
-        mappings = connection.execute(
-            "SELECT code, prefix, canonical_encrypted_value, canonical_nonce, "
-            "source_header, normalization_rule FROM vault_mappings ORDER BY code"
-        ).fetchall()
-        variations = connection.execute(
-            "SELECT v.identifier, v.code, v.encrypted_value, v.nonce, "
-            "v.normalization_rule, m.prefix, m.source_header "
-            "FROM vault_variations AS v "
-            "JOIN vault_mappings AS m ON m.code = v.code "
-            "ORDER BY v.identifier"
-        ).fetchall()
+        _migrate_v2_mappings(connection, cipher)
+        _migrate_v2_variations(connection, cipher)
 
-        decrypted_mappings = [
-            (
-                row,
-                cipher.decrypt(
-                    str(row["code"]),
-                    str(row["prefix"]),
-                    bytes(row["canonical_encrypted_value"]),
-                    bytes(row["canonical_nonce"]),
-                ),
-            )
-            for row in mappings
-        ]
-        decrypted_variations = [
-            (
-                row,
-                cipher.decrypt(
-                    str(row["code"]),
-                    str(row["prefix"]),
-                    bytes(row["encrypted_value"]),
-                    bytes(row["nonce"]),
-                ),
-            )
-            for row in variations
-        ]
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
 
-        for row, value in decrypted_mappings:
+
+def _migrate_v2_mappings(
+    connection: sqlite3.Connection,
+    cipher: VaultCipher,
+) -> None:
+    last_code: str | None = None
+    while True:
+        if last_code is None:
+            rows = connection.execute(
+                "SELECT code, prefix, canonical_encrypted_value, canonical_nonce, "
+                "source_header, normalization_rule FROM vault_mappings "
+                "ORDER BY code LIMIT ?",
+                (MIGRATION_BATCH_SIZE,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT code, prefix, canonical_encrypted_value, canonical_nonce, "
+                "source_header, normalization_rule FROM vault_mappings "
+                "WHERE code > ? ORDER BY code LIMIT ?",
+                (last_code, MIGRATION_BATCH_SIZE),
+            ).fetchall()
+        if not rows:
+            return
+        for row in rows:
+            code = str(row["code"])
+            prefix = str(row["prefix"])
+            value = cipher.decrypt(
+                code,
+                prefix,
+                bytes(row["canonical_encrypted_value"]),
+                bytes(row["canonical_nonce"]),
+            )
             encrypted = cipher.encrypt_mapping(
-                str(row["code"]),
-                str(row["prefix"]),
+                code,
+                prefix,
                 str(row["source_header"]),
                 str(row["normalization_rule"]),
                 value,
@@ -246,14 +250,43 @@ def _migrate_v2_to_v3(
             connection.execute(
                 "UPDATE vault_mappings SET canonical_encrypted_value = ?, "
                 "canonical_nonce = ? WHERE code = ?",
-                (encrypted.ciphertext, encrypted.nonce, str(row["code"])),
+                (encrypted.ciphertext, encrypted.nonce, code),
             )
+        last_code = str(rows[-1]["code"])
 
-        for row, value in decrypted_variations:
+
+def _migrate_v2_variations(
+    connection: sqlite3.Connection,
+    cipher: VaultCipher,
+) -> None:
+    last_identifier = 0
+    while True:
+        rows = connection.execute(
+            "SELECT v.identifier, v.code, v.encrypted_value, v.nonce, "
+            "v.normalization_rule, m.prefix, m.source_header "
+            "FROM vault_variations AS v "
+            "LEFT JOIN vault_mappings AS m ON m.code = v.code "
+            "WHERE v.identifier > ? ORDER BY v.identifier LIMIT ?",
+            (last_identifier, MIGRATION_BATCH_SIZE),
+        ).fetchall()
+        if not rows:
+            return
+        for row in rows:
+            if row["prefix"] is None or row["source_header"] is None:
+                raise VaultError("O cofre local possui referências inconsistentes.")
+            identifier = int(row["identifier"])
+            code = str(row["code"])
+            prefix = str(row["prefix"])
+            value = cipher.decrypt(
+                code,
+                prefix,
+                bytes(row["encrypted_value"]),
+                bytes(row["nonce"]),
+            )
             encrypted = cipher.encrypt_variation(
-                int(row["identifier"]),
-                str(row["code"]),
-                str(row["prefix"]),
+                identifier,
+                code,
+                prefix,
                 str(row["source_header"]),
                 str(row["normalization_rule"]),
                 value,
@@ -261,11 +294,6 @@ def _migrate_v2_to_v3(
             connection.execute(
                 "UPDATE vault_variations SET encrypted_value = ?, nonce = ? "
                 "WHERE identifier = ?",
-                (encrypted.ciphertext, encrypted.nonce, int(row["identifier"])),
+                (encrypted.ciphertext, encrypted.nonce, identifier),
             )
-
-        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
+        last_identifier = int(rows[-1]["identifier"])

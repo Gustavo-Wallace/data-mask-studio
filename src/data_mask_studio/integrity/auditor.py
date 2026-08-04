@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import re
-import shutil
 import sqlite3
 import tempfile
 from collections.abc import Callable
@@ -9,7 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from data_mask_studio.anonymization import TokenGenerator
-from data_mask_studio.backup import EnvironmentPaths
+from data_mask_studio.backup import (
+    BackupError,
+    EnvironmentPaths,
+    create_sqlite_snapshot,
+)
 from data_mask_studio.integrity.exceptions import IntegrityCancelled, IntegrityError
 from data_mask_studio.integrity.models import AuditReport, CheckResult, IntegrityStatus
 from data_mask_studio.normalization import NormalizationError, NormalizationRule, normalize_value
@@ -17,7 +20,11 @@ from data_mask_studio.profiles import ProfileError, ProfileRepository
 from data_mask_studio.security import KeyProvider
 from data_mask_studio.security.key_provider import KEY_SIZE
 from data_mask_studio.vault import VaultCipher, VaultEncryptionError
-from data_mask_studio.vault.database import SCHEMA_VERSION, connect_read_only
+from data_mask_studio.vault.database import (
+    RESTORABLE_SCHEMA_VERSIONS,
+    SCHEMA_VERSION,
+    connect_read_only,
+)
 
 ProgressCallback = Callable[[int, int], None]
 CancellationCheck = Callable[[], bool]
@@ -148,10 +155,11 @@ class IntegrityAuditor:
                 prefix="data-mask-studio-integrity-"
             )
             snapshot_path = Path(snapshot_directory.name) / "vault.db"
-            for suffix in ("", "-wal", "-shm"):
-                source = Path(f"{self._paths.vault_database_path}{suffix}")
-                if source.is_file():
-                    shutil.copy2(source, Path(f"{snapshot_path}{suffix}"))
+            create_sqlite_snapshot(
+                self._paths.vault_database_path,
+                snapshot_path,
+            )
+            self._raise_if_cancelled(should_cancel)
             connection = connect_read_only(snapshot_path)
             connection.set_progress_handler(lambda: 1 if should_cancel() else 0, 1000)
             integrity_rows = [
@@ -171,6 +179,14 @@ class IntegrityAuditor:
             self._raise_if_cancelled(should_cancel)
 
             schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if (
+                schema_version in RESTORABLE_SCHEMA_VERSIONS
+                and schema_version != SCHEMA_VERSION
+            ):
+                checks.extend(self._migration_pending_checks(schema_version))
+                for completed in range(4, 11):
+                    progress(completed)
+                return checks, schema_version
             schema_failures = self._schema_failures(connection, schema_version)
             checks.append(
                 _failed(
@@ -218,7 +234,7 @@ class IntegrityAuditor:
             if should_cancel() or "interrupted" in str(error).casefold():
                 raise IntegrityCancelled("A verificação de integridade foi cancelada.") from error
             return self._database_failure_checks(), None
-        except (sqlite3.Error, OSError, ValueError):
+        except (BackupError, sqlite3.Error, OSError, ValueError):
             return self._database_failure_checks(), None
         finally:
             if connection is not None:
@@ -410,6 +426,22 @@ class IntegrityAuditor:
             _failed(name, "A verificação não pôde ser concluída com segurança.")
             for name in _DATABASE_CHECK_NAMES
         ]
+
+    @staticmethod
+    def _migration_pending_checks(schema_version: int) -> list[CheckResult]:
+        message = "O cofre precisa ser migrado antes da verificação de integridade."
+        schema = CheckResult(
+            "Versão e estrutura do esquema",
+            IntegrityStatus.ATTENTION,
+            1,
+            0,
+            message,
+        )
+        pending = [
+            CheckResult(name, IntegrityStatus.ATTENTION, 0, 0, message)
+            for name in _DATABASE_CHECK_NAMES[2:]
+        ]
+        return [schema, *pending]
 
 
 _DATABASE_CHECK_NAMES = (

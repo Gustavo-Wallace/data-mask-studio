@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QTabWidget
@@ -11,6 +12,7 @@ from data_mask_studio.gui.batch_restoration_widget import BatchRestorationWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.gui.html_restoration_widget import HTMLRestorationWidget
 from data_mask_studio.gui.integrity_widget import IntegrityWidget
+from data_mask_studio.gui.maintenance_widget import MaintenanceWidget
 from data_mask_studio.gui.restoration_widget import RestorationWidget
 from data_mask_studio.profiles import ProfileError, ProfileRepository, ProfileService
 from data_mask_studio.security import (
@@ -24,6 +26,7 @@ from data_mask_studio.vault import (
     VaultRepository,
     create_default_read_only_vault_repository,
     create_default_vault_repository,
+    initialize_existing_vault,
 )
 
 
@@ -57,6 +60,13 @@ class MainWindow(QMainWindow):
             self._backup_paths.directory
         )
         self._data_protector = data_protector or WindowsDPAPIProtector()
+
+        # Uma migração pendente precisa terminar antes de qualquer aba obter
+        # uma visão somente leitura do cofre ou iniciar outra operação.
+        initialize_existing_vault(
+            self._backup_paths.vault_database_path,
+            self._vault_key_provider,
+        )
 
         resolved_profile_service = profile_service
         profile_initialization_error: str | None = None
@@ -111,6 +121,20 @@ class MainWindow(QMainWindow):
         self.batch_restoration_widget.busy_changed.connect(
             self._batch_restoration_busy_changed
         )
+        self.maintenance_widget = MaintenanceWidget(
+            self._backup_paths,
+            self._key_provider,
+            self._vault_key_provider,
+            self._prepare_maintenance,
+            self._maintenance_directories,
+        )
+        self.maintenance_widget.busy_changed.connect(self._maintenance_busy_changed)
+        self.maintenance_widget.environment_changed.connect(
+            self._environment_maintained
+        )
+        self.integrity_widget.audit_completed.connect(
+            self.maintenance_widget.set_last_audit
+        )
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self.anonymization_widget, "Anonimizar CSV")
@@ -121,6 +145,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.backup_widget, "Backup e recuperação")
         self.tabs.addTab(self.integrity_widget, "Integridade")
         self.tabs.addTab(self.batch_restoration_widget, "Restauração em lote")
+        self.tabs.addTab(self.maintenance_widget, "Cofre e manutenção")
         self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)
 
@@ -147,6 +172,7 @@ class MainWindow(QMainWindow):
             or self.html_restoration_widget.has_running_worker()
             or self.integrity_widget.has_running_worker()
             or self.batch_restoration_widget.has_running_workers()
+            or self.maintenance_widget.has_running_worker()
         ):
             return False
         self.consultant_widget.clear_consultation()
@@ -160,6 +186,7 @@ class MainWindow(QMainWindow):
             or self.html_restoration_widget.has_running_worker()
             or self.backup_widget.has_running_worker()
             or self.batch_restoration_widget.has_running_workers()
+            or self.maintenance_widget.has_running_worker()
         ):
             return False
         self.consultant_widget.clear_consultation()
@@ -173,6 +200,21 @@ class MainWindow(QMainWindow):
             or self.html_restoration_widget.has_running_worker()
             or self.backup_widget.has_running_worker()
             or self.integrity_widget.has_running_worker()
+            or self.maintenance_widget.has_running_worker()
+        ):
+            return False
+        self.consultant_widget.clear_consultation()
+        return True
+
+    def _prepare_maintenance(self) -> bool:
+        if (
+            self.anonymization_widget.has_running_worker()
+            or self.batch_widget.has_running_workers()
+            or self.restoration_widget.has_running_worker()
+            or self.html_restoration_widget.has_running_worker()
+            or self.backup_widget.has_running_worker()
+            or self.integrity_widget.has_running_worker()
+            or self.batch_restoration_widget.has_running_workers()
         ):
             return False
         self.consultant_widget.clear_consultation()
@@ -196,12 +238,40 @@ class MainWindow(QMainWindow):
             if index != batch_index:
                 self.tabs.setTabEnabled(index, not busy)
 
+    def _maintenance_busy_changed(self, busy: bool) -> None:
+        maintenance_index = self.tabs.indexOf(self.maintenance_widget)
+        for index in range(self.tabs.count()):
+            if index != maintenance_index:
+                self.tabs.setTabEnabled(index, not busy)
+
+    def _maintenance_directories(self) -> tuple[Path, ...]:
+        paths: list[Path] = []
+        for widget, attribute in (
+            (self.anonymization_widget, "_last_output_path"),
+            (self.restoration_widget, "_last_output_path"),
+            (self.html_restoration_widget, "_last_output_path"),
+            (self.batch_widget, "_output_directory"),
+            (self.batch_restoration_widget, "_output_directory"),
+            (self.backup_widget, "_last_backup_path"),
+        ):
+            value = getattr(widget, attribute, None)
+            if value is not None:
+                path = value if getattr(value, "is_dir", lambda: False)() else value.parent
+                if path not in paths:
+                    paths.append(path)
+        return tuple(paths)
+
     def _environment_restored(self) -> None:
         self.anonymization_widget.clear_selection(
             status="Ambiente local restaurado com sucesso."
         )
         self.consultant_widget.clear_consultation()
         self.anonymization_widget.refresh_profiles()
+        self.integrity_widget.clear_report()
+        self.batch_restoration_widget.invalidate_analysis()
+
+    def _environment_maintained(self) -> None:
+        self.consultant_widget.clear_consultation()
         self.integrity_widget.clear_report()
         self.batch_restoration_widget.invalidate_analysis()
 
@@ -234,6 +304,10 @@ class MainWindow(QMainWindow):
             (
                 self.batch_restoration_widget.stop_workers,
                 "Aguarde o cancelamento da restauração em lote.",
+            ),
+            (
+                self.maintenance_widget.stop_worker,
+                "Aguarde a conclusão segura da manutenção.",
             ),
         )
         for stop_worker, message in workers:

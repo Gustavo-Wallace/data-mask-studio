@@ -11,6 +11,7 @@ from data_mask_studio.vault.exceptions import (
     VaultError,
 )
 from data_mask_studio.vault.key_provider import VaultKeyProvider
+from data_mask_studio.vault.initializer import initialize_existing_vault
 from data_mask_studio.vault.models import MappingCandidate, VaultUpdateSummary
 from data_mask_studio.vault.repository import VaultRepository
 
@@ -21,6 +22,7 @@ __all__ = [
     "VaultEncryptionError",
     "VaultError",
     "VaultKeyProvider",
+    "initialize_existing_vault",
     "VaultRepository",
     "VaultUpdateSummary",
     "create_default_vault_repository",

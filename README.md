@@ -14,6 +14,7 @@ Data Mask Studio é uma aplicação desktop local para anonimização reversíve
 - restaurar CSVs anonimizados usando o cofre local.
 - restaurar vários CSVs e HTMLs sequencialmente em um único lote;
 - verificar localmente a integridade das chaves, do cofre e dos perfis sem expor dados.
+- diagnosticar o ambiente, validar backups e executar limpeza ou compactação controlada do cofre.
 
 A versão atual permite restaurar seletivamente CSVs anonimizados com os mapeamentos do cofre local.
 Ela também restaura códigos presentes em arquivos HTML e dashboards locais sem executar o conteúdo.
@@ -33,11 +34,11 @@ A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI pa
 
 ### Opção recomendada
 
-Baixe `DataMaskStudio-Setup-0.8.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
+Baixe `DataMaskStudio-Setup-0.9.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
 
 ### Versão portátil
 
-Baixe `DataMaskStudio-Portable-0.8.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
+Baixe `DataMaskStudio-Portable-0.9.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
 
 ### Código-fonte
 
@@ -64,6 +65,7 @@ Fluxo resumido:
 7. Na aba “Restaurar CSV”, escolha um arquivo anonimizado e as colunas que deseja restaurar.
 8. Na aba “Restaurar HTML”, analise e restaure códigos presentes em um dashboard local.
 9. Na aba “Restauração em lote”, revise e restaure vários CSVs e HTMLs para uma pasta de saída.
+10. Use “Cofre e manutenção” para diagnóstico, validação de backups, limpeza controlada e compactação manual.
 
 Perfis salvos também podem ser utilizados na aba de anonimização em lote.
 
@@ -71,4 +73,4 @@ A aba de backup permite gerar um arquivo `.dmsbackup` protegido por senha.
 
 Na aba “Integridade”, a verificação local produz somente um relatório técnico seguro e não altera o cofre.
 
-O programa é destinado atualmente ao Windows. Os executáveis da versão 0.8.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.
+O programa é destinado atualmente ao Windows. Os executáveis da versão 0.9.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.

@@ -16,7 +16,18 @@ def create_sqlite_snapshot(
     source_connection: sqlite3.Connection | None = None
     destination_connection: sqlite3.Connection | None = None
     try:
-        source_connection = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+        if not source.is_file():
+            raise BackupError("O cofre local não foi encontrado.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        has_wal_state = any(
+            Path(f"{source}{suffix}").exists() for suffix in ("-wal", "-shm")
+        )
+        immutable_option = "" if has_wal_state else "&immutable=1"
+        source_connection = sqlite3.connect(
+            f"{source.resolve().as_uri()}?mode=ro{immutable_option}",
+            uri=True,
+        )
+        source_connection.execute("PRAGMA busy_timeout = 30000")
         destination_connection = sqlite3.connect(destination)
 
         def progress(_status: int, _remaining: int, _total: int) -> None:
@@ -24,7 +35,9 @@ def create_sqlite_snapshot(
 
         source_connection.backup(destination_connection, pages=128, progress=progress)
         destination_connection.commit()
-    except sqlite3.Error as error:
+    except BackupError:
+        raise
+    except (OSError, sqlite3.Error) as error:
         raise BackupError("Não foi possível criar o snapshot consistente do cofre.") from error
     finally:
         if destination_connection is not None:

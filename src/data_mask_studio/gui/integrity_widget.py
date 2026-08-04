@@ -26,6 +26,7 @@ _STATUS_LABELS = {
 
 class IntegrityWidget(QWidget):
     busy_changed = Signal(bool)
+    audit_completed = Signal(object)
 
     def __init__(
         self,
@@ -131,6 +132,7 @@ class IntegrityWidget(QWidget):
             f"Auditoria concluída: {_STATUS_LABELS[report.status]}.",
             report.status is IntegrityStatus.FAILURE,
         )
+        self.audit_completed.emit(report)
 
     def _cancelled(self) -> None:
         self._set_status("Auditoria cancelada. Nenhum dado foi alterado.", False)
