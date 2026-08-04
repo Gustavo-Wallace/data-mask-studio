@@ -182,3 +182,43 @@ def test_window_generates_csv_in_background(tmp_path: Path) -> None:
 
     window.close()
     application.quit()
+
+
+def test_window_reports_structured_normalization_fallback_without_value(
+    tmp_path: Path,
+) -> None:
+    sensitive_value = "unknown"
+    csv_path = tmp_path / "addresses.csv"
+    csv_path.write_text(
+        f"IP,Extra\n192.0.2.1,a\n{sensitive_value},b\n198.51.100.2,c\n",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "addresses_anonymized.csv"
+    repository = VaultRepository(tmp_path / "vault.db", VaultCipher(b"V" * 32))
+    application = create_application([])
+    window = MainWindow(
+        key_provider=FixedKeyProvider(),
+        vault_repository_factory=lambda: repository,
+        profile_service=profile_service(tmp_path),
+    )
+    window.load_csv(str(csv_path))
+    window._checkboxes[0].setChecked(True)
+    normalization = window._normalization_fields[0]
+    normalization.setCurrentIndex(
+        normalization.findData(NormalizationRule.IP_ADDRESS.value)
+    )
+    window.validate_button.click()
+
+    window._start_processing(output_path, overwrite=False)
+    worker = window._worker
+    assert worker is not None and worker.wait(5000)
+    application.processEvents()
+
+    status = window.status_label.text()
+    assert output_path.exists()
+    assert "anonimizados por valor exato" in status
+    assert "IP: 1 fallback(s)" in status
+    assert sensitive_value not in status
+
+    window.close()
+    application.quit()

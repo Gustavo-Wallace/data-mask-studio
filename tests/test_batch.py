@@ -184,7 +184,7 @@ def test_batch_processes_sequentially_with_one_transaction_per_file(
     assert len(list(output.glob("*.csv"))) == 2
 
 
-def test_file_error_rolls_back_only_that_file_and_continues(tmp_path: Path) -> None:
+def test_batch_uses_fallback_for_invalid_value_and_continues(tmp_path: Path) -> None:
     service, profile = make_profile_service(tmp_path)
     first = tmp_path / "first.csv"
     invalid = tmp_path / "invalid.csv"
@@ -204,14 +204,18 @@ def test_file_error_rolls_back_only_that_file_and_continues(tmp_path: Path) -> N
 
     assert [item.status for item in files] == [
         BatchFileStatus.COMPLETED,
-        BatchFileStatus.ERROR,
+        BatchFileStatus.COMPLETED,
         BatchFileStatus.COMPLETED,
     ]
-    assert summary.completed_files == 2
-    assert summary.error_files == 1
+    assert summary.completed_files == 3
+    assert summary.error_files == 0
     assert "Sensitive Sentinel" not in files[1].result_message
-    assert not (output / "invalid_anonimizado.csv").exists()
-    assert repository.count() == 4
+    assert (output / "invalid_anonimizado.csv").exists()
+    assert [(item.header, item.count) for item in summary.normalization_fallbacks] == [
+        ("CPF", 1)
+    ]
+    assert "CPF: 1" in files[1].result_message
+    assert repository.count() == 6
 
 
 def test_removed_file_after_validation_does_not_stop_following_file(

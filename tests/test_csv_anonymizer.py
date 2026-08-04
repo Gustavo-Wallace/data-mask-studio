@@ -1,12 +1,19 @@
 import codecs
 import csv
 import re
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from data_mask_studio.anonymization import ColumnConfig, generate_token
 from data_mask_studio.normalization import NormalizationRule
+from data_mask_studio.normalization import NormalizationError
+from data_mask_studio.restoration import (
+    RestorationConfiguration,
+    SelectedColumn,
+    restore_csv,
+)
 from data_mask_studio.csv_tools.csv_anonymizer import (
     CSVAnonymizationError,
     ProcessingCancelled,
@@ -520,7 +527,7 @@ def test_same_canonical_value_with_different_prefixes_has_different_tokens(
     assert row[1].startswith("CPF_B-")
 
 
-def test_normalization_error_rolls_back_vault_and_removes_output(
+def test_incompatible_cpf_uses_exact_fallback_and_processing_continues(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "cpf.csv"
@@ -529,33 +536,29 @@ def test_normalization_error_rolls_back_vault_and_removes_output(
     destination = tmp_path / "output.csv"
     repository = make_vault(tmp_path)
 
-    with pytest.raises(CSVAnonymizationError) as captured:
-        anonymize_csv(
-            source,
-            destination,
-            encoding="utf-8",
-            delimiter=",",
-            configurations=[
-                ColumnConfig("CPF", True, "CPF", NormalizationRule.CPF)
-            ],
-            secret_key=KEY,
-            vault_repository=repository,
-            mapping_batch_size=1,
-        )
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[ColumnConfig("CPF", True, "CPF", NormalizationRule.CPF)],
+        secret_key=KEY,
+        vault_repository=repository,
+        mapping_batch_size=1,
+    )
 
-    message = str(captured.value)
-    cause_messages: list[str] = []
-    cause = captured.value.__cause__
-    while cause is not None:
-        cause_messages.append(str(cause))
-        cause = cause.__cause__
-    assert "coluna ‘CPF’" in message
-    assert "linha 3" in message
-    assert "invalid-sensitive-value" not in message
-    assert all("invalid-sensitive-value" not in text for text in cause_messages)
-    assert repository.count() == 0
+    rows = list(csv.reader(destination.open("r", encoding="utf-8-sig", newline="")))
+    fallback_mapping = repository.get_decrypted_mapping(rows[2][0])
+    assert result.records_processed == 2
+    assert [(item.header, item.count) for item in result.normalization_fallbacks] == [
+        ("CPF", 1)
+    ]
+    assert fallback_mapping is not None
+    assert fallback_mapping.normalization_rule is NormalizationRule.EXACT
+    assert fallback_mapping.original_value == "invalid-sensitive-value"
+    assert repository.count() == 2
     assert source.read_bytes() == original_content
-    assert not destination.exists()
+    assert destination.exists()
     assert list(tmp_path.glob("*.tmp")) == []
 
 
@@ -594,3 +597,321 @@ def test_real_collision_compares_canonical_value(tmp_path: Path) -> None:
 
     assert repository.count() == 1
     assert not destination.exists()
+
+
+def _single_column_fallback(
+    tmp_path: Path,
+    rule: NormalizationRule,
+    value: str,
+    *,
+    header: str = "Campo",
+    prefix: str = "CAMPO",
+):
+    source = tmp_path / f"{rule.value}.csv"
+    source.write_text(f"{header}\n{value}\n", encoding="utf-8")
+    destination = tmp_path / f"{rule.value}-output.csv"
+    repository = make_vault(tmp_path)
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[ColumnConfig(header, True, prefix, rule)],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+    with destination.open("r", encoding="utf-8-sig", newline="") as file:
+        token = list(csv.reader(file))[1][0]
+    return result, repository, token, source, destination
+
+
+@pytest.mark.parametrize(
+    ("rule", "value"),
+    [
+        (NormalizationRule.IP_ADDRESS, "unknown"),
+        (NormalizationRule.IP_ADDRESS, "texto arbitrário"),
+        (NormalizationRule.IP_ADDRESS, "192.168.1.999"),
+        (NormalizationRule.CPF, "CPF indisponível"),
+        (NormalizationRule.CNPJ, "CNPJ pendente"),
+        (NormalizationRule.PHONE, "sem telefone"),
+        (NormalizationRule.EMAIL, "sem arroba"),
+        (NormalizationRule.DIGITS_ONLY, "sem dígitos"),
+    ],
+)
+def test_structured_normalization_failures_use_exact_fallback(
+    tmp_path: Path, rule: NormalizationRule, value: str
+) -> None:
+    result, repository, token, _, _ = _single_column_fallback(tmp_path, rule, value)
+
+    mapping = repository.get_decrypted_mapping(token)
+    assert token == generate_token(KEY, "CAMPO", value)
+    assert mapping is not None
+    assert mapping.original_value == value
+    assert mapping.canonical_value == value
+    assert mapping.normalization_rule is NormalizationRule.EXACT
+    assert mapping.variations[0].normalization_rule is NormalizationRule.EXACT
+    assert result.normalization_fallbacks[0].count == 1
+    assert value not in repr(result)
+
+
+def test_unknown_ip_fallback_restores_original_and_later_rows_continue(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ip.csv"
+    source.write_text("IP\n192.0.2.1\nunknown\n198.51.100.2\n", encoding="utf-8")
+    anonymized = tmp_path / "ip-anonimizado.csv"
+    restored = tmp_path / "ip-restaurado.csv"
+    repository = make_vault(tmp_path)
+    result = anonymize_csv(
+        source,
+        anonymized,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS)
+        ],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+    restore_csv(
+        RestorationConfiguration(
+            anonymized,
+            "utf-8-sig",
+            ",",
+            ("IP",),
+            (SelectedColumn(0, "IP"),),
+        ),
+        restored,
+        repository,
+    )
+
+    assert result.records_processed == 3
+    assert result.normalization_fallbacks[0].count == 1
+    assert restored.read_text(encoding="utf-8-sig").splitlines() == [
+        "IP",
+        "192.0.2.1",
+        "unknown",
+        "198.51.100.2",
+    ]
+
+
+def test_empty_structured_value_creates_no_token_mapping_or_fallback(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "empty-ip.csv"
+    source.write_text('IP\n""\n"   "\n', encoding="utf-8")
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS)],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as file:
+        rows = list(csv.reader(file))
+    assert rows[1:] == [[""], ["   "]]
+    assert repository.count() == 0
+    assert result.normalization_fallbacks == ()
+
+
+def test_valid_structured_value_keeps_configured_normalization(tmp_path: Path) -> None:
+    result, repository, token, _, _ = _single_column_fallback(
+        tmp_path,
+        NormalizationRule.IP_ADDRESS,
+        "2001:0db8::1",
+        header="IP",
+        prefix="IP",
+    )
+
+    mapping = repository.get_decrypted_mapping(token)
+    assert token == generate_token(KEY, "IP", "2001:db8::1")
+    assert mapping is not None
+    assert mapping.normalization_rule is NormalizationRule.IP_ADDRESS
+    assert mapping.canonical_value == "2001:db8::1"
+    assert result.normalization_fallbacks == ()
+
+
+def test_exact_fallback_token_is_deterministic_and_reuses_existing_mapping(
+    tmp_path: Path,
+) -> None:
+    value = "unknown"
+    code = generate_token(KEY, "IP", value)
+    repository = make_vault(tmp_path)
+    with repository.transaction() as transaction:
+        transaction.upsert_batch(
+            [MappingCandidate(code, "IP", value, "IP", normalization_rule=NormalizationRule.EXACT)]
+        )
+    source = tmp_path / "input.csv"
+    source.write_text(f"IP\n{value}\n{value}\n", encoding="utf-8")
+    outputs = [tmp_path / "first.csv", tmp_path / "second.csv"]
+
+    results = [
+        anonymize_csv(
+            source,
+            output,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS)],
+            secret_key=KEY,
+            vault_repository=repository,
+        )
+        for output in outputs
+    ]
+
+    assert outputs[0].read_bytes() == outputs[1].read_bytes()
+    assert all(result.new_mappings == 0 for result in results)
+    assert all(result.updated_mappings == 1 for result in results)
+    mapping = repository.get_decrypted_mapping(code)
+    assert mapping is not None and mapping.occurrence_count == 5
+
+
+def test_fallback_counts_are_aggregated_by_column_without_values(tmp_path: Path) -> None:
+    source = tmp_path / "mixed.csv"
+    sentinels = ("private-ip-value", "private-cpf-one", "private-cpf-two")
+    source.write_text(
+        "IP,CPF\n"
+        f"{sentinels[0]},{sentinels[1]}\n"
+        f"192.0.2.1,{sentinels[2]}\n",
+        encoding="utf-8",
+    )
+    repository = make_vault(tmp_path)
+    result = anonymize_csv(
+        source,
+        tmp_path / "output.csv",
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS),
+            ColumnConfig("CPF", True, "CPF", NormalizationRule.CPF),
+        ],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    assert [(item.header, item.count) for item in result.normalization_fallbacks] == [
+        ("IP", 1),
+        ("CPF", 2),
+    ]
+    assert all(value not in repr(result) for value in sentinels)
+
+
+def test_unexpected_normalizer_error_remains_fatal_and_rolls_back(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import data_mask_studio.anonymization.anonymizer as anonymizer_module
+
+    source = tmp_path / "input.csv"
+    source.write_text("IP\nunknown\nlater\n", encoding="utf-8")
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+    sentinel = "private-unexpected-value"
+
+    def fail_unexpectedly(_value, _rule):
+        raise RuntimeError(sentinel)
+
+    monkeypatch.setattr(anonymizer_module, "normalize_value", fail_unexpectedly)
+    with pytest.raises(CSVAnonymizationError) as raised:
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS)],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=1,
+        )
+
+    assert isinstance(raised.value.__cause__, RuntimeError)
+    assert sentinel not in str(raised.value)
+    assert repository.count() == 0
+    assert not destination.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_normalization_error_only_triggers_exact_fallback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import data_mask_studio.anonymization.anonymizer as anonymizer_module
+
+    original = anonymizer_module.normalize_value
+
+    def expected_failure(value, rule):
+        if rule is NormalizationRule.IP_ADDRESS:
+            raise NormalizationError("expected format mismatch")
+        return original(value, rule)
+
+    monkeypatch.setattr(anonymizer_module, "normalize_value", expected_failure)
+    result, repository, token, _, _ = _single_column_fallback(
+        tmp_path, NormalizationRule.IP_ADDRESS, "192.0.2.1", header="IP", prefix="IP"
+    )
+
+    mapping = repository.get_decrypted_mapping(token)
+    assert result.normalization_fallbacks[0].count == 1
+    assert mapping is not None and mapping.normalization_rule is NormalizationRule.EXACT
+
+
+def test_sqlite_failure_after_fallback_is_fatal_and_cleans_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from data_mask_studio.vault.repository import VaultTransaction
+
+    source = tmp_path / "input.csv"
+    source.write_text("IP\nunknown\n", encoding="utf-8")
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+
+    def fail_sqlite(_self, _candidates):
+        raise sqlite3.OperationalError("private sqlite detail")
+
+    monkeypatch.setattr(VaultTransaction, "upsert_batch", fail_sqlite)
+    with pytest.raises(CSVAnonymizationError):
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS)],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=1,
+        )
+
+    assert repository.count() == 0
+    assert not destination.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_fallback_output_is_equivalent_across_mapping_batch_sizes(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "input.csv"
+    source.write_text("IP\nunknown\n192.0.2.1\nother\n", encoding="utf-8")
+    outputs = []
+    fallback_counts = []
+    for batch_size in (1, 1000):
+        folder = tmp_path / str(batch_size)
+        folder.mkdir()
+        output = folder / "output.csv"
+        repository = VaultRepository(folder / "vault.db", VaultCipher(VAULT_KEY))
+        result = anonymize_csv(
+            source,
+            output,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS)],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=batch_size,
+        )
+        outputs.append(output.read_bytes())
+        fallback_counts.append(result.normalization_fallbacks)
+
+    assert outputs[0] == outputs[1]
+    assert fallback_counts[0] == fallback_counts[1]

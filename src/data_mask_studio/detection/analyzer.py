@@ -15,7 +15,11 @@ from data_mask_studio.detection.value_detectors import matches_type
 from data_mask_studio.normalization import NormalizationRule
 
 DEFAULT_ROW_LIMIT = 100
+STRONG_MATCH_RATIO = 0.8
+PARTIAL_MATCH_RATIO = 0.6
+HEADER_SUPPORT_RATIO = 0.5
 _VALUE_TYPES = (
+    SuggestedType.DATETIME,
     SuggestedType.CPF,
     SuggestedType.CNPJ,
     SuggestedType.EMAIL,
@@ -101,9 +105,42 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
     }
     best_type = max(_VALUE_TYPES, key=lambda candidate: ratios[candidate])
     best_ratio = ratios[best_type]
+    datetime_ratio = ratios[SuggestedType.DATETIME]
+
+    if header_type is SuggestedType.DATETIME:
+        if not values:
+            confidence = ConfidenceLevel.LOW
+            reason = "O cabeçalho indica data ou hora, mas não há amostra para confirmar."
+        elif datetime_ratio >= STRONG_MATCH_RATIO:
+            confidence = ConfidenceLevel.HIGH
+            reason = "O cabeçalho e a maior parte da amostra indicam data ou hora."
+        elif datetime_ratio >= HEADER_SUPPORT_RATIO:
+            confidence = ConfidenceLevel.MEDIUM
+            reason = "O cabeçalho e parte relevante da amostra indicam data ou hora."
+        else:
+            confidence = ConfidenceLevel.LOW
+            reason = "O cabeçalho indica data ou hora, mas a amostra é inconsistente."
+        return _build(
+            header,
+            SuggestedType.DATETIME,
+            confidence,
+            values,
+            datetime_ratio,
+            reason,
+        )
+
+    if datetime_ratio >= STRONG_MATCH_RATIO:
+        return _build(
+            header,
+            SuggestedType.DATETIME,
+            ConfidenceLevel.MEDIUM,
+            values,
+            datetime_ratio,
+            "A maior parte da amostra possui formatos válidos de data ou hora.",
+        )
 
     if header_type is SuggestedType.COMMON_TEXT:
-        if best_ratio >= 0.8 and best_type is not SuggestedType.GENERIC_ID:
+        if best_ratio >= STRONG_MATCH_RATIO and best_type is not SuggestedType.GENERIC_ID:
             return _build(
                 header,
                 best_type,
@@ -139,15 +176,15 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             reason = "O cabeçalho sugere o tipo, mas não há valores para confirmar."
         elif (
             best_type is not header_type
-            and best_ratio >= 0.8
+            and best_ratio >= STRONG_MATCH_RATIO
             and best_ratio > own_ratio
         ):
             confidence = ConfidenceLevel.LOW
             reason = "O cabeçalho e o padrão agregado da amostra são conflitantes."
-        elif own_ratio >= 0.8:
+        elif own_ratio >= STRONG_MATCH_RATIO:
             confidence = ConfidenceLevel.HIGH
             reason = "O cabeçalho e a maior parte da amostra indicam o mesmo tipo."
-        elif own_ratio >= 0.5:
+        elif own_ratio >= HEADER_SUPPORT_RATIO:
             confidence = ConfidenceLevel.MEDIUM
             reason = "O cabeçalho é compatível com parte relevante da amostra."
         else:
@@ -155,7 +192,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             reason = "O cabeçalho sugere o tipo, mas a amostra é inconsistente."
         return _build(header, header_type, confidence, values, own_ratio, reason)
 
-    if best_ratio >= 0.8 and best_type is not SuggestedType.GENERIC_ID:
+    if best_ratio >= STRONG_MATCH_RATIO and best_type is not SuggestedType.GENERIC_ID:
         return _build(
             header,
             best_type,
@@ -164,7 +201,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             best_ratio,
             "A maior parte da amostra possui um padrão estrutural consistente.",
         )
-    if best_ratio >= 0.6:
+    if best_ratio >= PARTIAL_MATCH_RATIO:
         return _build(
             header,
             best_type,
@@ -198,6 +235,7 @@ def _build(
     reason: str,
 ) -> ColumnSuggestion:
     anonymize = suggested_type not in {
+        SuggestedType.DATETIME,
         SuggestedType.COMMON_TEXT,
         SuggestedType.UNKNOWN,
     }

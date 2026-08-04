@@ -34,6 +34,14 @@ class ConfigurationValidationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class NormalizationFallback:
+    """Contagem agregada, sem valores ou posições do arquivo."""
+
+    header: str
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
 class AnonymizationResult:
     """Resumo de um arquivo CSV anonimizado com sucesso."""
 
@@ -42,3 +50,4 @@ class AnonymizationResult:
     duration_seconds: float
     new_mappings: int = 0
     updated_mappings: int = 0
+    normalization_fallbacks: tuple[NormalizationFallback, ...] = ()

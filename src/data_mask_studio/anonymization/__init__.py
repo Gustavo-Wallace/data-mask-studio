@@ -9,6 +9,7 @@ from data_mask_studio.anonymization.models import (
     ColumnConfig,
     ColumnValidationResult,
     ConfigurationValidationResult,
+    NormalizationFallback,
 )
 from data_mask_studio.anonymization.prefix_rules import normalize_prefix
 from data_mask_studio.anonymization.token_generator import TokenGenerator, generate_token
@@ -18,6 +19,7 @@ __all__ = [
     "ColumnConfig",
     "ColumnValidationResult",
     "ConfigurationValidationResult",
+    "NormalizationFallback",
     "TokenGenerator",
     "create_column_configs",
     "generate_token",

@@ -482,8 +482,7 @@ class BatchWidget(QWidget):
 
 
 def _render_summary(summary: BatchSummary) -> str:
-    return "\n".join(
-        (
+    lines = [
             f"Arquivos selecionados: {summary.selected_files}",
             f"Arquivos compatíveis: {summary.compatible_files}",
             f"Arquivos concluídos: {summary.completed_files}",
@@ -496,5 +495,13 @@ def _render_summary(summary: BatchSummary) -> str:
             f"Mapeamentos atualizados: {summary.updated_mappings}",
             f"Tempo aproximado: {summary.duration_seconds:.2f} s",
             f"Pasta de saída: {summary.output_directory}",
+    ]
+    if summary.normalization_fallbacks:
+        lines.append(
+            "Valores incompatíveis anonimizados por valor exato: "
+            + "; ".join(
+                f"{item.header}: {item.count} fallback(s)"
+                for item in summary.normalization_fallbacks
+            )
         )
-    )
+    return "\n".join(lines)

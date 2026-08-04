@@ -5,6 +5,7 @@ from data_mask_studio.normalization import NormalizationRule
 
 
 class SuggestedType(StrEnum):
+    DATETIME = "datetime"
     CPF = "cpf"
     CNPJ = "cnpj"
     EMAIL = "email"
@@ -24,6 +25,7 @@ class ConfidenceLevel(StrEnum):
 
 
 TYPE_LABELS: dict[SuggestedType, str] = {
+    SuggestedType.DATETIME: "Data/Hora",
     SuggestedType.CPF: "CPF",
     SuggestedType.CNPJ: "CNPJ",
     SuggestedType.EMAIL: "E-mail",

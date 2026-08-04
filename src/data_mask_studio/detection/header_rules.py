@@ -5,6 +5,23 @@ from data_mask_studio.detection.models import SuggestedType
 
 
 _ALIASES: tuple[tuple[SuggestedType, frozenset[str]], ...] = (
+    (
+        SuggestedType.DATETIME,
+        frozenset(
+            {
+                "data",
+                "hora",
+                "data_hora",
+                "datetime",
+                "date",
+                "time",
+                "timestamp",
+                "created_at",
+                "updated_at",
+                "login_time",
+            }
+        ),
+    ),
     (SuggestedType.CPF, frozenset({"cpf", "documento_cpf", "numero_cpf"})),
     (SuggestedType.CNPJ, frozenset({"cnpj", "documento_cnpj", "numero_cnpj"})),
     (

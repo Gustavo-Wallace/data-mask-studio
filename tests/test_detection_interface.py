@@ -177,3 +177,38 @@ def test_detection_worker_emits_cancelled_signal(tmp_path: Path) -> None:
 
     assert cancelled == [True]
     application.quit()
+
+
+def test_datetime_suggestion_is_displayed_safely_offscreen(tmp_path: Path) -> None:
+    path = tmp_path / "events.csv"
+    sensitive_sample = "31/07/2026 23:59"
+    path.write_text(
+        f"Data/Hora (BRT),evento\n{sensitive_sample},login\n",
+        encoding="utf-8",
+    )
+    application = create_application([])
+    widget = make_widget(tmp_path)
+    widget.load_csv(str(path))
+
+    run_analysis(widget, application)
+
+    dialog = widget._detection_dialog
+    assert dialog is not None
+    suggestion = widget._suggestions[0]
+    assert suggestion.suggested_type is SuggestedType.DATETIME
+    assert dialog.table.item(0, 2).text() == "Data/Hora"
+    assert dialog.table.item(0, 3).text() == "Não"
+    assert dialog.table.item(0, 4).text() == "—"
+    assert dialog.table.item(0, 5).text() == "Valor exato"
+    assert dialog.table.item(0, 6).text() == "Alta"
+    reason_item = dialog.table.item(0, 7)
+    assert reason_item.toolTip() == reason_item.text()
+    visible = " ".join(
+        dialog.table.item(0, column).text()
+        for column in range(dialog.table.columnCount())
+        if dialog.table.item(0, column) is not None
+    )
+    assert sensitive_sample not in visible
+
+    widget.close()
+    application.quit()

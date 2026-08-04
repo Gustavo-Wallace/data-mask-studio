@@ -1013,12 +1013,22 @@ class AnonymizationWidget(QWidget):
         self.output_path_label.setVisible(True)
         self.open_folder_button.setVisible(True)
         self.open_folder_button.setEnabled(True)
+        fallback_notice = ""
+        if result.normalization_fallbacks:
+            details = "; ".join(
+                f"{item.header}: {item.count} fallback(s)"
+                for item in result.normalization_fallbacks
+            )
+            fallback_notice = (
+                " Alguns valores incompatíveis com a normalização configurada "
+                f"foram anonimizados por valor exato. {details}."
+            )
         self._set_status(
             "CSV anonimizado gerado com sucesso. "
             f"{result.records_processed} registros processados; "
             f"{result.new_mappings} novos mapeamentos; "
             f"{result.updated_mappings} mapeamentos existentes atualizados. "
-            "O cofre local foi atualizado.",
+            f"O cofre local foi atualizado.{fallback_notice}",
             is_error=False,
         )
 

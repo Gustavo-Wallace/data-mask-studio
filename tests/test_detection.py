@@ -10,6 +10,7 @@ from data_mask_studio.detection import (
     analyze_csv_columns,
 )
 from data_mask_studio.normalization import NormalizationRule
+from data_mask_studio.detection.value_detectors import matches_datetime, matches_type
 
 
 def analyze(tmp_path: Path, header: str, values: list[str], *, limit: int = 100):
@@ -141,3 +142,131 @@ def test_analysis_does_not_create_persistent_files(tmp_path: Path) -> None:
     analyze_csv_columns(inspect_csv(path))
 
     assert {item.name for item in tmp_path.iterdir()} == before
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "31/07/2026 23:59",
+        "31/07/2026 23:59:59",
+        "31/07/2026",
+        "2026-07-31",
+        "2026-07-31 23:59",
+        "2026-07-31 23:59:59",
+        "2026-07-31T23:59:59",
+        "2026-07-31T23:59:59-03:00",
+        "2026-07-31T23:59:59Z",
+        "29/02/2024 12:30",
+    ],
+)
+def test_valid_calendar_date_and_datetime_formats_are_detected(value: str) -> None:
+    assert matches_datetime(value)
+    assert matches_type(value, SuggestedType.DATETIME)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "31/13/2026 23:59",
+        "29/02/2023",
+        "2026-02-30T23:59:59Z",
+        "2026-07-31T25:00:00-03:00",
+    ],
+)
+def test_impossible_dates_are_rejected_by_calendar_validation(value: str) -> None:
+    assert not matches_datetime(value)
+
+
+def test_real_data_hora_brt_case_is_not_a_phone(tmp_path: Path) -> None:
+    value = "31/07/2026 23:59"
+    suggestion = analyze(tmp_path, "Data/Hora (BRT)", [value] * 4).suggestions[0]
+
+    assert suggestion.suggested_type is SuggestedType.DATETIME
+    assert suggestion.confidence is ConfidenceLevel.HIGH
+    assert not suggestion.anonymize
+    assert suggestion.prefix == ""
+    assert suggestion.normalization_rule is NormalizationRule.EXACT
+    assert not matches_type(value, SuggestedType.PHONE)
+    assert value not in suggestion.reason
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "data",
+        "Hora UTC",
+        "data-hora",
+        "datetime",
+        "date",
+        "time",
+        "timestamp",
+        "created_at",
+        "updated_at",
+        "login_time",
+    ],
+)
+def test_portuguese_and_english_datetime_headers(tmp_path: Path, header: str) -> None:
+    suggestion = analyze(tmp_path, header, ["2026-07-31T23:59:59Z"]).suggestions[0]
+
+    assert suggestion.suggested_type is SuggestedType.DATETIME
+    assert suggestion.confidence is ConfidenceLevel.HIGH
+
+
+def test_datetime_from_sample_only_has_medium_confidence(tmp_path: Path) -> None:
+    suggestion = analyze(
+        tmp_path,
+        "evento",
+        ["31/07/2026", "2026-08-01T10:20:30Z"],
+    ).suggestions[0]
+
+    assert suggestion.suggested_type is SuggestedType.DATETIME
+    assert suggestion.confidence is ConfidenceLevel.MEDIUM
+
+
+def test_empty_values_are_ignored_and_mixed_column_is_not_datetime(
+    tmp_path: Path,
+) -> None:
+    with_empty = analyze(
+        tmp_path,
+        "evento",
+        ["", "   ", "31/07/2026", "2026-08-01 10:20"],
+    ).suggestions[0]
+    mixed = analyze(
+        tmp_path,
+        "evento",
+        ["31/07/2026", "produto", "pendente", "sem data"],
+    ).suggestions[0]
+
+    assert with_empty.suggested_type is SuggestedType.DATETIME
+    assert with_empty.sampled_values == 2
+    assert mixed.suggested_type is not SuggestedType.DATETIME
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "(61) 99999-9999",
+        "61 99999-9999",
+        "+55 61 99999-9999",
+        "61999999999",
+        "6133334444",
+        "123456789012",
+    ],
+)
+def test_phone_values_remain_phones_and_are_not_dates(value: str) -> None:
+    assert matches_type(value, SuggestedType.PHONE)
+    assert not matches_type(value, SuggestedType.DATETIME)
+
+
+def test_existing_structural_types_are_not_regressed(tmp_path: Path) -> None:
+    cases = (
+        ("cpf", "123.456.789-00", SuggestedType.CPF),
+        ("cnpj", "12.345.678/0001-90", SuggestedType.CNPJ),
+        ("email", "ana@example.com", SuggestedType.EMAIL),
+        ("endereco_ip", "192.0.2.1", SuggestedType.IP_ADDRESS),
+        ("nome", "Ana Silva", SuggestedType.NAME),
+        ("telefone", "(61) 99999-9999", SuggestedType.PHONE),
+    )
+
+    for header, value, expected in cases:
+        assert analyze(tmp_path, header, [value]).suggestions[0].suggested_type is expected

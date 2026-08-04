@@ -117,6 +117,8 @@ class DetectionDialog(QDialog):
             for column, value in enumerate(values, start=1):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if column == 7:
+                    item.setToolTip(value)
                 self.table.setItem(row, column, item)
 
             apply_button = QPushButton("Aplicar")

@@ -7,12 +7,14 @@ from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from pathlib import Path
 
-from data_mask_studio.anonymization.anonymizer import (
-    ColumnNormalizationError,
-    anonymize_row_with_canonical_values,
-)
+from data_mask_studio.anonymization.anonymizer import anonymize_row_with_metadata
 from data_mask_studio.anonymization.column_config import validate_configuration
-from data_mask_studio.anonymization.models import AnonymizationResult, ColumnConfig
+from data_mask_studio.anonymization.models import (
+    AnonymizationResult,
+    ColumnConfig,
+    NormalizationFallback,
+)
+from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
 from data_mask_studio.vault import MappingCandidate, VaultCollisionError, VaultError
 from data_mask_studio.vault.models import VaultUpdateSummary
@@ -64,6 +66,7 @@ def anonymize_csv(
     vault_summary = VaultUpdateSummary()
     input_encoding = "cp1252" if encoding == "windows-1252" else encoding
     pending_mappings: dict[str, MappingCandidate] = {}
+    fallback_counts: dict[int, int] = {}
     transaction_context = (
         vault_repository.transaction()
         if vault_repository is not None
@@ -104,24 +107,22 @@ def anonymize_csv(
                     for row in reader:
                         if should_cancel is not None and should_cancel():
                             raise ProcessingCancelled("A geração do CSV foi cancelada.")
-                        try:
-                            anonymized_row, canonical_values = (
-                                anonymize_row_with_canonical_values(
-                                    row, configurations, secret_key
-                                )
-                            )
-                        except ColumnNormalizationError as error:
-                            configuration = configurations[error.column_index]
-                            raise CSVAnonymizationError(
-                                "Não foi possível normalizar um valor da coluna "
-                                f"‘{configuration.header}’ na linha "
-                                f"{reader.line_num}."
-                            ) from error
+                        (
+                            anonymized_row,
+                            canonical_values,
+                            effective_rules,
+                            fallback_indexes,
+                        ) = anonymize_row_with_metadata(
+                            row, configurations, secret_key
+                        )
+                        for index in fallback_indexes:
+                            fallback_counts[index] = fallback_counts.get(index, 0) + 1
                         if vault_transaction is not None:
                             _collect_mappings(
                                 row,
                                 anonymized_row,
                                 canonical_values,
+                                effective_rules,
                                 configurations,
                                 pending_mappings,
                             )
@@ -176,6 +177,10 @@ def anonymize_csv(
         duration_seconds=time.perf_counter() - started_at,
         new_mappings=vault_summary.new_mappings,
         updated_mappings=vault_summary.updated_mappings,
+        normalization_fallbacks=tuple(
+            NormalizationFallback(configurations[index].header, count)
+            for index, count in sorted(fallback_counts.items())
+        ),
     )
 
 
@@ -183,6 +188,7 @@ def _collect_mappings(
     original_row: Sequence[str],
     anonymized_row: Sequence[str],
     canonical_values: dict[int, str],
+    effective_rules: dict[int, NormalizationRule],
     configurations: Sequence[ColumnConfig],
     pending: dict[str, MappingCandidate],
 ) -> None:
@@ -197,6 +203,7 @@ def _collect_mappings(
         if original_value == "" or original_value.isspace():
             continue
         code = anonymized_row[index]
+        effective_rule = effective_rules[index]
         existing = pending.get(code)
         if existing is None:
             pending[code] = MappingCandidate(
@@ -205,7 +212,7 @@ def _collect_mappings(
                 original_value=original_value,
                 source_header=configuration.header,
                 canonical_value=canonical_values[index],
-                normalization_rule=configuration.normalization_rule,
+                normalization_rule=effective_rule,
             )
             continue
         canonical_matches = hmac.compare_digest(
@@ -216,7 +223,7 @@ def _collect_mappings(
             raise VaultCollisionError(
                 "Foi detectado um conflito de código no cofre local."
             )
-        existing.add_variation(original_value, configuration.normalization_rule)
+        existing.add_variation(original_value, effective_rule)
 
 
 def _flush_mappings(

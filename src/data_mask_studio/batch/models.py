@@ -3,6 +3,8 @@ from enum import StrEnum
 from pathlib import Path
 from threading import Event
 
+from data_mask_studio.anonymization.models import NormalizationFallback
+
 
 class BatchFileStatus(StrEnum):
     PENDING = "pending"
@@ -47,6 +49,7 @@ class BatchFile:
     records_processed: int = 0
     new_mappings: int = 0
     updated_mappings: int = 0
+    normalization_fallbacks: tuple[NormalizationFallback, ...] = ()
     error_type: BatchErrorType | None = None
 
 
@@ -82,6 +85,7 @@ class BatchSummary:
     updated_mappings: int
     duration_seconds: float
     output_directory: Path
+    normalization_fallbacks: tuple[NormalizationFallback, ...] = ()
     results: tuple[BatchFileResult, ...] = field(default_factory=tuple, repr=False)
 
 

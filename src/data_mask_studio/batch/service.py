@@ -2,7 +2,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from data_mask_studio.anonymization import ColumnConfig
+from data_mask_studio.anonymization import ColumnConfig, NormalizationFallback
 from data_mask_studio.batch.exceptions import BatchError, BatchStructuralError
 from data_mask_studio.batch.models import (
     BatchErrorType,
@@ -149,7 +149,8 @@ class BatchService:
             item.records_processed = result.records_processed
             item.new_mappings = result.new_mappings
             item.updated_mappings = result.updated_mappings
-            item.result_message = "Arquivo anonimizado com sucesso."
+            item.normalization_fallbacks = result.normalization_fallbacks
+            item.result_message = _completed_message(result.normalization_fallbacks)
             _notify_file(item, file_callback)
             if progress_callback is not None:
                 progress_callback(_progress(files, item, current_index, len(compatible)))
@@ -273,6 +274,7 @@ def _summary(
         updated_mappings=sum(item.updated_mappings for item in files),
         duration_seconds=time.perf_counter() - started_at,
         output_directory=output,
+        normalization_fallbacks=_aggregate_fallbacks(files),
         results=tuple(
             BatchFileResult(
                 path=item.path,
@@ -283,4 +285,29 @@ def _summary(
             )
             for item in files
         ),
+    )
+
+
+def _aggregate_fallbacks(
+    files: list[BatchFile],
+) -> tuple[NormalizationFallback, ...]:
+    counts: dict[str, int] = {}
+    for item in files:
+        for fallback in item.normalization_fallbacks:
+            counts[fallback.header] = counts.get(fallback.header, 0) + fallback.count
+    return tuple(
+        NormalizationFallback(header, count)
+        for header, count in sorted(counts.items(), key=lambda item: item[0].casefold())
+    )
+
+
+def _completed_message(
+    fallbacks: tuple[NormalizationFallback, ...],
+) -> str:
+    if not fallbacks:
+        return "Arquivo anonimizado com sucesso."
+    details = "; ".join(f"{item.header}: {item.count}" for item in fallbacks)
+    return (
+        "Arquivo anonimizado com sucesso. Alguns valores incompatíveis com a "
+        f"normalização foram processados por valor exato. {details}."
     )

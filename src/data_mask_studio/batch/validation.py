@@ -53,6 +53,7 @@ def invalidate_files(files: list[BatchFile]) -> None:
         item.records_processed = 0
         item.new_mappings = 0
         item.updated_mappings = 0
+        item.normalization_fallbacks = ()
         item.error_type = None
 
 
@@ -72,6 +73,7 @@ def validate_file(
     item.records_processed = 0
     item.new_mappings = 0
     item.updated_mappings = 0
+    item.normalization_fallbacks = ()
     item.error_type = None
     try:
         inspection = inspect_csv(item.path)
