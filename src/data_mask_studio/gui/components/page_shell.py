@@ -44,6 +44,7 @@ class PageShell(QWidget):
         self.setObjectName("pageShell")
         self.header = PageHeader(title, description)
         self.content = content
+        self.content.setProperty("pageContent", True)
         content_layout = content.layout()
         if content_layout is not None:
             content_layout.setContentsMargins(0, 0, 0, 0)

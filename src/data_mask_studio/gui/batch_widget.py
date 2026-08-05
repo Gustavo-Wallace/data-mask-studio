@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -36,7 +35,7 @@ from data_mask_studio.gui.batch_worker import (
     BatchProcessingWorker,
     BatchValidationWorker,
 )
-from data_mask_studio.gui.components import EmptyStateTable
+from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
 from data_mask_studio.profiles import (
     ConfigurationProfile,
     ProfileError,
@@ -140,9 +139,10 @@ class BatchWidget(QWidget):
         self.overall_progress.setValue(0)
         self.current_progress_label = QLabel("Nenhum processamento em andamento.")
         self.current_progress_label.setWordWrap(True)
-        self.summary_output = QTextEdit()
+        self.summary_output = EmptyStateTextEdit(
+            "O resumo do lote aparecerá aqui."
+        )
         self.summary_output.setReadOnly(True)
-        self.summary_output.setPlaceholderText("O resumo do lote aparecerá aqui.")
         self.summary_output.setMaximumHeight(125)
         self.status_label = QLabel("Adicione arquivos CSV para começar.")
         self.status_label.setWordWrap(True)

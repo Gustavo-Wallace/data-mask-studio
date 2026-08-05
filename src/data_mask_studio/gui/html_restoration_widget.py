@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -23,6 +22,7 @@ from data_mask_studio.gui.html_restoration_worker import (
     HTMLAnalysisWorker,
     HTMLRestorationWorker,
 )
+from data_mask_studio.gui.components import EmptyStatePlainTextEdit
 from data_mask_studio.html_restoration import (
     HTMLAnalysisResult,
     HTMLInspectionResult,
@@ -108,9 +108,10 @@ class HTMLRestorationWidget(QWidget):
         progress.addWidget(self.progress_bar, stretch=1)
         progress.addWidget(self.progress_label)
 
-        self.summary = QPlainTextEdit()
+        self.summary = EmptyStatePlainTextEdit(
+            "O resumo da análise aparecerá aqui."
+        )
         self.summary.setReadOnly(True)
-        self.summary.setPlaceholderText("O resumo da análise aparecerá aqui.")
         self.open_folder_button = QPushButton("Abrir pasta do resultado")
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.open_folder_button.setVisible(False)
@@ -125,9 +126,10 @@ class HTMLRestorationWidget(QWidget):
         layout.addLayout(policies)
         layout.addLayout(actions)
         layout.addLayout(progress)
-        layout.addWidget(self.summary, stretch=1)
+        layout.addWidget(self.summary)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
+        layout.addStretch()
         self._set_file_controls_enabled(False)
 
     def _select_html(self) -> None:

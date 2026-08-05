@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTabWidget,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -34,7 +33,7 @@ from data_mask_studio.gui.maintenance_worker import (
     TemporaryCleanupWorker,
     TemporaryScanWorker,
 )
-from data_mask_studio.gui.components import EmptyStateTable
+from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
 from data_mask_studio.integrity import AuditReport
 from data_mask_studio.maintenance import (
     STATUS_LABELS,
@@ -115,11 +114,10 @@ class MaintenanceWidget(QWidget):
         self.last_audit_label = QLabel(
             "Última auditoria nesta sessão: ainda não executada"
         )
-        self.overview_output = QTextEdit()
-        self.overview_output.setReadOnly(True)
-        self.overview_output.setPlaceholderText(
+        self.overview_output = EmptyStateTextEdit(
             "Somente estatísticas agregadas serão exibidas aqui."
         )
+        self.overview_output.setReadOnly(True)
         layout = QVBoxLayout(widget)
         layout.addLayout(actions)
         layout.addWidget(self.last_audit_label)
@@ -148,11 +146,10 @@ class MaintenanceWidget(QWidget):
         )
         self.validate_backup_button = QPushButton("Validar backup")
         self.validate_backup_button.clicked.connect(self.start_backup_validation)
-        self.backup_result = QTextEdit()
-        self.backup_result.setReadOnly(True)
-        self.backup_result.setPlaceholderText(
+        self.backup_result = EmptyStateTextEdit(
             "A validação não restaura nem modifica arquivos locais."
         )
+        self.backup_result.setReadOnly(True)
         layout = QVBoxLayout(widget)
         layout.addWidget(QLabel("Arquivo de backup:"))
         layout.addLayout(file_row)
@@ -209,7 +206,9 @@ class MaintenanceWidget(QWidget):
         self.compaction_info.setWordWrap(True)
         self.compact_button = QPushButton("Compactar cofre")
         self.compact_button.clicked.connect(self.start_compaction)
-        self.compaction_result = QTextEdit()
+        self.compaction_result = EmptyStateTextEdit(
+            "O resultado seguro da compactação aparecerá aqui."
+        )
         self.compaction_result.setReadOnly(True)
         layout = QVBoxLayout(widget)
         layout.addWidget(self.compaction_info)

@@ -5,7 +5,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -14,6 +13,7 @@ from PySide6.QtWidgets import (
 
 from data_mask_studio.backup import EnvironmentPaths
 from data_mask_studio.gui.integrity_worker import IntegrityWorker
+from data_mask_studio.gui.components import EmptyStatePlainTextEdit
 from data_mask_studio.integrity import AuditReport, IntegrityAuditor, IntegrityStatus
 from data_mask_studio.security import KeyProvider
 
@@ -63,11 +63,10 @@ class IntegrityWidget(QWidget):
         )
         self.status_label = QLabel("Pronto para executar a auditoria.")
         self.status_label.setWordWrap(True)
-        self.report_view = QPlainTextEdit()
-        self.report_view.setReadOnly(True)
-        self.report_view.setPlaceholderText(
+        self.report_view = EmptyStatePlainTextEdit(
             "O resumo seguro da auditoria será exibido aqui."
         )
+        self.report_view.setReadOnly(True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -75,7 +74,8 @@ class IntegrityWidget(QWidget):
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.last_check_label)
         layout.addWidget(self.status_label)
-        layout.addWidget(self.report_view, stretch=1)
+        layout.addWidget(self.report_view)
+        layout.addStretch()
 
     def start_audit(self) -> None:
         if self._worker is not None:

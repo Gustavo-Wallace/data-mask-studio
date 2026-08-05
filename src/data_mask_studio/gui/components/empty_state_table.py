@@ -22,7 +22,7 @@ class EmptyStateTable(QTableWidget):
         if self.rowCount() != 0:
             return
         painter = QPainter(self.viewport())
-        painter.setPen(QColor("#9aa7b8"))
+        painter.setPen(QColor("#aebccc"))
         painter.drawText(
             self.viewport().rect().adjusted(20, 20, -20, -20),
             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,

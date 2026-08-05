@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -33,6 +32,7 @@ from data_mask_studio.gui.backup_worker import (
     BackupRestoreWorker,
     BackupValidationWorker,
 )
+from data_mask_studio.gui.components import EmptyStateTextEdit
 from data_mask_studio.security import DataProtector, KeyProvider
 
 
@@ -127,7 +127,7 @@ class BackupWidget(QWidget):
         self.validate_backup_button = QPushButton("Validar backup")
         self.validate_backup_button.clicked.connect(self.start_validation)
         self.validate_backup_button.setEnabled(False)
-        self.restore_button = QPushButton("Restaurar")
+        self.restore_button = QPushButton("Restaurar backup…")
         self.restore_button.clicked.connect(self.start_restore)
         self.restore_button.setEnabled(False)
         self.restore_cancel_button = QPushButton("Cancelar")
@@ -136,7 +136,9 @@ class BackupWidget(QWidget):
         self.restore_progress = QProgressBar()
         self.restore_progress.setRange(0, 1)
         self.restore_progress.setValue(0)
-        self.restore_summary = QTextEdit()
+        self.restore_summary = EmptyStateTextEdit(
+            "Valide um backup para exibir o resumo técnico."
+        )
         self.restore_summary.setReadOnly(True)
         self.restore_summary.setMaximumHeight(115)
         self.restore_status = QLabel("Selecione um arquivo .dmsbackup.")

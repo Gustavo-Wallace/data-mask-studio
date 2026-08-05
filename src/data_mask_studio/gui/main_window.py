@@ -1,7 +1,8 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtCore import QRect
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QScreen, QShowEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
@@ -50,6 +51,11 @@ from data_mask_studio.vault import (
 class MainWindow(QMainWindow):
     """Compõe as áreas da aplicação e coordena seus eventos gerais."""
 
+    _PREFERRED_WIDTH = 1280
+    _PREFERRED_HEIGHT = 820
+    _MINIMUM_WIDTH = 960
+    _MINIMUM_HEIGHT = 640
+
     def __init__(
         self,
         key_provider: KeyProvider | None = None,
@@ -61,8 +67,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
-        self.resize(1280, 820)
-        self.setMinimumSize(960, 640)
+        self._initial_screen_fit_pending = True
+        self._screen_change_connected = False
 
         self._key_provider = key_provider or LocalKeyProvider()
         self._vault_repository_factory = (
@@ -188,7 +194,72 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.setStyleSheet(application_stylesheet())
         self._configure_presentation()
+        self._fit_to_available_geometry()
         self.navigation.buttons[0].setFocus()
+
+    def _available_screen_geometry(self, screen: QScreen | None = None) -> QRect:
+        resolved_screen = screen or self.screen() or QGuiApplication.primaryScreen()
+        return (
+            resolved_screen.availableGeometry()
+            if resolved_screen is not None
+            else QRect()
+        )
+
+    def _fit_to_available_geometry(self, screen: QScreen | None = None) -> None:
+        """Limita e centraliza a janela normal na área útil do monitor."""
+        available = self._available_screen_geometry(screen)
+        if not available.isValid() or available.isEmpty():
+            self.setMinimumSize(self._MINIMUM_WIDTH, self._MINIMUM_HEIGHT)
+            self.resize(self._PREFERRED_WIDTH, self._PREFERRED_HEIGHT)
+            return
+
+        frame_width = max(0, self.frameGeometry().width() - self.geometry().width())
+        frame_height = max(0, self.frameGeometry().height() - self.geometry().height())
+        usable_width = max(1, available.width() - frame_width)
+        usable_height = max(1, available.height() - frame_height)
+
+        self.setMinimumSize(
+            min(self._MINIMUM_WIDTH, usable_width),
+            min(self._MINIMUM_HEIGHT, usable_height),
+        )
+        self.resize(
+            min(self._PREFERRED_WIDTH, usable_width),
+            min(self._PREFERRED_HEIGHT, usable_height),
+        )
+
+        outer_width = self.width() + frame_width
+        outer_height = self.height() + frame_height
+        self.move(
+            available.x() + max(0, (available.width() - outer_width) // 2),
+            available.y() + max(0, (available.height() - outer_height) // 2),
+        )
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        window_handle = self.windowHandle()
+        if window_handle is not None and not self._screen_change_connected:
+            window_handle.screenChanged.connect(self._screen_changed)
+            self._screen_change_connected = True
+        if self._initial_screen_fit_pending:
+            self._initial_screen_fit_pending = False
+            if self.isMaximized():
+                self._limit_minimum_to_available_geometry(self.screen())
+            else:
+                self._fit_to_available_geometry(self.screen())
+
+    def _limit_minimum_to_available_geometry(self, screen: QScreen) -> None:
+        available = self._available_screen_geometry(screen)
+        if available.isValid() and not available.isEmpty():
+            self.setMinimumSize(
+                min(self._MINIMUM_WIDTH, available.width()),
+                min(self._MINIMUM_HEIGHT, available.height()),
+            )
+
+    def _screen_changed(self, screen: QScreen) -> None:
+        if self.isMaximized():
+            self._limit_minimum_to_available_geometry(screen)
+        else:
+            self._fit_to_available_geometry(screen)
 
     def __getattr__(self, name: str) -> object:
         """Mantém a API visual legada delegando-a à aba individual."""
@@ -224,7 +295,6 @@ class MainWindow(QMainWindow):
             self.batch_restoration_widget.start_button,
             self.consultant_widget.consult_button,
             self.backup_widget.create_button,
-            self.backup_widget.restore_button,
             self.integrity_widget.run_button,
             self.maintenance_widget.refresh_button,
         ):
@@ -234,6 +304,7 @@ class MainWindow(QMainWindow):
             self.maintenance_widget.cleanup_button,
         ):
             set_button_role(button, "destructive")
+        set_button_role(self.backup_widget.restore_button, "attention")
         path_fields: tuple[tuple[QLineEdit, str], ...] = (
             (self.anonymization_widget.path_field, "Caminho do CSV selecionado"),
             (self.batch_widget.output_field, "Pasta de saída da anonimização em lote"),
@@ -248,15 +319,19 @@ class MainWindow(QMainWindow):
             configure_path_field(field, accessible_name)
         for table in self.findChildren(QTableWidget):
             configure_table(table)
-        for result_area in (
-            self.html_restoration_widget.summary,
-            self.consultant_widget.results_output,
-            self.integrity_widget.report_view,
-            self.maintenance_widget.overview_output,
-            self.maintenance_widget.backup_result,
-            self.maintenance_widget.compaction_result,
+        for result_area, empty_height in (
+            (self.batch_widget.summary_output, 125),
+            (self.restoration_widget.summary, 125),
+            (self.html_restoration_widget.summary, 220),
+            (self.batch_restoration_widget.summary_output, 110),
+            (self.consultant_widget.results_output, 240),
+            (self.backup_widget.restore_summary, 115),
+            (self.integrity_widget.report_view, 240),
+            (self.maintenance_widget.overview_output, 280),
+            (self.maintenance_widget.backup_result, 220),
+            (self.maintenance_widget.compaction_result, 220),
         ):
-            configure_result_area(result_area)
+            configure_result_area(result_area, empty_height)
 
     def _prepare_restore(self) -> bool:
         if (

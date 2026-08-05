@@ -27,8 +27,9 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
 
     assert application.applicationName() == "Data Mask Studio"
     assert window.windowTitle() == "Data Mask Studio"
-    assert window.size().width() == 1280
-    assert window.size().height() == 820
+    available = window.screen().availableGeometry()
+    assert window.size().width() == min(1280, available.width())
+    assert window.size().height() == min(820, available.height())
     assert window.path_field.isReadOnly()
     assert window.select_button.text() == "Selecionar CSV"
     assert window.clear_button.text() == "Limpar seleção"

@@ -1,7 +1,15 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
-from PySide6.QtWidgets import QButtonGroup, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -9,6 +17,57 @@ class NavigationItem:
     group: str
     title: str
     accessible_description: str
+
+
+class ApplicationIdentity(QWidget):
+    """Identidade textual compacta, sem comportamento interativo."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("applicationIdentity")
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAccessibleName("Data Mask Studio")
+
+        self.monogram_label = QLabel("DMS")
+        self.monogram_label.setObjectName("identityMonogram")
+        self.name_label = QLabel("Data Mask Studio")
+        self.name_label.setObjectName("identityName")
+        for label in (self.monogram_label, self.name_label):
+            label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(9)
+        layout.addWidget(self.monogram_label)
+        layout.addWidget(
+            self.name_label,
+            stretch=1,
+            alignment=Qt.AlignmentFlag.AlignVCenter,
+        )
+
+
+class NavigationCategory(QWidget):
+    """Separador semântico e não interativo entre grupos de páginas."""
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("navigationCategory")
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAccessibleName(f"Categoria {title.title()}")
+        self.label = QLabel(title)
+        self.label.setObjectName("navigationGroup")
+        self.label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        divider = QFrame()
+        divider.setObjectName("navigationDivider")
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(3, 0, 3, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self.label)
+        layout.addWidget(divider, stretch=1)
 
 
 class SidebarNavigation(QWidget):
@@ -25,23 +84,23 @@ class SidebarNavigation(QWidget):
         self.setFixedWidth(220)
         self._current_index = 0
         self._buttons: list[QPushButton] = []
+        self._categories: list[NavigationCategory] = []
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 20, 14, 20)
+        layout.setContentsMargins(14, 18, 14, 18)
         layout.setSpacing(4)
 
-        brand = QLabel("Data Mask Studio")
-        brand.setObjectName("navigationBrand")
-        layout.addWidget(brand)
-        layout.addSpacing(18)
+        self.identity = ApplicationIdentity()
+        layout.addWidget(self.identity)
+        layout.addSpacing(12)
         previous_group = ""
         for index, item in enumerate(items):
             if item.group != previous_group:
-                group_label = QLabel(item.group)
-                group_label.setObjectName("navigationGroup")
-                layout.addSpacing(10 if previous_group else 0)
-                layout.addWidget(group_label)
+                category = NavigationCategory(item.group)
+                self._categories.append(category)
+                layout.addSpacing(12 if previous_group else 2)
+                layout.addWidget(category)
                 previous_group = item.group
             button = QPushButton(item.title)
             button.setObjectName("navigationItem")
@@ -66,6 +125,10 @@ class SidebarNavigation(QWidget):
     @property
     def buttons(self) -> tuple[QPushButton, ...]:
         return tuple(self._buttons)
+
+    @property
+    def categories(self) -> tuple[NavigationCategory, ...]:
+        return tuple(self._categories)
 
     def current_index(self) -> int:
         return self._current_index

@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -17,7 +18,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSplitter,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -41,7 +41,7 @@ from data_mask_studio.gui.batch_restoration_worker import (
     BatchRestorationAnalysisWorker,
     BatchRestorationProcessingWorker,
 )
-from data_mask_studio.gui.components import EmptyStateTable
+from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
 
@@ -99,6 +99,8 @@ class BatchRestorationWidget(QWidget):
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         self.file_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.file_table.setMinimumHeight(145)
+        self.file_table.setMaximumHeight(270)
         self.file_table.verticalHeader().setVisible(False)
         self.file_table.currentCellChanged.connect(self._selected_file_changed)
         file_header = self.file_table.horizontalHeader()
@@ -115,6 +117,8 @@ class BatchRestorationWidget(QWidget):
         )
         self.column_table.verticalHeader().setVisible(False)
         self.column_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.column_table.setMinimumHeight(115)
+        self.column_table.setMaximumHeight(210)
         column_header = self.column_table.horizontalHeader()
         column_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         column_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -135,10 +139,18 @@ class BatchRestorationWidget(QWidget):
         column_layout.addLayout(column_actions)
         column_layout.addWidget(self.column_table)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.addWidget(self.file_table)
-        splitter.addWidget(column_panel)
-        splitter.setSizes([260, 160])
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(6)
+        self.splitter.addWidget(self.file_table)
+        self.splitter.addWidget(column_panel)
+        self.splitter.setSizes([250, 170])
+        self.splitter_panel = QWidget()
+        self.splitter_panel.setMinimumHeight(300)
+        self.splitter_panel.setMaximumHeight(455)
+        splitter_layout = QVBoxLayout(self.splitter_panel)
+        splitter_layout.setContentsMargins(0, 0, 0, 0)
+        splitter_layout.addWidget(self.splitter)
 
         self.output_field = QLineEdit()
         self.output_field.setPlaceholderText("Escolha a pasta de saída")
@@ -167,12 +179,10 @@ class BatchRestorationWidget(QWidget):
         self.missing_policy_combo.addItem(
             "Interromper todo o lote", BatchMissingCodePolicy.ABORT_BATCH.value
         )
-        option_row = QHBoxLayout()
-        option_row.addWidget(QLabel("Representação restaurada:"))
-        option_row.addWidget(self.representation_combo)
-        option_row.addWidget(QLabel("Códigos ausentes:"))
-        option_row.addWidget(self.missing_policy_combo)
-        option_row.addStretch()
+        options = QFormLayout()
+        options.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        options.addRow("Representação restaurada:", self.representation_combo)
+        options.addRow("Códigos ausentes:", self.missing_policy_combo)
 
         self.analyze_button = QPushButton("Analisar arquivos")
         self.analyze_button.clicked.connect(self.analyze_files)
@@ -198,19 +208,20 @@ class BatchRestorationWidget(QWidget):
         self.overall_progress.setRange(0, 1)
         self.overall_progress.setValue(0)
         self.current_progress_label = QLabel("Nenhum processamento em andamento.")
-        self.summary_output = QTextEdit()
+        self.summary_output = EmptyStateTextEdit(
+            "O resumo final aparecerá aqui."
+        )
         self.summary_output.setReadOnly(True)
         self.summary_output.setMaximumHeight(110)
-        self.summary_output.setPlaceholderText("O resumo final aparecerá aqui.")
         self.status_label = QLabel("Adicione arquivos CSV ou HTML para começar.")
         self.status_label.setWordWrap(True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
         layout.addLayout(file_actions)
-        layout.addWidget(splitter, stretch=1)
+        layout.addWidget(self.splitter_panel)
         layout.addLayout(output_row)
-        layout.addLayout(option_row)
+        layout.addLayout(options)
         layout.addLayout(operation_row)
         layout.addWidget(QLabel("Progresso do arquivo atual:"))
         layout.addWidget(self.current_progress)

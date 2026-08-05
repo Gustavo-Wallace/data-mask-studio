@@ -33,7 +33,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("benchmarks/.data/ui-validation-0.11.0"),
+        default=Path("benchmarks/.data/ui-validation-0.11.1"),
     )
     args = parser.parse_args()
     output = args.output.resolve()
@@ -60,9 +60,9 @@ def main() -> int:
     )
     pages = {
         "anonimizar-csv": 0,
-        "anonimizacao-lote": 1,
-        "restaurar-csv": 2,
+        "restauracao-lote": 4,
         "backup-recuperacao": 6,
+        "integridade": 7,
         "cofre-manutencao": 8,
     }
     sizes = ((1100, 760), (1280, 800), (1920, 1080))

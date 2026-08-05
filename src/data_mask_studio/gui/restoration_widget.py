@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QTableWidgetItem,
@@ -30,7 +29,7 @@ from data_mask_studio.gui.restoration_worker import (
     CSVRestorationWorker,
     RestorationAnalysisWorker,
 )
-from data_mask_studio.gui.components import EmptyStateTable
+from data_mask_studio.gui.components import EmptyStatePlainTextEdit, EmptyStateTable
 from data_mask_studio.restoration import (
     AnalysisResult,
     MissingCodePolicy,
@@ -153,10 +152,11 @@ class RestorationWidget(QWidget):
         progress.addWidget(self.progress_bar, stretch=1)
         progress.addWidget(self.progress_label)
 
-        self.summary = QPlainTextEdit()
+        self.summary = EmptyStatePlainTextEdit(
+            "O resumo da análise ou restauração aparecerá aqui."
+        )
         self.summary.setReadOnly(True)
         self.summary.setMaximumHeight(125)
-        self.summary.setPlaceholderText("O resumo da análise ou restauração aparecerá aqui.")
         self.open_folder_button = QPushButton("Abrir pasta do arquivo")
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.open_folder_button.setVisible(False)
@@ -176,6 +176,7 @@ class RestorationWidget(QWidget):
         layout.addWidget(self.summary)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
+        layout.addStretch()
         self._update_enabled_state(False)
 
     def _select_csv(self) -> None:

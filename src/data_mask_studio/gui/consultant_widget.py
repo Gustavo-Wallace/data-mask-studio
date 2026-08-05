@@ -16,6 +16,7 @@ from data_mask_studio.consultant import (
     ConsultationResult,
     ConsultationStatus,
 )
+from data_mask_studio.gui.components import EmptyStatePlainTextEdit
 from data_mask_studio.normalization import normalization_label
 from data_mask_studio.vault import VaultRepository
 
@@ -49,9 +50,10 @@ class ConsultantWidget(QWidget):
         button_layout.addWidget(self.copy_button)
         button_layout.addStretch()
 
-        self.results_output = QPlainTextEdit()
+        self.results_output = EmptyStatePlainTextEdit(
+            "Os resultados da consulta aparecerão aqui."
+        )
         self.results_output.setReadOnly(True)
-        self.results_output.setPlaceholderText("Os resultados da consulta aparecerão aqui.")
 
         warning = QLabel(
             "Atenção: os resultados contêm dados sensíveis e devem permanecer "
@@ -68,9 +70,10 @@ class ConsultantWidget(QWidget):
         layout.setSpacing(10)
         layout.addWidget(self.codes_input)
         layout.addLayout(button_layout)
-        layout.addWidget(self.results_output, stretch=1)
+        layout.addWidget(self.results_output)
         layout.addWidget(warning)
         layout.addWidget(self.status_label)
+        layout.addStretch()
 
     def consult(self) -> None:
         results = self._service.consult(self.codes_input.toPlainText())
