@@ -90,17 +90,6 @@ class AnonymizationWidget(QWidget):
     ) -> None:
         super().__init__(parent)
 
-        title = QLabel("Data Mask Studio")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 28px; font-weight: 600;")
-
-        description = QLabel(
-            "Selecione um arquivo CSV para visualizar os cabeçalhos encontrados."
-        )
-        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        description.setWordWrap(True)
-        description.setStyleSheet("font-size: 14px; color: #555;")
-
         self.select_button = QPushButton("Selecionar CSV")
         self.select_button.clicked.connect(self._select_csv)
 
@@ -242,9 +231,6 @@ class AnonymizationWidget(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(36, 24, 36, 24)
         layout.setSpacing(10)
-        layout.addWidget(title)
-        layout.addWidget(description)
-        layout.addSpacing(8)
         layout.addLayout(button_layout)
         layout.addLayout(details_layout)
         layout.addWidget(self.profile_controls)

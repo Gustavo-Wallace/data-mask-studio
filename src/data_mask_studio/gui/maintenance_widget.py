@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QTabWidget,
-    QTableWidget,
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
@@ -35,6 +34,7 @@ from data_mask_studio.gui.maintenance_worker import (
     TemporaryCleanupWorker,
     TemporaryScanWorker,
 )
+from data_mask_studio.gui.components import EmptyStateTable
 from data_mask_studio.integrity import AuditReport
 from data_mask_studio.maintenance import (
     STATUS_LABELS,
@@ -77,8 +77,6 @@ class MaintenanceWidget(QWidget):
         self._last_audit: AuditReport | None = None
         self.temporary_items: list[TemporaryItem] = []
 
-        title = QLabel("Cofre e manutenção")
-        title.setStyleSheet("font-size: 22px; font-weight: 600;")
         self.sections = QTabWidget()
         self.sections.addTab(self._build_overview(), "Visão geral")
         self.sections.addTab(self._build_backup_validation(), "Validar backup")
@@ -99,7 +97,6 @@ class MaintenanceWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
-        layout.addWidget(title)
         layout.addWidget(self.sections, stretch=1)
         layout.addLayout(operation_row)
         layout.addWidget(self.status_label)
@@ -127,6 +124,7 @@ class MaintenanceWidget(QWidget):
         layout.addLayout(actions)
         layout.addWidget(self.last_audit_label)
         layout.addWidget(self.overview_output)
+        layout.addStretch()
         return widget
 
     def _build_backup_validation(self) -> QWidget:
@@ -163,6 +161,7 @@ class MaintenanceWidget(QWidget):
         layout.addWidget(self.show_backup_password)
         layout.addWidget(self.validate_backup_button)
         layout.addWidget(self.backup_result)
+        layout.addStretch()
         return widget
 
     def _build_cleanup(self) -> QWidget:
@@ -176,7 +175,9 @@ class MaintenanceWidget(QWidget):
         actions.addWidget(self.locate_button)
         actions.addWidget(self.cleanup_button)
         actions.addStretch()
-        self.temporary_table = QTableWidget(0, 5)
+        self.temporary_table = EmptyStateTable(
+            0, 5, "Nenhum arquivo temporário localizado."
+        )
         self.temporary_table.setHorizontalHeaderLabels(
             ["Excluir", "Caminho", "Tamanho", "Idade", "Situação"]
         )
@@ -214,6 +215,7 @@ class MaintenanceWidget(QWidget):
         layout.addWidget(self.compaction_info)
         layout.addWidget(self.compact_button)
         layout.addWidget(self.compaction_result)
+        layout.addStretch()
         return widget
 
     def start_diagnostic(self) -> None:
@@ -459,7 +461,10 @@ class MaintenanceWidget(QWidget):
                 status,
             )
             for column, value in enumerate(values, start=1):
-                self.temporary_table.setItem(row, column, QTableWidgetItem(value))
+                cell = QTableWidgetItem(value)
+                if column == 1:
+                    cell.setToolTip(value)
+                self.temporary_table.setItem(row, column, cell)
         self.cleanup_button.setEnabled(
             any(item.selected and item.removable for item in self.temporary_items)
         )

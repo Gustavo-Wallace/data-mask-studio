@@ -81,16 +81,19 @@ def test_integrity_busy_state_blocks_other_tabs(tmp_path: Path) -> None:
     )
 
     window._integrity_busy_changed(True)
-    integrity_index = window.tabs.indexOf(window.integrity_widget)
-    assert window.tabs.isTabEnabled(integrity_index)
+    integrity_index = window.page_index(window.integrity_widget)
+    assert window.navigation.page_enabled(integrity_index)
     assert all(
-        not window.tabs.isTabEnabled(index)
-        for index in range(window.tabs.count())
+        not window.navigation.page_enabled(index)
+        for index in range(len(window.navigation.buttons))
         if index != integrity_index
     )
 
     window._integrity_busy_changed(False)
-    assert all(window.tabs.isTabEnabled(index) for index in range(window.tabs.count()))
+    assert all(
+        window.navigation.page_enabled(index)
+        for index in range(len(window.navigation.buttons))
+    )
 
     window.close()
     application.quit()

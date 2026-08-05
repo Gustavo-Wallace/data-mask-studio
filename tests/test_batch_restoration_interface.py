@@ -102,19 +102,22 @@ def test_main_window_contains_batch_restoration_tab_and_global_block(
     service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     window = MainWindow(profile_service=service)
 
-    index = window.tabs.indexOf(window.batch_restoration_widget)
+    index = window.page_index(window.batch_restoration_widget)
     assert index >= 0
-    assert window.tabs.tabText(index) == "Restauração em lote"
+    assert window.navigation.buttons[index].text() == "Restauração em lote"
 
     window._batch_restoration_busy_changed(True)
-    assert window.tabs.isTabEnabled(index)
+    assert window.navigation.page_enabled(index)
     assert all(
-        not window.tabs.isTabEnabled(other)
-        for other in range(window.tabs.count())
+        not window.navigation.page_enabled(other)
+        for other in range(len(window.navigation.buttons))
         if other != index
     )
     window._batch_restoration_busy_changed(False)
-    assert all(window.tabs.isTabEnabled(other) for other in range(window.tabs.count()))
+    assert all(
+        window.navigation.page_enabled(other)
+        for other in range(len(window.navigation.buttons))
+    )
 
     window.close()
     application.quit()

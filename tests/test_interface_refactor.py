@@ -14,19 +14,21 @@ from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles import ProfileRepository, ProfileService
 
 
-def test_main_window_composes_existing_tabs_and_extracted_widgets(
+def test_main_window_composes_sidebar_pages_and_extracted_widgets(
     tmp_path: Path,
 ) -> None:
     application = create_application([])
     service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     window = MainWindow(profile_service=service)
 
-    assert window.tabs.count() == 9
-    assert window.tabs.widget(0) is window.anonymization_widget
+    assert len(window.navigation.buttons) == 9
+    assert window.page_widgets[0] is window.anonymization_widget
     assert isinstance(window.anonymization_widget, AnonymizationWidget)
     assert isinstance(window.config_table, ColumnConfigurationTable)
     assert isinstance(window.anonymization_widget.profile_controls, ProfileControls)
-    assert window.centralWidget() is window.tabs
+    assert window.centralWidget().objectName() == "mainWorkspace"
+    assert window.page_stack.count() == 9
+    assert "tabs" not in window.__dict__
 
     window.close()
     application.quit()

@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -31,6 +30,7 @@ from data_mask_studio.gui.restoration_worker import (
     CSVRestorationWorker,
     RestorationAnalysisWorker,
 )
+from data_mask_studio.gui.components import EmptyStateTable
 from data_mask_studio.restoration import (
     AnalysisResult,
     MissingCodePolicy,
@@ -68,19 +68,12 @@ class RestorationWidget(QWidget):
         self._last_output_path: Path | None = None
         self._last_error: Exception | None = None
 
-        title = QLabel("Restaurar CSV")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: 600;")
-        description = QLabel(
-            "Restaure somente as colunas escolhidas usando os mapeamentos do cofre local."
-        )
-        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
         self.select_button = QPushButton("Selecionar CSV anonimizado")
         self.select_button.clicked.connect(self._select_csv)
         self.path_field = QLineEdit()
         self.path_field.setReadOnly(True)
         self.path_field.setPlaceholderText("Nenhum arquivo selecionado")
+        self.file_name_label = QLabel("—")
         self.encoding_label = QLabel("—")
         self.delimiter_label = QLabel("—")
 
@@ -88,11 +81,14 @@ class RestorationWidget(QWidget):
         file_buttons.addWidget(self.select_button)
         file_buttons.addStretch()
         details = QFormLayout()
+        details.addRow("Arquivo:", self.file_name_label)
         details.addRow("Caminho:", self.path_field)
         details.addRow("Codificação:", self.encoding_label)
         details.addRow("Separador:", self.delimiter_label)
 
-        self.table = QTableWidget(0, 2)
+        self.table = EmptyStateTable(
+            0, 2, "Selecione um CSV anonimizado para revisar as colunas."
+        )
         self.table.setHorizontalHeaderLabels(["Restaurar", "Cabeçalho"])
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.table.verticalHeader().setVisible(False)
@@ -170,8 +166,6 @@ class RestorationWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 20, 36, 20)
         layout.setSpacing(8)
-        layout.addWidget(title)
-        layout.addWidget(description)
         layout.addLayout(file_buttons)
         layout.addLayout(details)
         layout.addLayout(selection)
@@ -199,6 +193,7 @@ class RestorationWidget(QWidget):
             return
         self._inspection = inspection
         self._last_output_path = None
+        self.file_name_label.setText(inspection.path.name)
         self.path_field.setText(str(inspection.path))
         self.encoding_label.setText(inspection.encoding)
         self.delimiter_label.setText(SEPARATOR_NAMES[inspection.delimiter])

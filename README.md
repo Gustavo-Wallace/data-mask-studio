@@ -16,6 +16,8 @@ Data Mask Studio é uma aplicação desktop local para anonimização reversíve
 - verificar localmente a integridade das chaves, do cofre e dos perfis sem expor dados.
 - diagnosticar o ambiente, validar backups e executar limpeza ou compactação controlada do cofre.
 
+A versão 0.11.0 organiza as nove áreas em uma navegação lateral e adapta o conteúdo a janelas normais ou maximizadas. Os formatos de arquivos, tokens, backups e o schema 3 do cofre permanecem inalterados.
+
 A versão atual permite restaurar seletivamente CSVs anonimizados com os mapeamentos do cofre local.
 Ela também restaura códigos presentes em arquivos HTML e dashboards locais sem executar o conteúdo.
 
@@ -34,11 +36,11 @@ A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI pa
 
 ### Opção recomendada
 
-Baixe `DataMaskStudio-Setup-0.10.1.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
+Baixe `DataMaskStudio-Setup-0.11.0.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
 
 ### Versão portátil
 
-Baixe `DataMaskStudio-Portable-0.10.1.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
+Baixe `DataMaskStudio-Portable-0.11.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
 
 ### Código-fonte
 
@@ -75,4 +77,4 @@ Na aba “Integridade”, a verificação local produz somente um relatório té
 
 O processamento de CSVs é realizado em fluxo, com memória e atualizações visuais limitadas para manter a interface responsiva em grandes volumes.
 
-O programa é destinado atualmente ao Windows. Os executáveis da versão 0.10.1 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.
+O programa é destinado atualmente ao Windows. Os executáveis da versão 0.11.0 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.

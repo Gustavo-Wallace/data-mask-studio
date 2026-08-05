@@ -31,16 +31,6 @@ class ConsultantWidget(QWidget):
         super().__init__(parent)
         self._service = ConsultantService(repository_factory)
 
-        title = QLabel("Consultar cofre")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: 600;")
-
-        instructions = QLabel(
-            "Informe códigos completos, separados por linha, vírgula ou ponto e vírgula."
-        )
-        instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        instructions.setWordWrap(True)
-
         self.codes_input = QPlainTextEdit()
         self.codes_input.setPlaceholderText("CPF_ID-ABCDEFGHI234\nIP-BCDEFGHI234A")
         self.codes_input.setMaximumHeight(110)
@@ -76,8 +66,6 @@ class ConsultantWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 24, 36, 24)
         layout.setSpacing(10)
-        layout.addWidget(title)
-        layout.addWidget(instructions)
         layout.addWidget(self.codes_input)
         layout.addLayout(button_layout)
         layout.addWidget(self.results_output, stretch=1)

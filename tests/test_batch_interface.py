@@ -36,7 +36,7 @@ def test_batch_tab_validates_and_processes_offscreen(tmp_path: Path) -> None:
     )
     batch = window.batch_widget
 
-    assert window.tabs.tabText(1) == "Anonimização em lote"
+    assert window.navigation.buttons[1].text() == "Anonimização em lote"
     assert batch.add_paths([source, source]) == 1
     assert batch.file_table.rowCount() == 1
     batch.validate_files()

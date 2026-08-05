@@ -52,26 +52,19 @@ class HTMLRestorationWidget(QWidget):
         self._last_output_path: Path | None = None
         self._last_error: Exception | None = None
 
-        title = QLabel("Restaurar HTML")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: 600;")
-        description = QLabel(
-            "Restaure códigos presentes em HTML e dashboards locais usando o cofre."
-        )
-        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        description.setWordWrap(True)
-
         self.select_button = QPushButton("Selecionar HTML anonimizado")
         self.select_button.clicked.connect(self._select_html)
         self.path_field = QLineEdit()
         self.path_field.setReadOnly(True)
         self.path_field.setPlaceholderText("Nenhum arquivo selecionado")
+        self.file_name_label = QLabel("—")
         self.encoding_label = QLabel("—")
 
         select_layout = QHBoxLayout()
         select_layout.addWidget(self.select_button)
         select_layout.addStretch()
         details = QFormLayout()
+        details.addRow("Arquivo:", self.file_name_label)
         details.addRow("Caminho:", self.path_field)
         details.addRow("Codificação:", self.encoding_label)
 
@@ -127,8 +120,6 @@ class HTMLRestorationWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 24, 36, 24)
         layout.setSpacing(10)
-        layout.addWidget(title)
-        layout.addWidget(description)
         layout.addLayout(select_layout)
         layout.addLayout(details)
         layout.addLayout(policies)
@@ -157,6 +148,7 @@ class HTMLRestorationWidget(QWidget):
             return
         self._inspection = inspection
         self._last_output_path = None
+        self.file_name_label.setText(inspection.path.name)
         self.path_field.setText(str(inspection.path))
         self.encoding_label.setText(inspection.encoding)
         self.summary.clear()

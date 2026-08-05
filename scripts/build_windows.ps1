@@ -129,6 +129,16 @@ $artifactNames = Get-DataMaskStudioArtifactNames -Version $version
 Write-Host "Versão confirmada pelo pyproject.toml: $version"
 Write-Host "Python: $python"
 
+Write-BuildStep 'Sincronizando metadados locais do projeto'
+& $python -m pip install --no-deps --no-build-isolation -e $projectRoot
+if ($LASTEXITCODE -ne 0) {
+    throw 'Não foi possível sincronizar os metadados do projeto no ambiente de build.'
+}
+$installedVersion = (& $python -c "from importlib.metadata import version; print(version('data-mask-studio'))").Trim()
+if ($installedVersion -ne $version) {
+    throw "Versão instalada ($installedVersion) difere do pyproject.toml ($version)."
+}
+
 & $python -m PyInstaller --version *> $null
 if ($LASTEXITCODE -ne 0) {
     throw 'PyInstaller não está instalado. Execute: python -m pip install -e ".[dev]"'

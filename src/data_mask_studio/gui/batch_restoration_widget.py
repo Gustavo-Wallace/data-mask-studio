@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
-    QTableWidget,
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
@@ -42,6 +41,7 @@ from data_mask_studio.gui.batch_restoration_worker import (
     BatchRestorationAnalysisWorker,
     BatchRestorationProcessingWorker,
 )
+from data_mask_studio.gui.components import EmptyStateTable
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
 
@@ -64,8 +64,6 @@ class BatchRestorationWidget(QWidget):
         self._processing_worker: BatchRestorationProcessingWorker | None = None
         self._output_directory: Path | None = None
 
-        title = QLabel("Restauração em lote")
-        title.setStyleSheet("font-size: 22px; font-weight: 600;")
         self.add_files_button = QPushButton("Adicionar arquivos")
         self.add_files_button.clicked.connect(self._choose_files)
         self.add_folder_button = QPushButton("Adicionar pasta")
@@ -84,7 +82,7 @@ class BatchRestorationWidget(QWidget):
             file_actions.addWidget(button)
         file_actions.addStretch()
 
-        self.file_table = QTableWidget(0, 8)
+        self.file_table = EmptyStateTable(0, 8, "Nenhum arquivo adicionado.")
         self.file_table.setHorizontalHeaderLabels(
             [
                 "Arquivo",
@@ -109,7 +107,9 @@ class BatchRestorationWidget(QWidget):
         for index in range(1, 7):
             file_header.setSectionResizeMode(index, QHeaderView.ResizeMode.ResizeToContents)
 
-        self.column_table = QTableWidget(0, 4)
+        self.column_table = EmptyStateTable(
+            0, 4, "Selecione um CSV analisado para revisar as colunas."
+        )
         self.column_table.setHorizontalHeaderLabels(
             ["Restaurar", "Cabeçalho", "Códigos válidos", "No cofre / ausentes"]
         )
@@ -207,7 +207,6 @@ class BatchRestorationWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
-        layout.addWidget(title)
         layout.addLayout(file_actions)
         layout.addWidget(splitter, stretch=1)
         layout.addLayout(output_row)
@@ -488,7 +487,10 @@ class BatchRestorationWidget(QWidget):
                 item.result_message,
             )
             for column, value in enumerate(values):
-                self.file_table.setItem(row, column, QTableWidgetItem(value))
+                cell = QTableWidgetItem(value)
+                if column in (0, 7):
+                    cell.setToolTip(str(item.path) if column == 0 else value)
+                self.file_table.setItem(row, column, cell)
 
     def _refresh_column_table(self, item: BatchRestorationFile | None) -> None:
         columns = (

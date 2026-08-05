@@ -276,7 +276,7 @@ def test_application_startup_migrates_v2_before_tabs_are_available(
 
     with sqlite3.connect(paths.vault_database_path) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
-    assert window.tabs.count() == 9
+    assert window.page_stack.count() == 9
     assert audit(paths).status is IntegrityStatus.INTACT
     assert audit_check(audit(paths), "Autenticação AES-GCM").failures == 0
 

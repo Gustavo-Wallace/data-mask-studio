@@ -41,14 +41,6 @@ class IntegrityWidget(QWidget):
         self._worker: IntegrityWorker | None = None
         self._last_report: AuditReport | None = None
 
-        title = QLabel("Auditoria de integridade")
-        title.setStyleSheet("font-size: 20px; font-weight: 600;")
-        description = QLabel(
-            "Verifica as chaves locais, o cofre criptografado e os perfis sem "
-            "alterar ou reparar os dados."
-        )
-        description.setWordWrap(True)
-
         self.run_button = QPushButton("Executar verificação")
         self.run_button.clicked.connect(self.start_audit)
         self.cancel_button = QPushButton("Cancelar")
@@ -79,8 +71,6 @@ class IntegrityWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
-        layout.addWidget(title)
-        layout.addWidget(description)
         layout.addLayout(actions)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.last_check_label)

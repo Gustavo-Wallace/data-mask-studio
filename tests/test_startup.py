@@ -27,20 +27,22 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
 
     assert application.applicationName() == "Data Mask Studio"
     assert window.windowTitle() == "Data Mask Studio"
-    assert window.size().width() == 900
-    assert window.size().height() == 600
+    assert window.size().width() == 1280
+    assert window.size().height() == 820
     assert window.path_field.isReadOnly()
     assert window.select_button.text() == "Selecionar CSV"
     assert window.clear_button.text() == "Limpar seleção"
-    assert window.tabs.tabText(0) == "Anonimizar CSV"
-    assert window.tabs.tabText(1) == "Anonimização em lote"
-    assert window.tabs.tabText(2) == "Restaurar CSV"
-    assert window.tabs.tabText(3) == "Restaurar HTML"
-    assert window.tabs.tabText(4) == "Consultar cofre"
-    assert window.tabs.tabText(5) == "Backup e recuperação"
-    assert window.tabs.tabText(6) == "Integridade"
-    assert window.tabs.tabText(7) == "Restauração em lote"
-    assert window.tabs.tabText(8) == "Cofre e manutenção"
+    assert [button.text() for button in window.navigation.buttons] == [
+        "Anonimizar CSV",
+        "Anonimização em lote",
+        "Restaurar CSV",
+        "Restaurar HTML",
+        "Restauração em lote",
+        "Consultar cofre",
+        "Backup e recuperação",
+        "Integridade",
+        "Cofre e manutenção",
+    ]
     assert window.restoration_widget.path_field.isReadOnly()
     assert not window.restoration_widget.generate_button.isEnabled()
     assert not window.html_restoration_widget.generate_button.isEnabled()

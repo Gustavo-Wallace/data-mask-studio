@@ -2,7 +2,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLineEdit,
+    QMainWindow,
+    QStackedWidget,
+    QTableWidget,
+    QWidget,
+)
 
 from data_mask_studio.backup import EnvironmentPaths, default_environment_paths
 from data_mask_studio.gui.anonymization_widget import AnonymizationWidget
@@ -12,8 +19,18 @@ from data_mask_studio.gui.batch_restoration_widget import BatchRestorationWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.gui.html_restoration_widget import HTMLRestorationWidget
 from data_mask_studio.gui.integrity_widget import IntegrityWidget
+from data_mask_studio.gui.components import (
+    NavigationItem,
+    PageShell,
+    SidebarNavigation,
+    configure_path_field,
+    configure_result_area,
+    configure_table,
+    set_button_role,
+)
 from data_mask_studio.gui.maintenance_widget import MaintenanceWidget
 from data_mask_studio.gui.restoration_widget import RestorationWidget
+from data_mask_studio.gui.styles import application_stylesheet
 from data_mask_studio.profiles import ProfileError, ProfileRepository, ProfileService
 from data_mask_studio.security import (
     DataProtector,
@@ -44,7 +61,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
-        self.resize(900, 600)
+        self.resize(1280, 820)
+        self.setMinimumSize(960, 640)
 
         self._key_provider = key_provider or LocalKeyProvider()
         self._vault_repository_factory = (
@@ -136,18 +154,41 @@ class MainWindow(QMainWindow):
             self.maintenance_widget.set_last_audit
         )
 
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self.anonymization_widget, "Anonimizar CSV")
-        self.tabs.addTab(self.batch_widget, "Anonimização em lote")
-        self.tabs.addTab(self.restoration_widget, "Restaurar CSV")
-        self.tabs.addTab(self.html_restoration_widget, "Restaurar HTML")
-        self.tabs.addTab(self.consultant_widget, "Consultar cofre")
-        self.tabs.addTab(self.backup_widget, "Backup e recuperação")
-        self.tabs.addTab(self.integrity_widget, "Integridade")
-        self.tabs.addTab(self.batch_restoration_widget, "Restauração em lote")
-        self.tabs.addTab(self.maintenance_widget, "Cofre e manutenção")
-        self.tabs.currentChanged.connect(self._tab_changed)
-        self.setCentralWidget(self.tabs)
+        page_specs = (
+            ("PROCESSAMENTO", "Anonimizar CSV", "Selecione as colunas que devem ser substituídas por códigos reversíveis.", self.anonymization_widget),
+            ("PROCESSAMENTO", "Anonimização em lote", "Processe vários arquivos CSV com um perfil de configuração salvo.", self.batch_widget),
+            ("RESTAURAÇÃO", "Restaurar CSV", "Recupere valores de colunas selecionadas usando o cofre local.", self.restoration_widget),
+            ("RESTAURAÇÃO", "Restaurar HTML", "Recupere códigos presentes em HTML e dashboards locais.", self.html_restoration_widget),
+            ("RESTAURAÇÃO", "Restauração em lote", "Restaure vários arquivos CSV ou HTML usando o cofre local.", self.batch_restoration_widget),
+            ("COFRE", "Consultar cofre", "Consulte códigos específicos sem expor todo o conteúdo do cofre.", self.consultant_widget),
+            ("COFRE", "Backup e recuperação", "Crie ou restaure um backup criptografado do ambiente local.", self.backup_widget),
+            ("COFRE", "Integridade", "Verifique as chaves, o cofre e os perfis sem modificar os dados.", self.integrity_widget),
+            ("COFRE", "Cofre e manutenção", "Diagnostique, limpe temporários e compacte o cofre com segurança.", self.maintenance_widget),
+        )
+        self.page_widgets = tuple(spec[3] for spec in page_specs)
+        self.page_stack = QStackedWidget()
+        self.page_stack.setObjectName("mainPageStack")
+        self.page_shells: list[PageShell] = []
+        navigation_items = []
+        for group, title, description, widget in page_specs:
+            shell = PageShell(title, description, widget)
+            self.page_shells.append(shell)
+            self.page_stack.addWidget(shell)
+            navigation_items.append(NavigationItem(group, title, description))
+        self.navigation = SidebarNavigation(tuple(navigation_items))
+        self.navigation.current_changed.connect(self._page_changed)
+
+        central = QWidget()
+        central.setObjectName("mainWorkspace")
+        central_layout = QHBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.navigation)
+        central_layout.addWidget(self.page_stack, stretch=1)
+        self.setCentralWidget(central)
+        self.setStyleSheet(application_stylesheet())
+        self._configure_presentation()
+        self.navigation.buttons[0].setFocus()
 
     def __getattr__(self, name: str) -> object:
         """Mantém a API visual legada delegando-a à aba individual."""
@@ -160,9 +201,62 @@ class MainWindow(QMainWindow):
         except AttributeError:
             raise AttributeError(name) from None
 
-    def _tab_changed(self, index: int) -> None:
+    def _page_changed(self, index: int) -> None:
+        self.page_stack.setCurrentIndex(index)
         if index == 1:
             self.batch_widget.refresh_profiles()
+
+    def set_current_page(self, index: int) -> None:
+        self.navigation.set_current_index(index)
+
+    def current_page_index(self) -> int:
+        return self.page_stack.currentIndex()
+
+    def page_index(self, widget: QWidget) -> int:
+        return self.page_widgets.index(widget)
+
+    def _configure_presentation(self) -> None:
+        for button in (
+            self.anonymization_widget.generate_button,
+            self.batch_widget.start_button,
+            self.restoration_widget.generate_button,
+            self.html_restoration_widget.generate_button,
+            self.batch_restoration_widget.start_button,
+            self.consultant_widget.consult_button,
+            self.backup_widget.create_button,
+            self.backup_widget.restore_button,
+            self.integrity_widget.run_button,
+            self.maintenance_widget.refresh_button,
+        ):
+            set_button_role(button, "primary")
+        for button in (
+            self.anonymization_widget.delete_profile_button,
+            self.maintenance_widget.cleanup_button,
+        ):
+            set_button_role(button, "destructive")
+        path_fields: tuple[tuple[QLineEdit, str], ...] = (
+            (self.anonymization_widget.path_field, "Caminho do CSV selecionado"),
+            (self.batch_widget.output_field, "Pasta de saída da anonimização em lote"),
+            (self.restoration_widget.path_field, "Caminho do CSV anonimizado"),
+            (self.html_restoration_widget.path_field, "Caminho do HTML anonimizado"),
+            (self.batch_restoration_widget.output_field, "Pasta de saída da restauração em lote"),
+            (self.backup_widget.destination_field, "Destino do novo backup"),
+            (self.backup_widget.restore_file_field, "Arquivo de backup selecionado"),
+            (self.maintenance_widget.backup_path_field, "Arquivo de backup para validação"),
+        )
+        for field, accessible_name in path_fields:
+            configure_path_field(field, accessible_name)
+        for table in self.findChildren(QTableWidget):
+            configure_table(table)
+        for result_area in (
+            self.html_restoration_widget.summary,
+            self.consultant_widget.results_output,
+            self.integrity_widget.report_view,
+            self.maintenance_widget.overview_output,
+            self.maintenance_widget.backup_result,
+            self.maintenance_widget.compaction_result,
+        ):
+            configure_result_area(result_area)
 
     def _prepare_restore(self) -> bool:
         if (
@@ -221,28 +315,22 @@ class MainWindow(QMainWindow):
         return True
 
     def _backup_busy_changed(self, busy: bool) -> None:
-        backup_index = self.tabs.indexOf(self.backup_widget)
-        for index in range(self.tabs.count()):
-            if index != backup_index:
-                self.tabs.setTabEnabled(index, not busy)
+        self._set_exclusive_page_busy(self.backup_widget, busy)
 
     def _integrity_busy_changed(self, busy: bool) -> None:
-        integrity_index = self.tabs.indexOf(self.integrity_widget)
-        for index in range(self.tabs.count()):
-            if index != integrity_index:
-                self.tabs.setTabEnabled(index, not busy)
+        self._set_exclusive_page_busy(self.integrity_widget, busy)
 
     def _batch_restoration_busy_changed(self, busy: bool) -> None:
-        batch_index = self.tabs.indexOf(self.batch_restoration_widget)
-        for index in range(self.tabs.count()):
-            if index != batch_index:
-                self.tabs.setTabEnabled(index, not busy)
+        self._set_exclusive_page_busy(self.batch_restoration_widget, busy)
 
     def _maintenance_busy_changed(self, busy: bool) -> None:
-        maintenance_index = self.tabs.indexOf(self.maintenance_widget)
-        for index in range(self.tabs.count()):
-            if index != maintenance_index:
-                self.tabs.setTabEnabled(index, not busy)
+        self._set_exclusive_page_busy(self.maintenance_widget, busy)
+
+    def _set_exclusive_page_busy(self, widget: QWidget, busy: bool) -> None:
+        active_index = self.page_index(widget)
+        for index in range(len(self.page_widgets)):
+            if index != active_index:
+                self.navigation.set_page_enabled(index, not busy)
 
     def _maintenance_directories(self) -> tuple[Path, ...]:
         paths: list[Path] = []

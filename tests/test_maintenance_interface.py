@@ -172,16 +172,19 @@ def test_main_window_has_maintenance_tab_and_blocks_other_operations(
     service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     window = MainWindow(profile_service=service)
 
-    index = window.tabs.indexOf(window.maintenance_widget)
-    assert window.tabs.tabText(index) == "Cofre e manutenção"
+    index = window.page_index(window.maintenance_widget)
+    assert window.navigation.buttons[index].text() == "Cofre e manutenção"
     window._maintenance_busy_changed(True)
-    assert window.tabs.isTabEnabled(index)
+    assert window.navigation.page_enabled(index)
     assert all(
-        not window.tabs.isTabEnabled(other)
-        for other in range(window.tabs.count())
+        not window.navigation.page_enabled(other)
+        for other in range(len(window.navigation.buttons))
         if other != index
     )
     window._maintenance_busy_changed(False)
-    assert all(window.tabs.isTabEnabled(other) for other in range(window.tabs.count()))
+    assert all(
+        window.navigation.page_enabled(other)
+        for other in range(len(window.navigation.buttons))
+    )
     window.close()
     application.quit()

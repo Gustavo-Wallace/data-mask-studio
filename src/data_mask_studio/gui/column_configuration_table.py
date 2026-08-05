@@ -1,11 +1,18 @@
-from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableWidget
+from PySide6.QtWidgets import QAbstractItemView, QHeaderView
+
+from data_mask_studio.gui.components.empty_state_table import EmptyStateTable
 
 
-class ColumnConfigurationTable(QTableWidget):
+class ColumnConfigurationTable(EmptyStateTable):
     """Tabela visual da configuração das colunas do CSV."""
 
     def __init__(self, parent=None) -> None:
-        super().__init__(0, 5, parent)
+        super().__init__(
+            0,
+            5,
+            "Selecione um CSV para configurar as colunas.",
+            parent,
+        )
         self.setHorizontalHeaderLabels(
             ["Anonimizar", "Cabeçalho", "Prefixo", "Normalização", "Status"]
         )

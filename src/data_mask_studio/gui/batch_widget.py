@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QTableWidget,
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
@@ -37,6 +36,7 @@ from data_mask_studio.gui.batch_worker import (
     BatchProcessingWorker,
     BatchValidationWorker,
 )
+from data_mask_studio.gui.components import EmptyStateTable
 from data_mask_studio.profiles import (
     ConfigurationProfile,
     ProfileError,
@@ -66,9 +66,6 @@ class BatchWidget(QWidget):
         self._processing_worker: BatchProcessingWorker | None = None
         self._output_directory: Path | None = None
 
-        title = QLabel("Anonimização em lote")
-        title.setStyleSheet("font-size: 22px; font-weight: 600;")
-
         self.add_files_button = QPushButton("Adicionar arquivos")
         self.add_files_button.clicked.connect(self._choose_files)
         self.add_folder_button = QPushButton("Adicionar pasta")
@@ -77,17 +74,19 @@ class BatchWidget(QWidget):
         self.remove_button.clicked.connect(self.remove_selected)
         self.clear_button = QPushButton("Limpar lista")
         self.clear_button.clicked.connect(self.clear_files)
-        file_actions = QHBoxLayout()
-        for button in (
-            self.add_files_button,
-            self.add_folder_button,
-            self.remove_button,
-            self.clear_button,
-        ):
-            file_actions.addWidget(button)
-        file_actions.addStretch()
+        file_actions = QVBoxLayout()
+        add_actions = QHBoxLayout()
+        add_actions.addWidget(self.add_files_button)
+        add_actions.addWidget(self.add_folder_button)
+        add_actions.addStretch()
+        list_actions = QHBoxLayout()
+        list_actions.addWidget(self.remove_button)
+        list_actions.addWidget(self.clear_button)
+        list_actions.addStretch()
+        file_actions.addLayout(add_actions)
+        file_actions.addLayout(list_actions)
 
-        self.file_table = QTableWidget(0, 5)
+        self.file_table = EmptyStateTable(0, 5, "Nenhum arquivo adicionado.")
         self.file_table.setHorizontalHeaderLabels(
             ["Arquivo", "Caminho", "Status", "Colunas", "Resultado"]
         )
@@ -150,7 +149,6 @@ class BatchWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
-        layout.addWidget(title)
         layout.addLayout(file_actions)
         layout.addWidget(self.file_table, stretch=1)
         layout.addLayout(profile_row)
@@ -449,7 +447,10 @@ class BatchWidget(QWidget):
                 item.result_message,
             )
             for column, value in enumerate(values):
-                self.file_table.setItem(row, column, QTableWidgetItem(value))
+                cell = QTableWidgetItem(value)
+                if column in (0, 1, 4):
+                    cell.setToolTip(str(item.path) if column in (0, 1) else value)
+                self.file_table.setItem(row, column, cell)
 
     def open_output_directory(self) -> None:
         if self._output_directory is None:
