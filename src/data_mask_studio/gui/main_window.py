@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from data_mask_studio.backup import EnvironmentPaths, default_environment_paths
 from data_mask_studio.gui.anonymization_widget import AnonymizationWidget
+from data_mask_studio.gui.about_dialog import AboutDialog
 from data_mask_studio.gui.backup_widget import BackupWidget
 from data_mask_studio.gui.batch_widget import BatchWidget
 from data_mask_studio.gui.batch_restoration_widget import BatchRestorationWidget
@@ -183,6 +184,8 @@ class MainWindow(QMainWindow):
             navigation_items.append(NavigationItem(group, title, description))
         self.navigation = SidebarNavigation(tuple(navigation_items))
         self.navigation.current_changed.connect(self._page_changed)
+        self.navigation.about_requested.connect(self.show_about_dialog)
+        self.about_dialog: AboutDialog | None = None
 
         central = QWidget()
         central.setObjectName("mainWorkspace")
@@ -276,6 +279,13 @@ class MainWindow(QMainWindow):
         self.page_stack.setCurrentIndex(index)
         if index == 1:
             self.batch_widget.refresh_profiles()
+
+    def show_about_dialog(self) -> None:
+        if self.about_dialog is None:
+            self.about_dialog = AboutDialog(self)
+        self.about_dialog.show()
+        self.about_dialog.raise_()
+        self.about_dialog.activateWindow()
 
     def set_current_page(self, index: int) -> None:
         self.navigation.set_current_index(index)

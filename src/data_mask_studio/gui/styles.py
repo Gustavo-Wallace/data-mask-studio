@@ -1,5 +1,16 @@
+from data_mask_studio.branding import (
+    MONOGRAM_BACKGROUND,
+    MONOGRAM_BADGE_BORDER,
+    MONOGRAM_BADGE_HEIGHT,
+    MONOGRAM_BADGE_RADIUS,
+    MONOGRAM_BADGE_WIDTH,
+    MONOGRAM_BORDER,
+    MONOGRAM_FOREGROUND,
+)
+
+
 def application_stylesheet() -> str:
-    return """
+    stylesheet = """
     QMainWindow { background: #151a22; }
     QWidget { color: #e8edf5; }
     QWidget#mainWorkspace, QWidget#pageShell, QWidget[pageContent="true"] { background: #151a22; }
@@ -7,7 +18,7 @@ def application_stylesheet() -> str:
     QLabel { background: transparent; }
     QWidget#sidebarNavigation { background: #10151d; border-right: 1px solid #2a3442; }
     QWidget#applicationIdentity { background: transparent; }
-    QLabel#identityMonogram { min-width: 38px; min-height: 34px; max-width: 38px; max-height: 34px; border: 1px solid #3f78aa; border-radius: 5px; background: #1d3043; color: #d9ebfb; font-size: 11px; font-weight: 700; qproperty-alignment: AlignCenter; }
+    QLabel#identityMonogram { min-width: __BADGE_WIDTH__px; min-height: __BADGE_HEIGHT__px; max-width: __BADGE_WIDTH__px; max-height: __BADGE_HEIGHT__px; border: __BADGE_BORDER__px solid __BORDER_COLOR__; border-radius: __BADGE_RADIUS__px; background: __BACKGROUND_COLOR__; color: __FOREGROUND_COLOR__; font-size: 11px; font-weight: 700; qproperty-alignment: AlignCenter; }
     QLabel#identityName { font-size: 15px; font-weight: 700; color: #f4f7fb; }
     QWidget#navigationCategory { background: transparent; }
     QLabel#navigationGroup { color: #94a5b8; font-size: 10px; font-weight: 650; }
@@ -16,7 +27,12 @@ def application_stylesheet() -> str:
     QPushButton#navigationItem:hover { background: #1c2531; }
     QPushButton#navigationItem:checked { background: #22354b; border-color: #3b6b99; color: #ffffff; font-weight: 600; }
     QPushButton#navigationItem:focus { border-color: #79a8d8; }
+    QPushButton#navigationUtility { text-align: left; min-height: 30px; padding: 0 14px; border: 1px solid transparent; background: transparent; color: #aebac8; }
+    QPushButton#navigationUtility:hover { background: #1c2531; color: #ffffff; }
+    QPushButton#navigationUtility:focus { border-color: #79a8d8; }
     QLabel#pageTitle { font-size: 22px; font-weight: 650; color: #f4f7fb; }
+    QLabel#aboutTitle { font-size: 20px; font-weight: 700; color: #f4f7fb; }
+    QLabel#aboutDetails, QLabel#aboutLinks, QLabel#aboutSignatureNotice { color: #bdc8d5; }
     QLabel#pageDescription { color: #bdc8d5; font-size: 13px; }
     QScrollArea#pageScrollArea { background: transparent; }
     QGroupBox { background: #1a212b; border: 1px solid #303b49; border-radius: 6px; margin-top: 10px; padding-top: 10px; font-weight: 600; }
@@ -41,3 +57,12 @@ def application_stylesheet() -> str:
     QTabBar::tab { background: #1c2430; padding: 7px 12px; }
     QTabBar::tab:selected { background: #2a3d52; }
     """
+    return (
+        stylesheet.replace("__BADGE_WIDTH__", str(MONOGRAM_BADGE_WIDTH))
+        .replace("__BADGE_HEIGHT__", str(MONOGRAM_BADGE_HEIGHT))
+        .replace("__BADGE_BORDER__", str(MONOGRAM_BADGE_BORDER))
+        .replace("__BADGE_RADIUS__", str(MONOGRAM_BADGE_RADIUS))
+        .replace("__BACKGROUND_COLOR__", MONOGRAM_BACKGROUND)
+        .replace("__BORDER_COLOR__", MONOGRAM_BORDER)
+        .replace("__FOREGROUND_COLOR__", MONOGRAM_FOREGROUND)
+    )

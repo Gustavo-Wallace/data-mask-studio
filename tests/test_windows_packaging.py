@@ -60,8 +60,8 @@ def test_build_helper_reads_version_and_generates_versioned_names() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == (
-        "0.11.1|DataMaskStudio-Portable-0.11.1.zip|"
-        "DataMaskStudio-Setup-0.11.1.exe"
+        "1.0.0|DataMaskStudio-Portable-1.0.0.zip|"
+        "DataMaskStudio-Setup-1.0.0.exe"
     )
 
 
@@ -70,6 +70,8 @@ def test_build_synchronizes_installed_metadata_before_packaging() -> None:
 
     assert "pip install --no-deps --no-build-isolation -e" in script
     assert "$installedVersion -ne $version" in script
+    assert "DataMaskStudio-pytest-" in script
+    assert "$env:LOCALAPPDATA = Join-Path $isolatedTestRoot 'localappdata'" in script
 
 
 def test_spec_uses_onedir_windowed_application_and_generated_metadata() -> None:
@@ -81,6 +83,8 @@ def test_spec_uses_onedir_windowed_application_and_generated_metadata() -> None:
     assert "exclude_binaries=True" in spec
     assert 'os.environ.get("DMS_VERSION_FILE")' in spec
     assert 'os.environ.get("DMS_ICON_FILE")' in spec
+    assert "Ícone oficial obrigatório" in spec
+    assert '"assets/branding"' in spec
     assert '"pytest"' in spec and '"tests"' in spec
     assert 'Path(item[0]).name != "direct_url.json"' in spec
 
@@ -99,6 +103,8 @@ def test_inno_setup_is_per_user_upgradeable_and_preserves_local_data() -> None:
     assert "recursesubdirs createallsubdirs" in script
     assert "Flags: unchecked" in script
     assert "postinstall" in script
+    assert "SetupIconFile={#DmsIconFile}" in script
+    assert script.count('IconFilename: "{app}\\{#MyAppExeName}"') == 2
     assert re.search(r"(?m)^\[UninstallDelete\]\s*$", script) is None
     assert "%LOCALAPPDATA%\\DataMaskStudio" in script
 
@@ -147,6 +153,33 @@ def test_build_audit_rejects_editable_install_provenance(tmp_path: Path) -> None
     assert "/private/developer/path" not in result.stderr
 
 
+def test_build_audit_rejects_local_configuration_and_developer_paths(
+    tmp_path: Path,
+) -> None:
+    build_root = tmp_path / "DataMaskStudio"
+    build_root.mkdir()
+    (build_root / "DataMaskStudio.exe").write_bytes(b"exe")
+    (build_root / "settings.json").write_text("{}", encoding="utf-8")
+    note = build_root / "build-note.txt"
+    note.write_text("C:\\Users\\Developer\\private-repository", encoding="utf-8")
+    fixture = build_root / "fixtures" / "synthetic.bin"
+    fixture.parent.mkdir()
+    fixture.write_bytes(b"synthetic")
+    command = (
+        f". {ps_quote(HELPERS)}; "
+        f"Assert-DataMaskStudioBuildIsSafe -Root {ps_quote(build_root)}"
+    )
+
+    result = run_powershell(command)
+
+    visible_output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "settings.json" in visible_output
+    assert "build-note.txt" in visible_output
+    assert "fixtures" in visible_output
+    assert "private-repository" not in visible_output
+
+
 def test_portable_zip_has_root_folder_without_tests_or_virtualenv(
     tmp_path: Path,
 ) -> None:
@@ -155,7 +188,7 @@ def test_portable_zip_has_root_folder_without_tests_or_virtualenv(
     internal.mkdir(parents=True)
     (portable / "DataMaskStudio.exe").write_bytes(b"exe")
     (internal / "library.dll").write_bytes(b"dll")
-    destination = tmp_path / "DataMaskStudio-Portable-0.11.1.zip"
+    destination = tmp_path / "DataMaskStudio-Portable-1.0.0.zip"
     command = (
         f". {ps_quote(HELPERS)}; "
         f"New-DataMaskStudioPortableArchive -PortableDirectory {ps_quote(portable)} "
@@ -201,6 +234,19 @@ def test_missing_tool_messages_are_explicit_and_inno_is_optional() -> None:
     assert "Inno Setup não foi encontrado" in script
     assert "portátil e o ZIP foram gerados normalmente" in script
     assert "-PortableOnly" in script
+
+
+def test_build_smoke_tests_install_update_uninstall_and_reinstall() -> None:
+    script = BUILD_SCRIPT.read_text(encoding="utf-8")
+
+    assert "Test-InstallerLifecycle" in script
+    assert script.count("Invoke-SilentInstaller -Installer") >= 3
+    assert script.count("Invoke-SilentUninstaller -Uninstaller") >= 2
+    assert "A atualização não preservou o ambiente local isolado" in script
+    assert "A desinstalação removeu dados locais" in script
+    assert "A reinstalação não reconheceu o ambiente local preservado" in script
+    assert "[switch]$SkipSmokeTests" in script
+    assert "if (-not $SkipSmokeTests)" in script
 
 
 def test_gitignore_excludes_generated_packaging_artifacts() -> None:

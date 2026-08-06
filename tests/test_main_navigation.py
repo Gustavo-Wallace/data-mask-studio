@@ -235,6 +235,24 @@ def test_navigation_categories_do_not_trigger_page_changes(tmp_path: Path) -> No
     application.processEvents()
 
 
+def test_about_control_opens_public_information_dialog(tmp_path: Path) -> None:
+    application = create_application([])
+    window = build_window(tmp_path)
+    window.show()
+
+    window.navigation.about_button.click()
+    application.processEvents()
+
+    assert window.about_dialog is not None
+    assert window.about_dialog.isVisible()
+    assert window.about_dialog.windowTitle() == "Sobre o Data Mask Studio"
+    assert window.current_page_index() == 0
+
+    window.about_dialog.close()
+    window.close()
+    application.processEvents()
+
+
 def test_common_headers_roles_paths_empty_states_and_internal_tabs(
     tmp_path: Path,
 ) -> None:

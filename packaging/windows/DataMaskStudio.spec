@@ -6,11 +6,13 @@ source_root = project_root / "src"
 entry_point = source_root / "data_mask_studio" / "__main__.py"
 version_file = os.environ.get("DMS_VERSION_FILE")
 icon_value = os.environ.get("DMS_ICON_FILE")
-icon_path = Path(icon_value) if icon_value else None
+if not icon_value:
+    raise RuntimeError("DMS_ICON_FILE deve apontar para o ícone oficial obrigatório.")
+icon_path = Path(icon_value)
+if not icon_path.is_file():
+    raise FileNotFoundError(f"Ícone oficial obrigatório não encontrado: {icon_path}")
 
-datas = []
-if icon_path is not None and icon_path.is_file():
-    datas.append((str(icon_path), "assets"))
+datas = [(str(icon_path), "assets/branding")]
 
 analysis = Analysis(
     [str(entry_point)],
@@ -50,7 +52,7 @@ executable = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(icon_path) if icon_path is not None and icon_path.is_file() else None,
+    icon=str(icon_path),
     version=version_file,
 )
 

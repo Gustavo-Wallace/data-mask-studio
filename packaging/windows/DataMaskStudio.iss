@@ -7,6 +7,9 @@
 #ifndef ReleaseRoot
   #error ReleaseRoot must be supplied by build_windows.ps1
 #endif
+#ifndef DmsIconFile
+  #error DmsIconFile must point to the official DMS icon
+#endif
 
 #define MyAppName "Data Mask Studio"
 #define MyAppExeName "DataMaskStudio.exe"
@@ -36,9 +39,7 @@ CloseApplications=yes
 RestartApplications=no
 SetupMutex=DataMaskStudio-Setup-Mutex-D5C24B6C
 UsePreviousAppDir=yes
-#ifdef DmsIconFile
 SetupIconFile={#DmsIconFile}
-#endif
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -50,8 +51,8 @@ Name: "desktopicon"; Description: "Criar um atalho na área de trabalho"; GroupD
 Source: "{#BuildRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Data Mask Studio"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
-Name: "{autodesktop}\Data Mask Studio"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\Data Mask Studio"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\Data Mask Studio"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir Data Mask Studio"; Flags: nowait postinstall skipifsilent

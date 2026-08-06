@@ -1,46 +1,24 @@
 # Data Mask Studio
 
-Data Mask Studio é uma aplicação desktop local para anonimização reversível de dados em arquivos CSV. Ela permite:
+![Ícone do Data Mask Studio](assets/branding/dms_icon_1024.png)
 
-- sugerir colunas sensíveis, prefixos e normalizações, sempre com confirmação do usuário;
-- selecionar colunas;
-- configurar prefixos e normalizações;
-- gerar CSVs anonimizados;
-- processar arquivos em lote;
-- salvar perfis;
-- consultar valores pelo cofre local criptografado;
-- criar backups criptografados;
-- recuperar o cofre, as chaves e os perfis.
-- restaurar CSVs anonimizados usando o cofre local.
-- restaurar vários CSVs e HTMLs sequencialmente em um único lote;
-- verificar localmente a integridade das chaves, do cofre e dos perfis sem expor dados.
-- diagnosticar o ambiente, validar backups e executar limpeza ou compactação controlada do cofre.
+Data Mask Studio é uma aplicação desktop local para anonimização reversível de dados em arquivos CSV. A versão 1.0.0 consolida o primeiro lançamento estável para Windows.
 
-A versão 0.11.1 refina a identidade, a diferenciação das categorias de navegação e a responsividade das áreas de trabalho. Os formatos de arquivos, tokens, backups e o schema 3 do cofre permanecem inalterados.
+A aplicação permite selecionar colunas, configurar prefixos e normalizações, gerar e restaurar CSVs anonimizados, restaurar códigos em HTML, processar arquivos em lote, salvar perfis, consultar o cofre local criptografado, criar backups e executar verificações de integridade e manutenção.
 
-A versão atual permite restaurar seletivamente CSVs anonimizados com os mapeamentos do cofre local.
-Ela também restaura códigos presentes em arquivos HTML e dashboards locais sem executar o conteúdo.
+A versão atual permite restaurar seletivamente CSVs anonimizados com os mapeamentos do cofre local. Ela também restaura códigos presentes em arquivos HTML e dashboards locais sem executar o conteúdo.
 
-A aplicação atualmente é voltada ao Windows porque utiliza o Windows DPAPI para proteger as chaves locais.
+Todo o processamento ocorre localmente, sem telemetria ou envio automático de dados. As chaves locais são protegidas pelo Windows DPAPI, por isso a distribuição atual é destinada ao Windows.
 
-## Tecnologias utilizadas
+## Instalação e uso
 
-- Python 3.12+
-- PySide6
-- SQLite
-- cryptography / AES-256-GCM
-- Windows DPAPI
-- pytest
+### Instalador
 
-## Como usar
-
-### Opção recomendada
-
-Baixe `DataMaskStudio-Setup-0.11.1.exe` na GitHub Release e siga as etapas do instalador. A desinstalação preserva o cofre e as chaves em `%LOCALAPPDATA%\DataMaskStudio`.
+Baixe `DataMaskStudio-Setup-1.0.0.exe` na GitHub Release e execute o instalador. A instalação é feita por usuário e a desinstalação preserva por padrão o ambiente em `%LOCALAPPDATA%\DataMaskStudio`.
 
 ### Versão portátil
 
-Baixe `DataMaskStudio-Portable-0.11.1.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
+Baixe `DataMaskStudio-Portable-1.0.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
 
 ### Código-fonte
 
@@ -56,25 +34,39 @@ python -m pip install -e .
 python -m data_mask_studio
 ```
 
-Fluxo resumido:
+Fluxo básico:
 
-1. Selecione um CSV.
-2. Escolha as colunas que serão anonimizadas.
-3. Configure prefixos e regras de normalização.
-4. Valide a configuração.
-5. Gere o CSV anonimizado.
-6. Use o consultor local quando precisar recuperar um valor específico.
-7. Na aba “Restaurar CSV”, escolha um arquivo anonimizado e as colunas que deseja restaurar.
-8. Na aba “Restaurar HTML”, analise e restaure códigos presentes em um dashboard local.
-9. Na aba “Restauração em lote”, revise e restaure vários CSVs e HTMLs para uma pasta de saída.
-10. Use “Cofre e manutenção” para diagnóstico, validação de backups, limpeza controlada e compactação manual.
+1. Selecione um CSV e escolha as colunas que serão anonimizadas.
+2. Configure prefixos e normalizações e valide a configuração.
+3. Gere o CSV anonimizado ou utilize um perfil no processamento em lote.
+4. Para recuperar dados tabulares, use a aba “Restaurar CSV”.
+5. Para dashboards locais, use a aba “Restaurar HTML”; lotes possuem uma área própria.
+6. Consulte códigos específicos pelo consultor local quando necessário.
 
-Perfis salvos também podem ser utilizados na aba de anonimização em lote.
+## Backup, integridade e manutenção
 
-A aba de backup permite gerar um arquivo `.dmsbackup` protegido por senha.
+Backups `.dmsbackup` são criptografados com uma senha informada pelo usuário. A restauração preserva a consistência do cofre, das chaves e dos perfis.
 
-Na aba “Integridade”, a verificação local produz somente um relatório técnico seguro e não altera o cofre.
+As áreas de Integridade e Cofre e manutenção produzem relatórios técnicos seguros, validam backups, localizam temporários e permitem compactação controlada do banco.
 
-O processamento de CSVs é realizado em fluxo, com memória e atualizações visuais limitadas para manter a interface responsiva em grandes volumes.
+## Compatibilidade
 
-O programa é destinado atualmente ao Windows. Os executáveis da versão 0.11.1 ainda não possuem assinatura digital, portanto o Windows SmartScreen poderá apresentar um aviso de segurança.
+A versão 1.0.0 usa o schema 3 do cofre e mantém os formatos de tokens, códigos e backups das versões anteriores. Cofres antigos suportados são migrados de forma transacional. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para o contrato de estabilidade e orientações de recuperação.
+
+Atualizações compatíveis não devem alterar códigos já gerados nem impedir a abertura de cofres e backups existentes.
+
+## Limitações
+
+- O aplicativo é destinado ao Windows por depender do Windows DPAPI.
+- Os executáveis ainda não possuem assinatura digital e podem acionar um aviso do Windows SmartScreen.
+- O Windows pode manter ícones antigos em cache; valide o novo ícone com uma instalação limpa ou um novo atalho.
+- Não existe sincronização, telemetria ou recuperação remota de chaves.
+
+## Tecnologias utilizadas
+
+- Python 3.12+
+- PySide6
+- SQLite
+- cryptography / AES-256-GCM
+- Windows DPAPI
+- pytest

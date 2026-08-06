@@ -33,7 +33,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("benchmarks/.data/ui-validation-0.11.1"),
+        default=Path("benchmarks/.data/ui-validation-1.0.0"),
     )
     args = parser.parse_args()
     output = args.output.resolve()

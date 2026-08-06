@@ -74,6 +74,7 @@ class SidebarNavigation(QWidget):
     """Navegação principal fixa, acessível e inteiramente visível."""
 
     current_changed = Signal(int)
+    about_requested = Signal()
 
     def __init__(
         self, items: tuple[NavigationItem, ...], parent: QWidget | None = None
@@ -119,6 +120,12 @@ class SidebarNavigation(QWidget):
             self._buttons.append(button)
             layout.addWidget(button)
         layout.addStretch()
+        self.about_button = QPushButton("Sobre")
+        self.about_button.setObjectName("navigationUtility")
+        self.about_button.setAutoDefault(False)
+        self.about_button.setAccessibleName("Sobre o Data Mask Studio")
+        self.about_button.clicked.connect(self.about_requested.emit)
+        layout.addWidget(self.about_button)
         if self._buttons:
             self._buttons[0].setChecked(True)
 

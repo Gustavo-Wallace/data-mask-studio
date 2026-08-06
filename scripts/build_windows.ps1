@@ -3,6 +3,7 @@ param(
     [switch]$SkipTests,
     [switch]$PortableOnly,
     [switch]$Clean,
+    [switch]$SkipSmokeTests,
     [switch]$VerboseOutput
 )
 
@@ -120,6 +121,82 @@ function Test-PortableStartup {
     }
 }
 
+function Invoke-SilentInstaller {
+    param(
+        [Parameter(Mandatory = $true)][string]$Installer,
+        [Parameter(Mandatory = $true)][string]$InstallDirectory
+    )
+    $process = Start-Process -FilePath $Installer -ArgumentList @(
+        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-',
+        "/DIR=$InstallDirectory"
+    ) -WindowStyle Hidden -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+        throw "O smoke test do instalador falhou com código $($process.ExitCode)."
+    }
+}
+
+function Invoke-SilentUninstaller {
+    param([Parameter(Mandatory = $true)][string]$Uninstaller)
+    $process = Start-Process -FilePath $Uninstaller -ArgumentList @(
+        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+    ) -WindowStyle Hidden -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+        throw "O smoke test do desinstalador falhou com código $($process.ExitCode)."
+    }
+}
+
+function Test-InstallerLifecycle {
+    param([Parameter(Mandatory = $true)][string]$Installer)
+
+    $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("DataMaskStudio-installer-test-" + [guid]::NewGuid())
+    $installDirectory = Join-Path $testRoot 'program'
+    $isolatedLocalAppData = Join-Path $testRoot 'localappdata'
+    $dataDirectory = Join-Path $isolatedLocalAppData 'DataMaskStudio'
+    $preservationMarker = Join-Path $dataDirectory 'synthetic-preservation.marker'
+    $installedExecutable = Join-Path $installDirectory 'DataMaskStudio.exe'
+    $uninstaller = Join-Path $installDirectory 'unins000.exe'
+    $oldLocalAppData = $env:LOCALAPPDATA
+    try {
+        New-Item -ItemType Directory -Path $isolatedLocalAppData -Force | Out-Null
+        $env:LOCALAPPDATA = $isolatedLocalAppData
+
+        Invoke-SilentInstaller -Installer $Installer -InstallDirectory $installDirectory
+        if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
+            throw 'A instalação limpa não criou o executável esperado.'
+        }
+        Test-PortableStartup -Executable $installedExecutable
+        New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
+        Set-Content -LiteralPath $preservationMarker -Value 'synthetic' -Encoding ASCII
+
+        Invoke-SilentInstaller -Installer $Installer -InstallDirectory $installDirectory
+        if (-not (Test-Path -LiteralPath $preservationMarker -PathType Leaf)) {
+            throw 'A atualização não preservou o ambiente local isolado.'
+        }
+
+        Invoke-SilentUninstaller -Uninstaller $uninstaller
+        if (Test-Path -LiteralPath $installedExecutable -PathType Leaf) {
+            throw 'A desinstalação não removeu o executável instalado.'
+        }
+        if (-not (Test-Path -LiteralPath $preservationMarker -PathType Leaf)) {
+            throw 'A desinstalação removeu dados locais que deveriam ser preservados.'
+        }
+
+        Invoke-SilentInstaller -Installer $Installer -InstallDirectory $installDirectory
+        if (-not (Test-Path -LiteralPath $preservationMarker -PathType Leaf)) {
+            throw 'A reinstalação não reconheceu o ambiente local preservado.'
+        }
+        Invoke-SilentUninstaller -Uninstaller $uninstaller
+    }
+    finally {
+        $env:LOCALAPPDATA = $oldLocalAppData
+        $resolvedTestRoot = [IO.Path]::GetFullPath($testRoot)
+        $resolvedTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+        if ($resolvedTestRoot.StartsWith($resolvedTempRoot, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolvedTestRoot)) {
+            Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force
+        }
+    }
+}
+
 $python = Get-BuildPython
 $version = Get-DataMaskStudioProjectVersion -ProjectRoot $projectRoot
 if ($version -notmatch '^\d+\.\d+\.\d+$') {
@@ -148,10 +225,15 @@ if (-not $SkipTests) {
     Write-BuildStep 'Executando a suíte de testes'
     $oldQtPlatform = $env:QT_QPA_PLATFORM
     $oldBytecode = $env:PYTHONDONTWRITEBYTECODE
+    $oldLocalAppData = $env:LOCALAPPDATA
+    $isolatedTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("DataMaskStudio-pytest-" + [guid]::NewGuid())
     try {
+        New-Item -ItemType Directory -Path $isolatedTestRoot -Force | Out-Null
         $env:QT_QPA_PLATFORM = 'offscreen'
         $env:PYTHONDONTWRITEBYTECODE = '1'
-        & $python -m pytest -q -p no:cacheprovider
+        $env:LOCALAPPDATA = Join-Path $isolatedTestRoot 'localappdata'
+        New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null
+        & $python -m pytest -q -p no:cacheprovider --basetemp (Join-Path $isolatedTestRoot 'pytest')
         if ($LASTEXITCODE -ne 0) {
             throw "A suíte de testes falhou."
         }
@@ -159,6 +241,10 @@ if (-not $SkipTests) {
     finally {
         $env:QT_QPA_PLATFORM = $oldQtPlatform
         $env:PYTHONDONTWRITEBYTECODE = $oldBytecode
+        $env:LOCALAPPDATA = $oldLocalAppData
+        if (Test-Path -LiteralPath $isolatedTestRoot) {
+            Remove-Item -LiteralPath $isolatedTestRoot -Recurse -Force
+        }
     }
 }
 
@@ -173,7 +259,7 @@ $executable = Join-Path $portableDirectory 'DataMaskStudio.exe'
 $zipPath = Join-Path $releaseRoot $artifactNames.PortableZip
 $installerPath = Join-Path $releaseRoot $artifactNames.Installer
 $versionFile = Join-Path $buildRoot 'windows\DataMaskStudio-version.txt'
-$iconFile = Join-Path $projectRoot 'packaging\windows\assets\data-mask-studio.ico'
+$iconFile = Join-Path $projectRoot 'assets\branding\dms_icon.ico'
 $specFile = Join-Path $projectRoot 'packaging\windows\DataMaskStudio.spec'
 $innoScript = Join-Path $projectRoot 'packaging\windows\DataMaskStudio.iss'
 New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
@@ -184,24 +270,17 @@ foreach ($oldArtifact in @($zipPath, $installerPath)) {
 }
 
 New-VersionInformationFile -Version $version -Destination $versionFile
-if (Test-Path -LiteralPath $iconFile -PathType Leaf) {
-    Write-Host "Ícone encontrado: $iconFile"
+if (-not (Test-Path -LiteralPath $iconFile -PathType Leaf)) {
+    throw "Ícone oficial obrigatório não encontrado: $iconFile"
 }
-else {
-    Write-Warning "Ícone não encontrado em packaging/windows/assets/data-mask-studio.ico. O ícone padrão será usado."
-}
+Write-Host "Ícone oficial confirmado: $iconFile"
 
 Write-BuildStep 'Gerando a aplicação portátil com PyInstaller'
 $oldVersionFile = $env:DMS_VERSION_FILE
 $oldIconFile = $env:DMS_ICON_FILE
 try {
     $env:DMS_VERSION_FILE = $versionFile
-    if (Test-Path -LiteralPath $iconFile -PathType Leaf) {
-        $env:DMS_ICON_FILE = $iconFile
-    }
-    else {
-        Remove-Item Env:DMS_ICON_FILE -ErrorAction SilentlyContinue
-    }
+    $env:DMS_ICON_FILE = $iconFile
     $logLevel = if ($VerboseOutput) { 'INFO' } else { 'WARN' }
     & $python -m PyInstaller --noconfirm --clean --log-level $logLevel --distpath $distRoot --workpath (Join-Path $buildRoot 'pyinstaller') $specFile
     if ($LASTEXITCODE -ne 0) {
@@ -218,8 +297,13 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
 }
 Assert-DataMaskStudioBuildIsSafe -Root $portableDirectory
 
-Write-BuildStep 'Validando a inicialização do executável'
-Test-PortableStartup -Executable $executable
+if (-not $SkipSmokeTests) {
+    Write-BuildStep 'Validando a inicialização do executável'
+    Test-PortableStartup -Executable $executable
+}
+else {
+    Write-Host 'Smoke test do executável ignorado explicitamente nesta execução.'
+}
 
 Write-BuildStep 'Criando o ZIP portátil'
 New-DataMaskStudioPortableArchive -PortableDirectory $portableDirectory -DestinationPath $zipPath | Out-Null
@@ -252,9 +336,7 @@ if (-not $PortableOnly) {
             "/DBuildRoot=$portableDirectory",
             "/DReleaseRoot=$releaseRoot"
         )
-        if (Test-Path -LiteralPath $iconFile -PathType Leaf) {
-            $innoArguments += "/DDmsIconFile=$iconFile"
-        }
+        $innoArguments += "/DDmsIconFile=$iconFile"
         $innoArguments += $innoScript
         & $innoCompiler @innoArguments
         if ($LASTEXITCODE -ne 0) {
@@ -262,6 +344,13 @@ if (-not $PortableOnly) {
         }
         if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
             throw "O instalador esperado não foi criado: $installerPath"
+        }
+        if (-not $SkipSmokeTests) {
+            Write-BuildStep 'Validando instalação limpa, atualização e reinstalação'
+            Test-InstallerLifecycle -Installer $installerPath
+        }
+        else {
+            Write-Host 'Smoke test do instalador ignorado explicitamente nesta execução.'
         }
         $installerCreated = $true
     }

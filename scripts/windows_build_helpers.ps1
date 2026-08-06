@@ -74,22 +74,35 @@ function Assert-DataMaskStudioBuildIsSafe {
     $forbiddenNames = @(
         'secret.key', 'vault_key.dpapi', 'vault.db', 'vault.db-journal',
         'vault.db-wal', 'vault.db-shm', 'profiles.json', '.env',
-        'direct_url.json'
+        'direct_url.json', 'settings.json', 'config.json', 'local-config.json'
     )
+    $forbiddenDirectories = @(
+        '.venv', 'venv', '__pycache__', '.pytest_cache', '.mypy_cache',
+        '.ruff_cache', '.git', '.github', 'tests', 'fixtures', 'benchmarks'
+    )
+    $forbiddenExtensions = @(
+        '.dmsbackup', '.dpapi', '.csv', '.html', '.htm', '.pyc',
+        '.ps1', '.spec', '.iss', '.toml', '.yaml', '.yml'
+    )
+    $textExtensionsToAudit = @('.txt', '.json', '.pth', '.ini', '.cfg', '.py')
     $findings = [System.Collections.Generic.List[string]]::new()
     foreach ($file in Get-ChildItem -LiteralPath $resolvedRoot -Recurse -File -Force) {
         $relativePath = $file.FullName.Substring($resolvedRoot.Length).TrimStart('\', '/')
         $segments = $relativePath -split '[\\/]'
         $hasForbiddenDirectory = $segments | Where-Object {
-            $_ -in @('.venv', 'venv', '__pycache__', '.pytest_cache', 'tests')
+            $_ -in $forbiddenDirectories
         }
         $isForbidden = $file.Name -in $forbiddenNames -or
             $file.Name -like '.env.*' -or
-            $file.Extension -in @('.dmsbackup', '.dpapi', '.csv', '.html', '.htm', '.pyc') -or
+            $file.Extension -in $forbiddenExtensions -or
             $file.Name -like '*_anonimizado.csv' -or
             $file.Name -like '*_restaurado.csv' -or
             $file.Name -like '*_restaurado.html' -or
             $null -ne $hasForbiddenDirectory
+        if (-not $isForbidden -and $file.Length -le 2MB -and $file.Extension -in $textExtensionsToAudit) {
+            $text = [IO.File]::ReadAllText($file.FullName)
+            $isForbidden = $text -match '(?i)([a-z]:\\Users\\[^\\\r\n]+\\|file:///+[a-z]:/Users/|/home/[^/\r\n]+/)'
+        }
         if ($isForbidden) {
             $findings.Add($relativePath)
         }
