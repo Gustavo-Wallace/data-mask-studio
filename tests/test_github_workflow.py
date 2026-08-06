@@ -20,6 +20,10 @@ def test_windows_workflow_is_isolated_and_runs_all_tests() -> None:
     assert "--basetemp" in content
     assert "push:" in content
     assert "pull_request:" in content
+    assert content.count("- main") == 2
     assert "workflow_dispatch:" in content
+    assert "permissions:" in content
+    assert "contents: read" in content
+    assert "timeout-minutes: 20" in content
     assert "${{ runner.temp }}" not in content
     assert "release" not in content.casefold()

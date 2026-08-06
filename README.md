@@ -1,26 +1,74 @@
-# Data Mask Studio
+<p align="center">
+  <img src="assets/branding/dms_icon.svg" alt="Ícone do Data Mask Studio" width="128">
+</p>
 
-![Ícone do Data Mask Studio](assets/branding/dms_icon_1024.png)
+<h1 align="center">Data Mask Studio</h1>
 
-Data Mask Studio é uma aplicação desktop local para anonimização reversível de dados em arquivos CSV. A versão 1.0.0 consolida o primeiro lançamento estável para Windows.
+<p align="center">
+  Anonimização local, determinística e reversível de arquivos CSV para Windows.
+</p>
 
-A aplicação permite selecionar colunas, configurar prefixos e normalizações, gerar e restaurar CSVs anonimizados, restaurar códigos em HTML, processar arquivos em lote, salvar perfis, consultar o cofre local criptografado, criar backups e executar verificações de integridade e manutenção.
+<p align="center">
+  <a href="https://github.com/Gustavo-Wallace/data-mask-studio/actions/workflows/tests.yml"><img src="https://github.com/Gustavo-Wallace/data-mask-studio/actions/workflows/tests.yml/badge.svg" alt="Testes"></a>
+  <a href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest"><img src="https://img.shields.io/github/v/release/Gustavo-Wallace/data-mask-studio" alt="Última release"></a>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/Windows-10%2F11-0078D4" alt="Windows 10 e 11">
+</p>
 
-A versão atual permite restaurar seletivamente CSVs anonimizados com os mapeamentos do cofre local. Ela também restaura códigos presentes em arquivos HTML e dashboards locais sem executar o conteúdo.
+## Resumo
 
-Todo o processamento ocorre localmente, sem telemetria ou envio automático de dados. As chaves locais são protegidas pelo Windows DPAPI, por isso a distribuição atual é destinada ao Windows.
+O Data Mask Studio é uma aplicação desktop para proteger dados em arquivos CSV sem enviá-los para serviços externos. Ele gera tokens determinísticos e reversíveis, armazenando os mapeamentos em um cofre local criptografado.
 
-## Instalação e uso
+A versão atual permite restaurar seletivamente CSVs e também códigos em arquivos HTML e dashboards locais.
 
-### Instalador
+## Download da versão mais recente
 
-Baixe `DataMaskStudio-Setup-1.0.0.exe` na GitHub Release e execute o instalador. A instalação é feita por usuário e a desinstalação preserva por padrão o ambiente em `%LOCALAPPDATA%\DataMaskStudio`.
+[**Baixar a versão mais recente**](https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest)
 
-### Versão portátil
+A release contém o instalador por usuário para Windows (`DataMaskStudio-Setup-<versão>.exe`) e o pacote portátil (`DataMaskStudio-Portable-<versão>.zip`). No pacote portátil, extraia toda a pasta antes de executar `DataMaskStudio.exe`.
 
-Baixe `DataMaskStudio-Portable-1.0.0.zip`, extraia a pasta completa e execute `DataMaskStudio.exe`. Não execute o programa diretamente de dentro do ZIP.
+## Captura da interface
 
-### Código-fonte
+<p align="center">
+  <img src="docs/images/data-mask-studio-main.png" alt="Interface principal do Data Mask Studio" width="900">
+</p>
+
+## Principais recursos
+
+- Anonimização individual e em lote de CSV.
+- Detecção assistida de colunas.
+- Tokens determinísticos e reversíveis.
+- Restauração de CSV e HTML.
+- Cofre local criptografado.
+- Backup portátil protegido por senha.
+- Auditoria de integridade, diagnóstico e manutenção.
+- Processamento em fluxo para arquivos grandes.
+- Operação local sem telemetria.
+
+## Instalação
+
+No instalador, execute o arquivo Setup e siga o assistente. A instalação é feita por usuário. Na versão portátil, extraia o ZIP em uma pasta nova e execute `DataMaskStudio.exe`.
+
+## Fluxo básico
+
+1. Selecione um CSV e escolha as colunas que serão anonimizadas.
+2. Configure prefixos e normalizações e valide a configuração.
+3. Gere o CSV anonimizado ou utilize um perfil no processamento em lote.
+4. Para recuperar dados tabulares, use a aba “Restaurar CSV”.
+5. Para arquivos HTML e dashboards locais, use a aba “Restaurar HTML”.
+6. Consulte códigos específicos pelo consultor local quando necessário.
+
+## Segurança e privacidade
+
+O processamento ocorre localmente; arquivos e dados não são enviados automaticamente. As chaves locais são protegidas pelo Windows DPAPI. Consulte a [política de segurança](SECURITY.md) e a [política de privacidade](PRIVACY.md). Isso não representa garantia de segurança absoluta.
+
+Os executáveis ainda não possuem assinatura digital, portanto o Windows pode apresentar um aviso do SmartScreen.
+
+## Compatibilidade e recuperação
+
+A série 1.0.x preserva os tokens, o schema 3 e backups válidos. Cofres antigos suportados são migrados de forma transacional. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para o contrato de estabilidade e as orientações de recuperação.
+
+## Execução pelo código-fonte
 
 No Windows PowerShell:
 
@@ -34,39 +82,19 @@ python -m pip install -e .
 python -m data_mask_studio
 ```
 
-Fluxo básico:
-
-1. Selecione um CSV e escolha as colunas que serão anonimizadas.
-2. Configure prefixos e normalizações e valide a configuração.
-3. Gere o CSV anonimizado ou utilize um perfil no processamento em lote.
-4. Para recuperar dados tabulares, use a aba “Restaurar CSV”.
-5. Para dashboards locais, use a aba “Restaurar HTML”; lotes possuem uma área própria.
-6. Consulte códigos específicos pelo consultor local quando necessário.
-
-## Backup, integridade e manutenção
-
-Backups `.dmsbackup` são criptografados com uma senha informada pelo usuário. A restauração preserva a consistência do cofre, das chaves e dos perfis.
-
-As áreas de Integridade e Cofre e manutenção produzem relatórios técnicos seguros, validam backups, localizam temporários e permitem compactação controlada do banco.
-
-## Compatibilidade
-
-A versão 1.0.0 usa o schema 3 do cofre e mantém os formatos de tokens, códigos e backups das versões anteriores. Cofres antigos suportados são migrados de forma transacional. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para o contrato de estabilidade e orientações de recuperação.
-
-Atualizações compatíveis não devem alterar códigos já gerados nem impedir a abertura de cofres e backups existentes.
-
 ## Limitações
 
-- O aplicativo é destinado ao Windows por depender do Windows DPAPI.
-- Os executáveis ainda não possuem assinatura digital e podem acionar um aviso do Windows SmartScreen.
-- O Windows pode manter ícones antigos em cache; valide o novo ícone com uma instalação limpa ou um novo atalho.
-- Não existe sincronização, telemetria ou recuperação remota de chaves.
+- A distribuição atual é destinada ao Windows por depender do Windows DPAPI.
+- Não há sincronização, telemetria, atualização automática ou recuperação remota de chaves.
+- Os executáveis não possuem assinatura digital.
 
-## Tecnologias utilizadas
+## Documentação
 
-- Python 3.12+
-- PySide6
-- SQLite
-- cryptography / AES-256-GCM
-- Windows DPAPI
-- pytest
+- [Histórico de alterações](CHANGELOG.md)
+- [Política de segurança](SECURITY.md)
+- [Política de privacidade](PRIVACY.md)
+- [Compatibilidade e recuperação](COMPATIBILITY.md)
+
+## Licenciamento
+
+Este repositório ainda não possui uma licença geral de reutilização definida. A publicação do código no GitHub não concede, por si só, autorização ampla para copiar, modificar ou redistribuir o projeto.

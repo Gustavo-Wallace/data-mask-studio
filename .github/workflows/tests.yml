@@ -2,12 +2,20 @@ name: Testes
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   tests:
     runs-on: windows-latest
+    timeout-minutes: 20
     env:
       QT_QPA_PLATFORM: offscreen
     steps:

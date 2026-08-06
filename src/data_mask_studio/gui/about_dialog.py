@@ -6,7 +6,10 @@ from data_mask_studio.vault.database import SCHEMA_VERSION
 
 
 REPOSITORY_URL = "https://github.com/Gustavo-Wallace/data-mask-studio"
-SECURITY_URL = f"{REPOSITORY_URL}/security/advisories/new"
+SECURITY_URL = f"{REPOSITORY_URL}/blob/main/SECURITY.md"
+PRIVACY_URL = f"{REPOSITORY_URL}/blob/main/PRIVACY.md"
+COMPATIBILITY_URL = f"{REPOSITORY_URL}/blob/main/COMPATIBILITY.md"
+RELEASES_URL = f"{REPOSITORY_URL}/releases"
 
 
 class AboutDialog(QDialog):
@@ -30,8 +33,11 @@ class AboutDialog(QDialog):
         )
         details.setObjectName("aboutDetails")
         links = QLabel(
-            f'<a href="{REPOSITORY_URL}">Repositório público</a><br>'
-            f'<a href="{SECURITY_URL}">Relatar uma vulnerabilidade conforme SECURITY.md</a>'
+            f'<a href="{REPOSITORY_URL}">Repositório</a> &middot; '
+            f'<a href="{SECURITY_URL}">Política de segurança</a><br>'
+            f'<a href="{PRIVACY_URL}">Privacidade</a> &middot; '
+            f'<a href="{COMPATIBILITY_URL}">Compatibilidade</a> &middot; '
+            f'<a href="{RELEASES_URL}">Releases</a>'
         )
         links.setObjectName("aboutLinks")
         links.setOpenExternalLinks(True)

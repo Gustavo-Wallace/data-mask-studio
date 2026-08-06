@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- Reformulação da apresentação do README e captura segura da interface.
+- Correção dos links do diálogo Sobre.
+- Template seguro para relatos de bugs.
+- Pequenos ajustes no GitHub Actions.
+- Nenhuma alteração nos tokens, no cofre ou nos formatos existentes.
+
 ## 1.0.0
 
 - Primeiro lançamento estável.

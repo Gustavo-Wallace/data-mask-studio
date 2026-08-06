@@ -1,0 +1,74 @@
+name: Relato de bug
+description: Relate um comportamento inesperado usando somente dados seguros.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado pelo relato. Não publique vulnerabilidades nem dados reais nesta issue. Para falhas de segurança, siga o [SECURITY.md](https://github.com/Gustavo-Wallace/data-mask-studio/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Versão do Data Mask Studio
+      placeholder: Exemplo: 1.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Distribuição usada
+      options:
+        - Setup
+        - Portable
+        - Código-fonte
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Versão do Windows
+      placeholder: Exemplo: Windows 11 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Descrição resumida
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos mínimos para reproduzir
+      description: Use somente arquivos e dados sintéticos ou devidamente anonimizados.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Comportamento observado
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Confirmações de segurança
+      options:
+        - label: Utilizei somente dados sintéticos ou devidamente anonimizados.
+          required: true
+        - label: Não anexei `vault.db`, chaves, perfis ou backups.
+          required: true
+        - label: Não incluí CPF, nome, IP, e-mail, telefone ou outros dados pessoais.
+          required: true
+        - label: Verifiquei se já existe uma issue semelhante.
+          required: true
+        - label: Entendi que vulnerabilidades não devem ser relatadas em issue pública e devem seguir o `SECURITY.md`.
+          required: true

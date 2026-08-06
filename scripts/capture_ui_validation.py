@@ -5,6 +5,8 @@ from pathlib import Path
 import shutil
 import sys
 
+from PySide6.QtCore import Qt
+
 from data_mask_studio.app import create_application
 from data_mask_studio.backup import EnvironmentPaths
 from data_mask_studio.gui.main_window import MainWindow
@@ -33,7 +35,12 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("benchmarks/.data/ui-validation-1.0.0"),
+        default=Path("benchmarks/.data/ui-validation"),
+    )
+    parser.add_argument(
+        "--readme-capture",
+        type=Path,
+        help="Salva também a captura vazia 1280x800 usada no README.",
     )
     args = parser.parse_args()
     output = args.output.resolve()
@@ -73,8 +80,20 @@ def main() -> int:
             window.set_current_page(page)
             application.processEvents()
             destination = output / f"{width}x{height}-{name}.png"
-            if not window.grab().save(str(destination)):
+            captured = window.grab()
+            if not captured.save(str(destination)):
                 raise RuntimeError(f"Não foi possível salvar {destination}.")
+            if args.readme_capture and (width, height, page) == (1280, 800, 0):
+                readme_capture = args.readme_capture.resolve()
+                readme_capture.parent.mkdir(parents=True, exist_ok=True)
+                readme_image = captured.scaled(
+                    1280,
+                    800,
+                    Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                if not readme_image.save(str(readme_capture), "PNG"):
+                    raise RuntimeError(f"Não foi possível salvar {readme_capture}.")
     window.close()
     application.processEvents()
     print(f"15 capturas salvas em {output}")
