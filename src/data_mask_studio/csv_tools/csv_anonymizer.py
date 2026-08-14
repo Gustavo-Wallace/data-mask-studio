@@ -105,6 +105,15 @@ def anonymize_csv(
                     writer.writerow(headers)
 
                     for row in reader:
+                        if len(configurations) == 1 and not row:
+                            row = [""]
+                        if len(row) != len(configurations):
+                            raise CSVAnonymizationError(
+                                "A linha "
+                                f"{reader.line_num} possui estrutura CSV irregular. "
+                                "Colunas esperadas conforme o cabeçalho: "
+                                f"{len(configurations)}; colunas encontradas: {len(row)}."
+                            )
                         if should_cancel is not None and should_cancel():
                             raise ProcessingCancelled("A geração do CSV foi cancelada.")
                         (

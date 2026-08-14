@@ -4,11 +4,11 @@ from pathlib import Path
 from data_mask_studio.metadata import application_version
 
 
-def test_project_version_is_1_0_1() -> None:
+def test_project_version_is_1_0_2() -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-    assert project["project"]["version"] == "1.0.1"
-    assert application_version() == "1.0.1"
+    assert project["project"]["version"] == "1.0.2"
+    assert application_version() == "1.0.2"
 
 
 def test_project_public_metadata_is_complete_and_unlicensed() -> None:

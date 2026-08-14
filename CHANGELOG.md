@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2
+
+- Correção da inspeção e anonimização de CSVs com uma única coluna.
+- Diagnóstico seguro de linhas CSV com colunas faltantes ou excedentes.
+- Reinicialização consistente do progresso na restauração HTML.
+- Nenhuma alteração nos tokens, no cofre, no schema ou nos formatos existentes.
+
 ## 1.0.1
 
 - Reformulação da apresentação do README e captura segura da interface.

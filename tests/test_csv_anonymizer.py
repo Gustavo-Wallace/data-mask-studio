@@ -19,6 +19,7 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
     ProcessingCancelled,
     anonymize_csv,
 )
+from data_mask_studio.csv_tools import inspect_csv
 from data_mask_studio.vault import (
     MappingCandidate,
     VaultCipher,
@@ -74,6 +75,122 @@ def test_anonymization_preserves_structure_and_original_file(tmp_path: Path) -> 
     assert len(rows) == 4
     assert result.records_processed == 3
     assert progress == [1, 2, 3]
+
+
+def test_single_column_csv_is_inspected_anonymized_and_keeps_structure(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "cpf.csv"
+    source.write_text("CPF\n12345678900\n98765432100\n", encoding="utf-8")
+    destination = tmp_path / "cpf-anonimizado.csv"
+    inspection = inspect_csv(source)
+
+    result = anonymize_csv(
+        inspection.path,
+        destination,
+        encoding=inspection.encoding,
+        delimiter=inspection.delimiter,
+        configurations=[ColumnConfig("CPF", True, "CPF")],
+        secret_key=KEY,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file, delimiter=inspection.delimiter))
+    assert rows[0] == ["CPF"]
+    assert len(rows) == 3
+    assert all(len(row) == 1 for row in rows)
+    assert all(re_full_base32_token(row[0], "CPF") for row in rows[1:])
+    assert result.records_processed == 2
+
+
+def test_single_unselected_column_still_requires_anonymization_selection(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "single.csv"
+    source.write_text("Campo\nvalor\n", encoding="utf-8")
+    destination = tmp_path / "output.csv"
+
+    with pytest.raises(CSVAnonymizationError, match="Selecione ao menos uma coluna"):
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[ColumnConfig("Campo")],
+            secret_key=KEY,
+        )
+
+    assert not destination.exists()
+
+
+def test_single_column_preserves_empty_and_whitespace_only_values(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "empty-single.csv"
+    source.write_text('Campo\n\n"   "\nvalor\n', encoding="utf-8")
+    destination = tmp_path / "output.csv"
+
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[ColumnConfig("Campo", True, "CAMPO")],
+        secret_key=KEY,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    assert rows[1:3] == [[""], ["   "]]
+    assert re_full_base32_token(rows[3][0], "CAMPO")
+    assert result.records_processed == 3
+
+
+@pytest.mark.parametrize(
+    ("irregular_row", "found_columns"),
+    [
+        ("PRIVATE_MISSING", 1),
+        ("PRIVATE_EXTRA_A,PRIVATE_EXTRA_B,PRIVATE_EXTRA_C", 3),
+    ],
+)
+def test_irregular_csv_reports_safe_line_and_column_counts_and_rolls_back(
+    tmp_path: Path,
+    irregular_row: str,
+    found_columns: int,
+) -> None:
+    source = tmp_path / "irregular.csv"
+    source.write_text(
+        f"Primeira,Segunda\nvalor-seguro,ok\n{irregular_row}\n",
+        encoding="utf-8",
+    )
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+
+    with pytest.raises(CSVAnonymizationError) as captured:
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[
+                ColumnConfig("Primeira", True, "PRIMEIRA"),
+                ColumnConfig("Segunda"),
+            ],
+            secret_key=KEY,
+            vault_repository=repository,
+            mapping_batch_size=1,
+        )
+
+    message = str(captured.value)
+    assert "linha 3" in message
+    assert "conforme o cabeçalho" in message
+    assert "esperadas" in message and "2" in message
+    assert "encontradas" in message and str(found_columns) in message
+    assert "PRIVATE_" not in message
+    assert "valor-seguro" not in message
+    assert repository.count() == 0
+    assert not destination.exists()
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_repeated_processing_of_same_file_produces_same_tokens(tmp_path: Path) -> None:

@@ -143,6 +143,7 @@ class HTMLRestorationWidget(QWidget):
             self.load_html(path)
 
     def load_html(self, path: str) -> None:
+        self._reset_progress()
         try:
             inspection = inspect_html(path)
         except HTMLRestorationError as error:
@@ -238,6 +239,7 @@ class HTMLRestorationWidget(QWidget):
         worker: HTMLAnalysisWorker | HTMLRestorationWorker,
         message: str,
     ) -> None:
+        self._reset_progress()
         self._worker = worker
         self._set_processing_state(True)
         self.progress_bar.setRange(0, 100)
@@ -291,9 +293,11 @@ class HTMLRestorationWidget(QWidget):
         self._set_status("HTML restaurado gerado com sucesso.", False)
 
     def _cancelled(self) -> None:
+        self._reset_progress()
         self._set_status("A operação foi cancelada com segurança.", False)
 
     def _failed(self, error: Exception) -> None:
+        self._reset_progress()
         self._last_error = error
         if isinstance(error, HTMLRestorationSecurityError):
             message = "Não foi possível recuperar os mapeamentos com segurança."
@@ -347,6 +351,13 @@ class HTMLRestorationWidget(QWidget):
             self.representation_combo,
         ):
             widget.setEnabled(enabled)
+
+    def _reset_progress(self) -> None:
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        self.progress_label.clear()
+        self.progress_label.setVisible(False)
 
     def open_output_folder(self) -> None:
         if self._last_output_path is None:

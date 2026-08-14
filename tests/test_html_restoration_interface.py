@@ -6,7 +6,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from data_mask_studio.app import create_application
-from data_mask_studio.gui.html_restoration_widget import HTMLRestorationWidget
+from data_mask_studio.gui.html_restoration_widget import (
+    HTMLAnalysisWorker,
+    HTMLRestorationWidget,
+    HTMLRestorationWorker,
+)
 from data_mask_studio.vault import MappingCandidate, VaultCipher, VaultRepository
 
 CODE = "CPF-ABCDEFGHI234"
@@ -41,6 +45,93 @@ def test_html_widget_analyzes_offscreen(tmp_path: Path) -> None:
     assert "Total de ocorrências: 2" in widget.summary.toPlainText()
     assert widget.progress_bar.value() == 100
     assert not widget.isVisible()
+    widget.close()
+    application.quit()
+
+
+def test_selecting_another_html_resets_completed_analysis_progress(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    first = tmp_path / "first.html"
+    second = tmp_path / "second.html"
+    first.write_text(f"<p>{CODE}</p>", encoding="utf-8")
+    second.write_text("<p>conteúdo sintético</p>", encoding="utf-8")
+    application = create_application([])
+    widget = HTMLRestorationWidget(lambda: repository)
+
+    widget.load_html(str(first))
+    widget.start_analysis()
+    assert widget._worker is not None and widget._worker.wait(5000)
+    application.processEvents()
+    assert widget.progress_bar.value() == 100
+
+    widget.load_html(str(second))
+
+    assert widget.progress_bar.value() == 0
+    assert widget.progress_bar.isHidden()
+    assert widget.progress_label.text() == ""
+    assert widget.progress_label.isHidden()
+    assert "inspecionado com sucesso" in widget.status_label.text()
+    widget.close()
+    application.quit()
+
+
+def test_new_analysis_and_restoration_do_not_inherit_completed_progress(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repository = make_repository(tmp_path)
+    source = tmp_path / "input.html"
+    source.write_text(f"<p>{CODE}</p>", encoding="utf-8")
+    application = create_application([])
+    widget = HTMLRestorationWidget(lambda: repository)
+    widget.load_html(str(source))
+    widget.start_analysis()
+    assert widget._worker is not None and widget._worker.wait(5000)
+    application.processEvents()
+    assert widget.progress_bar.value() == 100
+
+    monkeypatch.setattr(HTMLAnalysisWorker, "start", lambda _self: None)
+    widget.start_analysis()
+    analysis_worker = widget._worker
+    assert analysis_worker is not None
+    assert widget.progress_bar.value() == 0
+    assert widget.progress_label.text() == "0 ocorrências processadas"
+    assert not widget.progress_bar.isHidden()
+    widget._worker = None
+    analysis_worker.deleteLater()
+
+    widget.progress_bar.setValue(100)
+    monkeypatch.setattr(HTMLRestorationWorker, "start", lambda _self: None)
+    widget.start_restoration(tmp_path / "output.html", overwrite=False)
+    restoration_worker = widget._worker
+    assert restoration_worker is not None
+    assert widget.progress_bar.value() == 0
+    assert widget.progress_label.text() == "0 ocorrências processadas"
+    assert "Gerando HTML restaurado" in widget.status_label.text()
+    widget._worker = None
+    restoration_worker.deleteLater()
+    application.processEvents()
+    widget.close()
+    application.quit()
+
+
+def test_cancelled_html_operation_clears_progress_state(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    application = create_application([])
+    widget = HTMLRestorationWidget(lambda: repository)
+    widget.progress_bar.setValue(100)
+    widget.progress_bar.setVisible(True)
+    widget.progress_label.setText("estado anterior")
+    widget.progress_label.setVisible(True)
+
+    widget._cancelled()
+
+    assert widget.progress_bar.value() == 0
+    assert widget.progress_bar.isHidden()
+    assert widget.progress_label.text() == ""
+    assert widget.progress_label.isHidden()
+    assert "cancelada com segurança" in widget.status_label.text()
     widget.close()
     application.quit()
 

@@ -20,6 +20,16 @@ def test_csv_separated_by_comma(tmp_path: Path) -> None:
     assert result.encoding == "utf-8"
 
 
+def test_valid_single_column_csv_uses_safe_default_delimiter(tmp_path: Path) -> None:
+    path = write_bytes(tmp_path / "cpf.csv", b"CPF\n12345678900\n98765432100\n")
+
+    result = inspect_csv(path)
+
+    assert result.delimiter == ","
+    assert result.headers == ["CPF"]
+    assert result.encoding == "utf-8"
+
+
 def test_csv_separated_by_semicolon(tmp_path: Path) -> None:
     path = write_bytes(tmp_path / "people.csv", b"name;age;city\nAna;30;Recife\n")
 

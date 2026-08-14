@@ -1,5 +1,6 @@
 import codecs
 import csv
+from io import StringIO
 from pathlib import Path
 
 from data_mask_studio.csv_tools.models import CSVInspectionResult
@@ -83,10 +84,23 @@ def _detect_delimiter(sample: str) -> str:
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=SUPPORTED_DELIMITERS)
     except csv.Error as error:
+        if _is_valid_single_column_sample(sample):
+            return ","
         raise CSVInspectionError(
             "Não foi possível identificar um separador CSV válido."
         ) from error
     return dialect.delimiter
+
+
+def _is_valid_single_column_sample(sample: str) -> bool:
+    """Reconhece CSV sem delimitador sem aceitar estruturas ambíguas ou inválidas."""
+    if any(delimiter in sample for delimiter in SUPPORTED_DELIMITERS):
+        return False
+    try:
+        rows = list(csv.reader(StringIO(sample), delimiter=",", strict=True))
+    except csv.Error:
+        return False
+    return bool(rows) and all(len(row) <= 1 for row in rows)
 
 
 def _read_headers(path: Path, encoding: str, delimiter: str) -> list[str]:
@@ -116,4 +130,3 @@ def _validate_headers(headers: list[str]) -> None:
         raise CSVInspectionError(
             "O arquivo CSV possui um ou mais cabeçalhos vazios."
         )
-
