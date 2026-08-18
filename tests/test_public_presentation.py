@@ -41,6 +41,7 @@ def test_repository_declares_gpl_3_0_only_and_includes_official_license() -> Non
     assert "](LICENSE)" in readme
     assert "GPL-3.0-only" in readme
     assert "license-GPL--3.0--only" in readme
+    assert "Copyright © 2026 Gustavo Wallace Macedo Santos" in readme
     assert "não possui uma licença geral" not in readme
     assert "não concede, por si só" not in readme
     assert license_path.is_file()

@@ -3,10 +3,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QCheckBox, QLineEdit
 
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
+from data_mask_studio.gui.styles import (
+    APPLICATION_THEME_NAME,
+    BASE_COLOR,
+    TEXT_COLOR,
+    WINDOW_COLOR,
+)
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles import ProfileRepository, ProfileService
 from data_mask_studio.vault import VaultCipher, VaultRepository
@@ -58,6 +65,50 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
 
     window.close()
     application.quit()
+
+
+def test_application_theme_overrides_system_palette_and_styles_all_windows() -> None:
+    application = create_application([])
+    simulated_light_palette = QPalette()
+    simulated_light_palette.setColor(QPalette.ColorRole.Window, QColor("#ffffff"))
+    simulated_light_palette.setColor(QPalette.ColorRole.Text, QColor("#000000"))
+    application.setPalette(simulated_light_palette)
+
+    configured_application = create_application([])
+    palette = configured_application.palette()
+
+    assert (
+        configured_application.property("dataMaskStudioTheme")
+        == APPLICATION_THEME_NAME
+    )
+    assert palette.color(QPalette.ColorRole.Window) == QColor(WINDOW_COLOR)
+    assert palette.color(QPalette.ColorRole.WindowText) == QColor(TEXT_COLOR)
+    assert palette.color(QPalette.ColorRole.Base) == QColor(BASE_COLOR)
+    assert "QDialog" in configured_application.styleSheet()
+    assert "QToolTip" in configured_application.styleSheet()
+    assert "QScrollBar:vertical" in configured_application.styleSheet()
+
+
+def test_checkbox_states_have_distinct_visual_indicators() -> None:
+    application = create_application([])
+    checkbox = QCheckBox("Coluna")
+    checkbox.resize(120, 32)
+    checkbox.show()
+    application.processEvents()
+
+    checkbox.setChecked(False)
+    unchecked = checkbox.grab().toImage()
+    checkbox.setChecked(True)
+    checked = checkbox.grab().toImage()
+    checkbox.setEnabled(False)
+    disabled_checked = checkbox.grab().toImage()
+
+    assert checked != unchecked
+    assert disabled_checked != checked
+    assert application.property("dataMaskStudioTheme") == APPLICATION_THEME_NAME
+
+    checkbox.close()
+    application.processEvents()
 
 
 def test_window_displays_and_clears_csv(tmp_path: Path) -> None:

@@ -1,4 +1,5 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout, QWidget
 
 from data_mask_studio.metadata import application_version
@@ -10,6 +11,9 @@ SECURITY_URL = f"{REPOSITORY_URL}/blob/main/SECURITY.md"
 PRIVACY_URL = f"{REPOSITORY_URL}/blob/main/PRIVACY.md"
 COMPATIBILITY_URL = f"{REPOSITORY_URL}/blob/main/COMPATIBILITY.md"
 RELEASES_URL = f"{REPOSITORY_URL}/releases"
+PUBLIC_URLS = frozenset(
+    (REPOSITORY_URL, SECURITY_URL, PRIVACY_URL, COMPATIBILITY_URL, RELEASES_URL)
+)
 
 
 class AboutDialog(QDialog):
@@ -40,8 +44,15 @@ class AboutDialog(QDialog):
             f'<a href="{RELEASES_URL}">Releases</a>'
         )
         links.setObjectName("aboutLinks")
-        links.setOpenExternalLinks(True)
-        links.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByKeyboard)
+        links.setOpenExternalLinks(False)
+        links.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        links.linkActivated.connect(self._open_external_link)
+        self.links_label = links
+        copyright_label = QLabel(
+            "Copyright © 2026 Gustavo Wallace Macedo Santos<br>"
+            "Licenciado sob GNU GPL v3.0 only."
+        )
+        copyright_label.setObjectName("aboutCopyright")
         warning = QLabel(
             "Os executáveis distribuídos ainda não possuem assinatura digital."
         )
@@ -57,5 +68,12 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
         layout.addWidget(details)
         layout.addWidget(links)
+        layout.addWidget(copyright_label)
         layout.addWidget(warning)
         layout.addWidget(buttons)
+
+    @staticmethod
+    def _open_external_link(url: str) -> None:
+        """Abre apenas endereços públicos conhecidos usando a integração do Qt."""
+        if url in PUBLIC_URLS:
+            QDesktopServices.openUrl(QUrl(url))

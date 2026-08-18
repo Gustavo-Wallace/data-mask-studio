@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3
+
+- Tema visual escuro consistente independentemente do tema do Windows.
+- Correção da abertura por clique dos links públicos na janela Sobre.
+- Consolidação da indicação pública da licença GPL-3.0-only e do copyright do autor.
+- Nenhuma alteração em criptografia, tokens, cofre, backups ou formatos persistentes.
+
 ## 1.0.2
 
 - Correção da inspeção e anonimização de CSVs com uma única coluna.

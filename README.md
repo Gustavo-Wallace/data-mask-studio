@@ -99,3 +99,5 @@ python -m data_mask_studio
 ## Licença
 
 O Data Mask Studio é distribuído sob a [GNU General Public License v3.0 only](LICENSE) (`GPL-3.0-only`). Componentes de terceiros permanecem sujeitos às suas próprias licenças.
+
+Copyright © 2026 Gustavo Wallace Macedo Santos

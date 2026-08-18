@@ -289,9 +289,9 @@ def test_common_headers_roles_paths_empty_states_and_internal_tabs(
     assert isinstance(window.batch_restoration_widget.summary_output, EmptyStateTextEdit)
     assert window.backup_widget.restore_button.text() == "Restaurar backup…"
     assert window.backup_widget.restore_button.property("role") == "attention"
-    assert "QLabel { background: transparent; }" in window.styleSheet()
-    assert "#bdc8d5" in window.styleSheet()
-    assert "#8592a3" in window.styleSheet()
+    assert "QLabel { background: transparent; }" in application.styleSheet()
+    assert "#bdc8d5" in application.styleSheet()
+    assert "#8592a3" in application.styleSheet()
     assert [
         window.maintenance_widget.sections.tabText(index)
         for index in range(window.maintenance_widget.sections.count())

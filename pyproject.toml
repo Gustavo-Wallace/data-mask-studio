@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-mask-studio"
-version = "1.0.2"
+version = "1.0.3"
 description = "Aplicação desktop para anonimização local, determinística e reversível de arquivos CSV."
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]

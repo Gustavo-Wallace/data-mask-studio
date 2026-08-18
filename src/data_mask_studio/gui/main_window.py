@@ -32,7 +32,6 @@ from data_mask_studio.gui.components import (
 )
 from data_mask_studio.gui.maintenance_widget import MaintenanceWidget
 from data_mask_studio.gui.restoration_widget import RestorationWidget
-from data_mask_studio.gui.styles import application_stylesheet
 from data_mask_studio.profiles import ProfileError, ProfileRepository, ProfileService
 from data_mask_studio.security import (
     DataProtector,
@@ -195,7 +194,6 @@ class MainWindow(QMainWindow):
         central_layout.addWidget(self.navigation)
         central_layout.addWidget(self.page_stack, stretch=1)
         self.setCentralWidget(central)
-        self.setStyleSheet(application_stylesheet())
         self._configure_presentation()
         self._fit_to_available_geometry()
         self.navigation.buttons[0].setFocus()

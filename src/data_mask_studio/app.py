@@ -8,6 +8,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from data_mask_studio.gui.main_window import MainWindow
+from data_mask_studio.gui.styles import apply_application_theme
 
 APP_USER_MODEL_ID = "com.gustavowallace.datamaskstudio"
 
@@ -28,6 +29,7 @@ def create_application(argv: Sequence[str] | None = None) -> QApplication:
 
 def _configure_application(application: QApplication) -> None:
     application.setApplicationName("Data Mask Studio")
+    apply_application_theme(application)
     icon_path = _application_icon_path()
     if icon_path is not None:
         application.setWindowIcon(QIcon(str(icon_path)))

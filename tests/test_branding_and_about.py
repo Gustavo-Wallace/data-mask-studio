@@ -4,6 +4,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QLabel
 
@@ -13,8 +14,15 @@ from data_mask_studio.branding import (
     MONOGRAM_BORDER,
     MONOGRAM_FOREGROUND,
 )
-from data_mask_studio.gui.about_dialog import AboutDialog
-from data_mask_studio.gui.styles import application_stylesheet
+from data_mask_studio.gui.about_dialog import (
+    COMPATIBILITY_URL,
+    PRIVACY_URL,
+    RELEASES_URL,
+    REPOSITORY_URL,
+    SECURITY_URL,
+    AboutDialog,
+)
+from data_mask_studio.gui.styles import WINDOW_COLOR, application_stylesheet
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -121,7 +129,7 @@ def test_about_dialog_contains_only_public_information() -> None:
     text = " ".join(label.text() for label in dialog.findChildren(QLabel))
 
     assert "Data Mask Studio" in text
-    assert "Versão 1.0.2" in text
+    assert "Versão 1.0.3" in text
     assert "Schema suportado: 3" in text
     assert "Processamento local" in text
     assert "Sem telemetria" in text
@@ -133,11 +141,63 @@ def test_about_dialog_contains_only_public_information() -> None:
     assert "/blob/main/COMPATIBILITY.md" in links.text()
     assert "/releases" in links.text()
     assert "/security/advisories/new" not in links.text()
+    assert "Copyright © 2026 Gustavo Wallace Macedo Santos" in text
+    assert "Licenciado sob GNU GPL v3.0 only." in text
     assert "não possuem assinatura digital" in text
     assert "LOCALAPPDATA" not in text
     assert "vault.db" not in text
     assert "secret.key" not in text
     assert "C:\\Users" not in text
+
+    dialog.close()
+    application.processEvents()
+
+
+def test_about_dialog_uses_dark_application_theme() -> None:
+    application = create_application([])
+    dialog = AboutDialog()
+
+    assert dialog.palette().color(dialog.backgroundRole()) == QColor(WINDOW_COLOR)
+    assert "QDialog" in application.styleSheet()
+    assert "QLabel#aboutLinks" in application.styleSheet()
+
+    dialog.close()
+    application.processEvents()
+
+
+def test_about_links_request_the_known_external_urls(monkeypatch) -> None:
+    application = create_application([])
+    opened_urls: list[str] = []
+
+    class DesktopServicesRecorder:
+        @staticmethod
+        def openUrl(url) -> bool:
+            opened_urls.append(url.toString())
+            return True
+
+    monkeypatch.setattr(
+        "data_mask_studio.gui.about_dialog.QDesktopServices",
+        DesktopServicesRecorder,
+    )
+    dialog = AboutDialog()
+    expected = [
+        REPOSITORY_URL,
+        SECURITY_URL,
+        PRIVACY_URL,
+        COMPATIBILITY_URL,
+        RELEASES_URL,
+    ]
+
+    assert not dialog.links_label.openExternalLinks()
+    flags = dialog.links_label.textInteractionFlags()
+    assert flags & Qt.TextInteractionFlag.LinksAccessibleByMouse
+    assert flags & Qt.TextInteractionFlag.LinksAccessibleByKeyboard
+    for url in expected:
+        assert f'href="{url}"' in dialog.links_label.text()
+        dialog.links_label.linkActivated.emit(url)
+    dialog.links_label.linkActivated.emit("https://example.invalid/not-allowed")
+
+    assert opened_urls == expected
 
     dialog.close()
     application.processEvents()
