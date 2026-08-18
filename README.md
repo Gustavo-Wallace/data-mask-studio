@@ -13,6 +13,7 @@
   <a href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest"><img src="https://img.shields.io/github/v/release/Gustavo-Wallace/data-mask-studio" alt="Última release"></a>
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/Windows-10%2F11-0078D4" alt="Windows 10 e 11">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue.svg" alt="Licença GPL-3.0-only"></a>
 </p>
 
 ## Resumo
@@ -95,6 +96,6 @@ python -m data_mask_studio
 - [Política de privacidade](PRIVACY.md)
 - [Compatibilidade e recuperação](COMPATIBILITY.md)
 
-## Licenciamento
+## Licença
 
-Este repositório ainda não possui uma licença geral de reutilização definida. A publicação do código no GitHub não concede, por si só, autorização ampla para copiar, modificar ou redistribuir o projeto.
+O Data Mask Studio é distribuído sob a [GNU General Public License v3.0 only](LICENSE) (`GPL-3.0-only`). Componentes de terceiros permanecem sujeitos às suas próprias licenças.

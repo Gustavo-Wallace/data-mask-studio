@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from PySide6.QtGui import QImage
@@ -30,20 +31,26 @@ def test_readme_capture_is_safe_sized_and_dimensioned() -> None:
     assert 740 <= image.height() <= 840
 
 
-def test_repository_has_neutral_licensing_notice_without_license_artifacts() -> None:
+def test_repository_declares_gpl_3_0_only_and_includes_official_license() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    expected = (
-        "Este repositório ainda não possui uma licença geral de reutilização definida. "
-        "A publicação do código no GitHub não concede, por si só, autorização ampla "
-        "para copiar, modificar ou redistribuir o projeto."
-    )
+    license_path = ROOT / "LICENSE"
+    license_text = license_path.read_text(encoding="utf-8")
+    normalized_license = license_text.replace("\r\n", "\n").encode("utf-8")
 
-    assert expected in readme
-    assert not (ROOT / "LICENSE").exists()
+    assert "GNU General Public License v3.0 only" in readme
+    assert "](LICENSE)" in readme
+    assert "GPL-3.0-only" in readme
+    assert "license-GPL--3.0--only" in readme
+    assert "não possui uma licença geral" not in readme
+    assert "não concede, por si só" not in readme
+    assert license_path.is_file()
     assert not (ROOT / "LICENSE.md").exists()
     assert not (ROOT / "NOTICE").exists()
-    assert "spdx" not in readme.casefold()
-    assert "badge/license" not in readme.casefold()
+    assert license_text.startswith("                    GNU GENERAL PUBLIC LICENSE")
+    assert "Version 3, 29 June 2007" in license_text
+    assert hashlib.sha256(normalized_license).hexdigest() == (
+        "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    )
 
 
 def test_bug_report_template_requires_safe_public_information() -> None:

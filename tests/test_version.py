@@ -11,7 +11,7 @@ def test_project_version_is_1_0_2() -> None:
     assert application_version() == "1.0.2"
 
 
-def test_project_public_metadata_is_complete_and_unlicensed() -> None:
+def test_project_public_metadata_is_complete_and_gpl_licensed() -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
 
     assert project["description"] == (
@@ -25,4 +25,11 @@ def test_project_public_metadata_is_complete_and_unlicensed() -> None:
         "Changelog": "https://github.com/Gustavo-Wallace/data-mask-studio/blob/main/CHANGELOG.md",
         "Security": "https://github.com/Gustavo-Wallace/data-mask-studio/blob/main/SECURITY.md",
     }
-    assert "license" not in project
+    assert project["license"] == "GPL-3.0-only"
+    assert project["license-files"] == ["LICENSE"]
+
+
+def test_build_backend_supports_spdx_license_metadata() -> None:
+    configuration = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert configuration["build-system"]["requires"] == ["setuptools>=77"]
