@@ -304,3 +304,21 @@ def test_site_does_not_change_application_version() -> None:
 
 def test_github_pages_skips_jekyll_processing() -> None:
     assert (DOCS / ".nojekyll").is_file()
+
+
+def test_public_site_uses_data_masking_language_consistently() -> None:
+    english = (DOCS / "index.html").read_text(encoding="utf-8")
+    portuguese = (DOCS / "pt-br" / "index.html").read_text(encoding="utf-8")
+
+    assert "pseudonymization" not in english.casefold()
+    assert "pseudonimização" not in portuguese.casefold()
+    assert "data masking" in english.casefold()
+    assert "mascaramento" in portuguese.casefold()
+    assert (
+        "deterministic data masking with controlled restoration through an "
+        "encrypted local vault"
+    ) in english.casefold()
+    assert (
+        "mascaramento determinístico com restauração controlada por meio de um "
+        "cofre local criptografado"
+    ) in portuguese.casefold()
