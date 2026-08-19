@@ -2,10 +2,10 @@
   <img src="assets/branding/dms_icon.svg" alt="Ícone do Data Mask Studio" width="128">
 </p>
 
-<h1 align="center">Data Mask Studio</h1>
+<h1 align="center">Data Mask Studio (DMS)</h1>
 
 <p align="center">
-  Anonimização local, determinística e reversível de arquivos CSV para Windows.
+  Ferramenta open source de mascaramento reversível de dados em CSV para Windows, criada por Gustavo Wallace Macedo Santos.
 </p>
 
 <p align="center">
