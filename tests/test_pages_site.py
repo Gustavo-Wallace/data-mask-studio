@@ -322,3 +322,11 @@ def test_public_site_uses_data_masking_language_consistently() -> None:
         "mascaramento determinístico com restauração controlada por meio de um "
         "cofre local criptografado"
     ) in portuguese.casefold()
+
+
+def test_english_homepage_contains_google_site_verification() -> None:
+    _, inspector = inspect_page(DOCS / "index.html")
+
+    assert meta_content(inspector, "name", "google-site-verification") == (
+        "2V_Hk5J_PDTpbsVzJw7ZUUb8-mQ_qrsIOJb8AKWhJMg"
+    )
