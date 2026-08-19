@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gustavo-wallace.github.io/data-mask-studio/sitemap.xml

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#10151d">
+    <title>Data Mask Studio (DMS) — Open Source Data Masking Tool</title>
+    <meta name="description" content="Data Mask Studio (DMS) is an open-source Windows application for local data masking and pseudonymization of sensitive data.">
+    <link rel="canonical" href="https://gustavo-wallace.github.io/data-mask-studio/">
+    <link rel="alternate" hreflang="en" href="https://gustavo-wallace.github.io/data-mask-studio/">
+    <link rel="alternate" hreflang="pt-BR" href="https://gustavo-wallace.github.io/data-mask-studio/pt-br/">
+    <link rel="alternate" hreflang="x-default" href="https://gustavo-wallace.github.io/data-mask-studio/">
+    <link rel="icon" href="assets/dms_icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <meta property="og:title" content="Data Mask Studio (DMS) — Open Source Data Masking Tool">
+    <meta property="og:description" content="Local, open-source data masking and pseudonymization for sensitive data on Windows.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://gustavo-wallace.github.io/data-mask-studio/">
+    <meta property="og:image" content="https://gustavo-wallace.github.io/data-mask-studio/assets/dms_icon_1024.png">
+    <meta property="og:image:alt" content="Data Mask Studio DMS monogram">
+    <meta property="og:site_name" content="Data Mask Studio">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:locale:alternate" content="pt_BR">
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Data Mask Studio",
+        "alternateName": "DMS",
+        "description": "A local Windows application for deterministic data masking and controlled pseudonymization.",
+        "applicationCategory": "SecurityApplication",
+        "operatingSystem": "Windows",
+        "codeRepository": "https://github.com/Gustavo-Wallace/data-mask-studio",
+        "downloadUrl": "https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest",
+        "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+        "author": {
+          "@type": "Person",
+          "name": "Gustavo Wallace Macedo Santos",
+          "url": "https://github.com/Gustavo-Wallace"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="./" aria-label="Data Mask Studio home">
+          <img src="assets/dms_icon.svg" alt="" width="42" height="42">
+          <span>Data Mask Studio</span>
+        </a>
+        <div class="header-actions">
+          <nav class="primary-nav" aria-label="Primary navigation">
+            <a href="#about">About</a>
+            <a href="#features">Features</a>
+            <a href="#security">Security</a>
+            <a href="#open-source">Open source</a>
+          </nav>
+          <nav class="language-switcher" aria-label="Language selection">
+            <a href="./" lang="en" hreflang="en" aria-current="page">EN</a>
+            <span aria-hidden="true">|</span>
+            <a href="pt-br/" lang="pt-BR" hreflang="pt-BR">PT-BR</a>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero">
+        <div class="container">
+          <div class="hero-copy">
+            <p class="eyebrow">Open source · Windows · Local-first</p>
+            <h1>Data Mask Studio <span>DMS</span></h1>
+            <p class="hero-lead">Local, open-source data masking and pseudonymization for Windows.</p>
+            <p class="hero-summary">Work with sensitive datasets while preserving analytical correlations without directly exposing original values. Processing and controlled restoration remain in your local environment.</p>
+            <div class="button-row">
+              <a class="button button-primary" href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest">Download</a>
+              <a class="button" href="https://github.com/Gustavo-Wallace/data-mask-studio">View on GitHub</a>
+            </div>
+            <ul class="trust-list" aria-label="Key privacy characteristics">
+              <li>Local processing</li>
+              <li>No telemetry</li>
+              <li>Controlled restoration</li>
+            </ul>
+          </div>
+          <figure class="product-preview">
+            <img src="assets/data-mask-studio-main.png" alt="Data Mask Studio desktop interface showing CSV masking configuration" width="1280" height="800">
+            <figcaption>The official Data Mask Studio desktop interface.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section section-quiet" id="about">
+        <div class="container two-column">
+          <div class="section-heading">
+            <p class="eyebrow">What is DMS?</p>
+            <h2>Practical protection for sensitive datasets</h2>
+          </div>
+          <div class="prose-panel">
+            <p>Data Mask Studio is a Windows desktop application designed to protect sensitive data in CSV files and local HTML content. It creates deterministic tokens so repeated values can remain correlated during analysis.</p>
+            <p>Original information is kept in an encrypted local vault. Reversibility is controlled through that vault and its protected keys, rather than being a property exposed by each token.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">Main features</p>
+            <h2>Focused tools for local data workflows</h2>
+            <p class="section-intro">Mask, restore, verify and maintain datasets without sending their contents to an external service.</p>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <span class="feature-number">01</span>
+              <h3>Deterministic masking</h3>
+              <p>Consistent tokens preserve useful correlations between repeated values.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-number">02</span>
+              <h3>Encrypted local vault</h3>
+              <p>Mappings and original representations remain encrypted on the local machine.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-number">03</span>
+              <h3>CSV workflows</h3>
+              <p>Inspect headers, configure columns, process files individually or in batches, and restore selected CSV data.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-number">04</span>
+              <h3>HTML restoration</h3>
+              <p>Restore known codes in local HTML files while preserving document markup.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-number">05</span>
+              <h3>Portable encrypted backups</h3>
+              <p>Protect vault, key and profile backups with a password for controlled recovery.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-number">06</span>
+              <h3>Integrity verification</h3>
+              <p>Audit the local vault and identify structural or authentication problems safely.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-number">07</span>
+              <h3>Maintenance tools</h3>
+              <p>Use diagnostics, temporary-file cleanup and controlled vault compaction.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-number">08</span>
+              <h3>Local-first by design</h3>
+              <p>No telemetry and no automatic synchronization of sensitive information.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-quiet" id="workflow">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">How it works</p>
+            <h2>A controlled path from data to analysis</h2>
+          </div>
+          <div class="workflow" aria-label="Data Mask Studio workflow">
+            <div class="workflow-step">Sensitive data</div>
+            <span class="workflow-arrow" aria-hidden="true">→</span>
+            <div class="workflow-step">Data Mask Studio</div>
+            <span class="workflow-arrow" aria-hidden="true">→</span>
+            <div class="workflow-step">Masked dataset</div>
+            <span class="workflow-arrow" aria-hidden="true">→</span>
+            <div class="workflow-step">Analysis</div>
+            <span class="workflow-arrow" aria-hidden="true">→</span>
+            <div class="workflow-step">Controlled restoration</div>
+          </div>
+          <p class="workflow-note">Identifiers remain consistent when generated with the same prefix and cryptographic environment, enabling correlation across records and files. Restoration requires access to the corresponding encrypted local vault.</p>
+        </div>
+      </section>
+
+      <section class="section" id="security">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">Security &amp; privacy</p>
+            <h2>Local controls with explicit cryptographic roles</h2>
+            <p class="section-intro">DMS provides controlled pseudonymization. It does not claim that its deterministic tokens guarantee irreversible anonymization.</p>
+          </div>
+          <div class="security-grid">
+            <article class="security-card">
+              <strong>HMAC-SHA256</strong>
+              <h3>Deterministic identifiers</h3>
+              <p>Tokens derive from keyed cryptographic authentication, incorporating the configured prefix and original value.</p>
+            </article>
+            <article class="security-card">
+              <strong>AES-256-GCM</strong>
+              <h3>Authenticated vault protection</h3>
+              <p>Original information stored in the vault is encrypted and authenticated against unauthorized changes.</p>
+            </article>
+            <article class="security-card">
+              <strong>Windows DPAPI</strong>
+              <h3>Protected local keys</h3>
+              <p>Local keys are protected for the Windows user. Processing stays local, with no telemetry or automatic sensitive-data sync.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-quiet" id="open-source">
+        <div class="container">
+          <div class="license-panel">
+            <div>
+              <p class="eyebrow">Open source</p>
+              <h2>GNU General Public License v3.0 only</h2>
+              <p>SPDX: GPL-3.0-only. Third-party components remain under their respective licenses.</p>
+            </div>
+            <a class="button" href="https://github.com/Gustavo-Wallace/data-mask-studio/blob/main/LICENSE">View license</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="author">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">Author</p>
+            <h2>Built openly and locally</h2>
+          </div>
+          <div class="author-card">
+            <p>Data Mask Studio (DMS)<br>Created by</p>
+            <p class="author-name"><a href="https://github.com/Gustavo-Wallace">Gustavo Wallace Macedo Santos</a></p>
+            <p>Copyright © 2026 Gustavo Wallace Macedo Santos</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <span>Data Mask Studio · Copyright © 2026 Gustavo Wallace Macedo Santos</span>
+        <nav class="footer-links" aria-label="Footer navigation">
+          <a href="https://github.com/Gustavo-Wallace/data-mask-studio">GitHub</a>
+          <a href="https://github.com/Gustavo-Wallace/data-mask-studio/releases">Releases</a>
+          <a href="https://github.com/Gustavo-Wallace/data-mask-studio/blob/main/LICENSE">GPL-3.0-only</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>
