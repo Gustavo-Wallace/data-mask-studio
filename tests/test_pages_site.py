@@ -300,3 +300,7 @@ def test_site_does_not_change_application_version() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert project["project"]["version"] == "1.0.3"
+
+
+def test_github_pages_skips_jekyll_processing() -> None:
+    assert (DOCS / ".nojekyll").is_file()
