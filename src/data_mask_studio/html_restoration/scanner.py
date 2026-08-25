@@ -1,4 +1,5 @@
 import re
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,8 +10,9 @@ from data_mask_studio.html_restoration.exceptions import (
     HTMLRestorationError,
 )
 from data_mask_studio.html_restoration.inspector import python_encoding
+from data_mask_studio.performance import BALANCED_SETTINGS, HTMLProcessingMetrics
 
-CHUNK_SIZE = 64 * 1024
+CHUNK_SIZE = BALANCED_SETTINGS.html_chunk_size
 OVERLAP_SIZE = 96
 MAX_CANDIDATE_LENGTH = 64
 TOKEN_CHARACTER_PATTERN = re.compile(r"[A-Za-z0-9_+/=-]")
@@ -94,6 +96,25 @@ def iter_html_segments(
         ) from error
 
 
+def iter_timed_html_segments(
+    segments: Iterator[HTMLSegment], metrics: HTMLProcessingMetrics | None
+) -> Iterator[HTMLSegment]:
+    if metrics is None:
+        yield from segments
+        return
+    while True:
+        started = time.perf_counter()
+        try:
+            segment = next(segments)
+        except StopIteration:
+            metrics.reading_seconds += time.perf_counter() - started
+            return
+        metrics.reading_seconds += time.perf_counter() - started
+        metrics.segments_processed += 1
+        metrics.bytes_processed = segment.processed_bytes
+        yield segment
+
+
 def iter_candidates(segment: HTMLSegment) -> Iterator[tuple[re.Match[str], str]]:
     guarded = segment.guarded_text()
     for match in CODE_CANDIDATE_PATTERN.finditer(guarded):
@@ -104,7 +125,20 @@ def iter_candidates(segment: HTMLSegment) -> Iterator[tuple[re.Match[str], str]]
 def replace_candidates(
     segment: HTMLSegment,
     replacement: Callable[[str, str], str],
+    candidates: list[tuple[re.Match[str], str]] | None = None,
 ) -> str:
+    if candidates is not None:
+        pieces: list[str] = []
+        cursor = 0
+        for match, normalized in candidates:
+            start = match.start() - 1
+            end = match.end() - 1
+            pieces.append(segment.text[cursor:start])
+            pieces.append(replacement(match.group(0), normalized))
+            cursor = end
+        pieces.append(segment.text[cursor:])
+        return "".join(pieces)
+
     guarded = segment.guarded_text()
 
     def replace(match: re.Match[str]) -> str:

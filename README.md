@@ -1,77 +1,87 @@
+English | [Português (Brasil)](README.pt-BR.md)
+
 <p align="center">
-  <img src="assets/branding/dms_icon.svg" alt="Ícone do Data Mask Studio" width="128">
+  <img src="assets/branding/dms_icon.svg" alt="Data Mask Studio icon" width="128">
 </p>
 
 <h1 align="center">Data Mask Studio (DMS)</h1>
 
 <p align="center">
-  Ferramenta open source de mascaramento reversível de dados em CSV para Windows, criada por Gustavo Wallace Macedo Santos.
+  Open-source data masking for CSV files on Windows, created by Gustavo Wallace Macedo Santos.
 </p>
 
 <p align="center">
-  <a href="https://github.com/Gustavo-Wallace/data-mask-studio/actions/workflows/tests.yml"><img src="https://github.com/Gustavo-Wallace/data-mask-studio/actions/workflows/tests.yml/badge.svg" alt="Testes"></a>
-  <a href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest"><img src="https://img.shields.io/github/v/release/Gustavo-Wallace/data-mask-studio" alt="Última release"></a>
+  <a href="https://github.com/Gustavo-Wallace/data-mask-studio/actions/workflows/tests.yml"><img src="https://github.com/Gustavo-Wallace/data-mask-studio/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest"><img src="https://img.shields.io/github/v/release/Gustavo-Wallace/data-mask-studio" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB" alt="Python 3.12+">
-  <img src="https://img.shields.io/badge/Windows-10%2F11-0078D4" alt="Windows 10 e 11">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue.svg" alt="Licença GPL-3.0-only"></a>
+  <img src="https://img.shields.io/badge/Windows-10%2F11-0078D4" alt="Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue.svg" alt="GPL-3.0-only license"></a>
 </p>
 
-## Resumo
+## Overview
 
-O Data Mask Studio é uma aplicação desktop para proteger dados em arquivos CSV sem enviá-los para serviços externos. Ele gera tokens determinísticos e reversíveis, armazenando os mapeamentos em um cofre local criptografado.
+Data Mask Studio is a desktop application for protecting sensitive data in CSV files without sending it to external services. It provides deterministic data masking with controlled restoration through an encrypted local vault. Individual tokens do not contain or directly expose the original value.
 
-A versão atual permite restaurar seletivamente CSVs e também códigos em arquivos HTML e dashboards locais.
+The current version can selectively restore masked CSV files and codes found in local HTML files and dashboards.
 
-## Download da versão mais recente
+Official website: https://gustavo-wallace.github.io/data-mask-studio/
 
-[**Baixar a versão mais recente**](https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest)
+GitHub: https://github.com/Gustavo-Wallace/data-mask-studio
 
-A release contém o instalador por usuário para Windows (`DataMaskStudio-Setup-<versão>.exe`) e o pacote portátil (`DataMaskStudio-Portable-<versão>.zip`). No pacote portátil, extraia toda a pasta antes de executar `DataMaskStudio.exe`.
+## Download the latest version
 
-## Captura da interface
+[**Download the latest release**](https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest)
+
+Each release provides a per-user Windows installer (`DataMaskStudio-Setup-<version>.exe`) and a portable package (`DataMaskStudio-Portable-<version>.zip`). For the portable edition, extract the entire folder before running `DataMaskStudio.exe`.
+
+## Interface
 
 <p align="center">
-  <img src="docs/images/data-mask-studio-main.png" alt="Interface principal do Data Mask Studio" width="900">
+  <img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio main interface" width="900">
 </p>
 
-## Principais recursos
+## Main features
 
-- Anonimização individual e em lote de CSV.
-- Detecção assistida de colunas.
-- Tokens determinísticos e reversíveis.
-- Restauração de CSV e HTML.
-- Cofre local criptografado.
-- Backup portátil protegido por senha.
-- Auditoria de integridade, diagnóstico e manutenção.
-- Processamento em fluxo para arquivos grandes.
-- Operação local sem telemetria.
+- Individual and batch CSV data masking.
+- Assisted column detection.
+- Deterministic tokens with controlled restoration.
+- CSV and HTML restoration.
+- Encrypted local vault.
+- Password-protected portable backups.
+- Integrity auditing, diagnostics, and maintenance.
+- Streaming processing for large files.
+- Local operation without telemetry.
 
-## Instalação
+## Installation
 
-No instalador, execute o arquivo Setup e siga o assistente. A instalação é feita por usuário. Na versão portátil, extraia o ZIP em uma pasta nova e execute `DataMaskStudio.exe`.
+For the installer edition, run the Setup file and follow the wizard. Installation is per user. For the portable edition, extract the ZIP into a new folder and run `DataMaskStudio.exe`.
 
-## Fluxo básico
+## Basic workflow
 
-1. Selecione um CSV e escolha as colunas que serão anonimizadas.
-2. Configure prefixos e normalizações e valide a configuração.
-3. Gere o CSV anonimizado ou utilize um perfil no processamento em lote.
-4. Para recuperar dados tabulares, use a aba “Restaurar CSV”.
-5. Para arquivos HTML e dashboards locais, use a aba “Restaurar HTML”.
-6. Consulte códigos específicos pelo consultor local quando necessário.
+1. Select a CSV and choose the columns to mask.
+2. Configure prefixes and normalization rules, then validate the configuration.
+3. Generate the masked CSV or use a saved profile for batch processing.
+4. Use the “Restore CSV” tab to recover selected tabular data.
+5. Use the “Restore HTML” tab for local HTML files and dashboards.
+6. Use the local consultant when you need to inspect a specific code.
 
-## Segurança e privacidade
+## Security and privacy
 
-O processamento ocorre localmente; arquivos e dados não são enviados automaticamente. As chaves locais são protegidas pelo Windows DPAPI. Consulte a [política de segurança](SECURITY.md) e a [política de privacidade](PRIVACY.md). Isso não representa garantia de segurança absoluta.
+Processing is local; files and data are not sent automatically. Local keys are protected by Windows DPAPI. See the [security policy](SECURITY.md) and [privacy policy](PRIVACY.md). This does not constitute a guarantee of absolute security.
 
-Os executáveis ainda não possuem assinatura digital, portanto o Windows pode apresentar um aviso do SmartScreen.
+The executables are not digitally signed yet, so Windows may display a SmartScreen warning.
 
-## Compatibilidade e recuperação
+## Architecture overview
 
-A série 1.0.x preserva os tokens, o schema 3 e backups válidos. Cofres antigos suportados são migrados de forma transacional. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para o contrato de estabilidade e as orientações de recuperação.
+The PySide6 desktop interface coordinates separate services for CSV and HTML processing, profiles, backups, and vault maintenance. Sensitive mappings are protected in a local SQLite vault with AES-256-GCM, while local keys are protected by Windows DPAPI. Processing paths use bounded-memory streaming and publish generated files atomically.
 
-## Execução pelo código-fonte
+## Compatibility and recovery
 
-No Windows PowerShell:
+The 1.0.x series preserves token compatibility, schema 3, and valid backups. Supported older vaults are migrated transactionally. See [COMPATIBILITY.md](COMPATIBILITY.md) for the stability contract and recovery guidance.
+
+## Run from source
+
+In Windows PowerShell:
 
 ```powershell
 git clone https://github.com/Gustavo-Wallace/data-mask-studio.git
@@ -83,21 +93,23 @@ python -m pip install -e .
 python -m data_mask_studio
 ```
 
-## Limitações
+## Limitations
 
-- A distribuição atual é destinada ao Windows por depender do Windows DPAPI.
-- Não há sincronização, telemetria, atualização automática ou recuperação remota de chaves.
-- Os executáveis não possuem assinatura digital.
+- The current distribution targets Windows because it relies on Windows DPAPI.
+- There is no synchronization, telemetry, automatic updating, or remote key recovery.
+- Executables are not digitally signed.
 
-## Documentação
+## Documentation
 
-- [Histórico de alterações](CHANGELOG.md)
-- [Política de segurança](SECURITY.md)
-- [Política de privacidade](PRIVACY.md)
-- [Compatibilidade e recuperação](COMPATIBILITY.md)
+- [Changelog](CHANGELOG.md)
+- [Security policy](SECURITY.md)
+- [Privacy policy](PRIVACY.md)
+- [Compatibility and recovery](COMPATIBILITY.md)
 
-## Licença
+## License
 
-O Data Mask Studio é distribuído sob a [GNU General Public License v3.0 only](LICENSE) (`GPL-3.0-only`). Componentes de terceiros permanecem sujeitos às suas próprias licenças.
+Data Mask Studio is distributed under the [GNU General Public License v3.0 only](LICENSE) (`GPL-3.0-only`). Third-party components remain subject to their own licenses.
+
+Created by Gustavo Wallace Macedo Santos.
 
 Copyright © 2026 Gustavo Wallace Macedo Santos

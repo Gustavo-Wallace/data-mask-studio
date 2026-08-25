@@ -293,3 +293,17 @@ def test_benchmark_runs_use_exclusive_parameterized_directories() -> None:
     assert "'work'" in script
     benchmark = Path("benchmarks/benchmark_csv.py").read_text(encoding="utf-8")
     assert "exist_ok=False" in benchmark
+
+
+def test_html_benchmark_is_synthetic_reproducible_and_isolated() -> None:
+    benchmark = Path("benchmarks/benchmark_html.py").read_text(encoding="utf-8")
+
+    for scenario in ("small", "medium", "large", "repeated", "unique"):
+        assert f'Scenario("{scenario}"' in benchmark
+    assert "synthetic-value-" in benchmark
+    assert "include_common_content" in benchmark
+    assert "uuid.uuid4().hex" in benchmark
+    assert "exist_ok=False" in benchmark
+    assert 'Path("benchmarks/.data/html")' in benchmark
+    assert "HTMLProcessingMetrics" in benchmark
+    assert "to_safe_dict()" in benchmark

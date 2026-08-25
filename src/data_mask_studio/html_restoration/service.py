@@ -11,6 +11,7 @@ from data_mask_studio.html_restoration.models import (
 )
 from data_mask_studio.html_restoration.restorer import restore_html
 from data_mask_studio.html_restoration.scanner import CancellationCheck
+from data_mask_studio.performance import HTMLProcessingMetrics
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
 
@@ -28,12 +29,14 @@ class HTMLRestorationService:
         *,
         progress_callback: ProgressCallback | None = None,
         should_cancel: CancellationCheck | None = None,
+        metrics: HTMLProcessingMetrics | None = None,
     ) -> HTMLAnalysisResult:
         return analyze_html(
             inspection,
             self._repository_factory().as_read_only(),
             progress_callback=progress_callback,
             should_cancel=should_cancel,
+            metrics=metrics,
         )
 
     def restore(
@@ -46,6 +49,7 @@ class HTMLRestorationService:
         overwrite: bool,
         progress_callback: ProgressCallback | None = None,
         should_cancel: CancellationCheck | None = None,
+        metrics: HTMLProcessingMetrics | None = None,
     ) -> HTMLRestorationResult:
         return restore_html(
             inspection,
@@ -56,4 +60,5 @@ class HTMLRestorationService:
             overwrite=overwrite,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
+            metrics=metrics,
         )

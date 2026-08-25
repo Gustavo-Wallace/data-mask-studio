@@ -60,8 +60,8 @@ def test_build_helper_reads_version_and_generates_versioned_names() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == (
-        "1.0.3|DataMaskStudio-Portable-1.0.3.zip|"
-        "DataMaskStudio-Setup-1.0.3.exe"
+        "1.0.4|DataMaskStudio-Portable-1.0.4.zip|"
+        "DataMaskStudio-Setup-1.0.4.exe"
     )
 
 

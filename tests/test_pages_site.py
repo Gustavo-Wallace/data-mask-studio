@@ -1,4 +1,5 @@
 import json
+import re
 import tomllib
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -296,10 +297,35 @@ def test_site_reuses_official_assets_without_external_runtime_dependency() -> No
     assert not (DOCS / "script.js").exists()
 
 
+def test_product_screenshot_preserves_aspect_ratio_responsively() -> None:
+    stylesheet = (DOCS / "styles.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.product-preview img\s*\{([^}]*)\}", stylesheet)
+
+    assert rule is not None
+    declarations = rule.group(1).casefold()
+    assert "width: 100%" in declarations
+    assert "height: auto" in declarations
+    assert not re.search(r"height:\s*\d", declarations)
+    container = re.search(r"\.product-preview\s*\{([^}]*)\}", stylesheet)
+    assert container is not None
+    assert "max-width: 100%" in container.group(1).casefold()
+
+    for page, _language, _title, _canonical in PAGES:
+        _, inspector = inspect_page(page)
+        screenshots = [
+            image
+            for image in inspector.attributes_for("img")
+            if image.get("src", "").endswith("data-mask-studio-main.png")
+        ]
+        assert len(screenshots) == 1
+        assert screenshots[0].get("width") == "1280"
+        assert screenshots[0].get("height") == "800"
+
+
 def test_site_does_not_change_application_version() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert project["project"]["version"] == "1.0.3"
+    assert project["project"]["version"] == "1.0.4"
 
 
 def test_github_pages_skips_jekyll_processing() -> None:

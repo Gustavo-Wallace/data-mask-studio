@@ -7,17 +7,38 @@ from PySide6.QtGui import QImage
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_readme_has_compact_branding_download_and_documentation() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+def test_bilingual_readmes_have_navigation_branding_and_public_links() -> None:
+    english = (ROOT / "README.md").read_text(encoding="utf-8")
+    portuguese = (ROOT / "README.pt-BR.md").read_text(encoding="utf-8")
 
-    assert 'src="assets/branding/dms_icon.svg"' in readme
-    assert 'width="128"' in readme
-    assert "dms_icon_1024.png" not in readme
-    assert "https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest" in readme
-    assert "DataMaskStudio-Setup-<versão>.exe" in readme
-    assert "DataMaskStudio-Portable-<versão>.zip" in readme
-    for document in ("SECURITY.md", "PRIVACY.md", "COMPATIBILITY.md", "CHANGELOG.md"):
-        assert f"]({document})" in readme
+    assert english.startswith("English | [Português (Brasil)](README.pt-BR.md)")
+    assert portuguese.startswith("[English](README.md) | Português (Brasil)")
+    for readme in (english, portuguese):
+        assert 'src="assets/branding/dms_icon.svg"' in readme
+        assert 'width="128"' in readme
+        assert "dms_icon_1024.png" not in readme
+        assert "Data Mask Studio (DMS)" in readme
+        assert "https://gustavo-wallace.github.io/data-mask-studio/" in readme
+        assert "https://github.com/Gustavo-Wallace/data-mask-studio" in readme
+        assert "https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest" in readme
+        assert "GPL-3.0-only" in readme
+        assert "Copyright © 2026 Gustavo Wallace Macedo Santos" in readme
+        for document in (
+            "SECURITY.md",
+            "PRIVACY.md",
+            "COMPATIBILITY.md",
+            "CHANGELOG.md",
+        ):
+            assert f"]({document})" in readme
+    assert "DataMaskStudio-Setup-<version>.exe" in english
+    assert "DataMaskStudio-Portable-<version>.zip" in english
+    assert "DataMaskStudio-Setup-<versão>.exe" in portuguese
+    assert "DataMaskStudio-Portable-<versão>.zip" in portuguese
+    public_text = f"{english}\n{portuguese}".casefold()
+    assert "pseudonymization" not in public_text
+    assert "pseudonimização" not in public_text
+    assert "data masking" in english.casefold()
+    assert "mascaramento" in portuguese.casefold()
 
 
 def test_readme_capture_is_safe_sized_and_dimensioned() -> None:
@@ -32,18 +53,21 @@ def test_readme_capture_is_safe_sized_and_dimensioned() -> None:
 
 
 def test_repository_declares_gpl_3_0_only_and_includes_official_license() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readmes = "\n".join(
+        (ROOT / name).read_text(encoding="utf-8")
+        for name in ("README.md", "README.pt-BR.md")
+    )
     license_path = ROOT / "LICENSE"
     license_text = license_path.read_text(encoding="utf-8")
     normalized_license = license_text.replace("\r\n", "\n").encode("utf-8")
 
-    assert "GNU General Public License v3.0 only" in readme
-    assert "](LICENSE)" in readme
-    assert "GPL-3.0-only" in readme
-    assert "license-GPL--3.0--only" in readme
-    assert "Copyright © 2026 Gustavo Wallace Macedo Santos" in readme
-    assert "não possui uma licença geral" not in readme
-    assert "não concede, por si só" not in readme
+    assert "GNU General Public License v3.0 only" in readmes
+    assert "](LICENSE)" in readmes
+    assert "GPL-3.0-only" in readmes
+    assert "license-GPL--3.0--only" in readmes
+    assert "Copyright © 2026 Gustavo Wallace Macedo Santos" in readmes
+    assert "não possui uma licença geral" not in readmes
+    assert "não concede, por si só" not in readmes
     assert license_path.is_file()
     assert not (ROOT / "LICENSE.md").exists()
     assert not (ROOT / "NOTICE").exists()

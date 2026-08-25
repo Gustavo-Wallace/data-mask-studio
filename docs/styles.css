@@ -284,6 +284,7 @@ h3 {
 }
 
 .product-preview {
+  max-width: 100%;
   margin: 4.25rem auto 0;
   padding: 0.65rem;
   border: 1px solid var(--border);
@@ -294,6 +295,7 @@ h3 {
 
 .product-preview img {
   width: 100%;
+  height: auto;
   border-radius: 0.5rem;
 }
 

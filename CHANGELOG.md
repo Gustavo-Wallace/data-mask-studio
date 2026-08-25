@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.4
+
+- Otimização da análise e restauração de HTML comprovada por benchmarks sintéticos reproduzíveis.
+- Consultas agrupadas ao cofre, conexão somente leitura reutilizada e cache limitado durante a restauração de HTML.
+- README principal em inglês e README.pt-BR.md como versão oficial em português.
+- Correção responsiva da captura de tela no GitHub Pages.
+- Nenhuma alteração em criptografia, tokens, cofre, backups ou formatos persistentes.
+
 ## 1.0.3
 
 - Tema visual escuro consistente independentemente do tema do Windows.

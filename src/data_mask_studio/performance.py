@@ -14,6 +14,9 @@ class PerformanceSettings:
     io_buffer_size: int = 1_048_576
     restoration_window_rows: int = 5_000
     sqlite_lookup_batch_size: int = 400
+    html_chunk_size: int = 64 * 1024
+    html_lookup_window_codes: int = 4_000
+    html_direct_cache_limit: int = 64
 
 
 BALANCED_SETTINGS = PerformanceSettings()
@@ -68,6 +71,38 @@ class RestorationMetrics:
                 ),
                 "distribution": dict(sorted(result_sizes.items())),
             },
+        }
+
+
+@dataclass(slots=True)
+class HTMLProcessingMetrics:
+    """Aggregate-only HTML metrics which never retain tokens or restored values."""
+
+    vault: RestorationMetrics = field(default_factory=RestorationMetrics)
+    bytes_processed: int = 0
+    segments_processed: int = 0
+    candidates_scanned: int = 0
+    valid_occurrences: int = 0
+    progress_updates: int = 0
+    reading_seconds: float = 0.0
+    token_scanning_seconds: float = 0.0
+    deduplication_seconds: float = 0.0
+    substitution_seconds: float = 0.0
+    writing_seconds: float = 0.0
+
+    def to_safe_dict(self) -> dict[str, object]:
+        return {
+            "bytes_processed": self.bytes_processed,
+            "segments_processed": self.segments_processed,
+            "candidates_scanned": self.candidates_scanned,
+            "valid_occurrences": self.valid_occurrences,
+            "progress_updates": self.progress_updates,
+            "reading_seconds": self.reading_seconds,
+            "token_scanning_seconds": self.token_scanning_seconds,
+            "deduplication_seconds": self.deduplication_seconds,
+            "substitution_seconds": self.substitution_seconds,
+            "writing_seconds": self.writing_seconds,
+            "vault": self.vault.to_safe_dict(),
         }
 
 
@@ -143,3 +178,7 @@ class BoundedCache(MutableMapping[K, V], Generic[K, V]):
 
     def clear(self) -> None:
         self._values.clear()
+
+    def snapshot(self) -> dict[K, V]:
+        """Return a bounded point-in-time view without changing LRU order."""
+        return dict(self._values)
