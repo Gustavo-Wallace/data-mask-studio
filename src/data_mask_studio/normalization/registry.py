@@ -14,6 +14,7 @@ NORMALIZATION_OPTIONS: tuple[tuple[NormalizationRule, str], ...] = (
     (NormalizationRule.EMAIL, "E-mail"),
     (NormalizationRule.IP_ADDRESS, "Endereço IP"),
     (NormalizationRule.COLLAPSE_WHITESPACE, "Texto sem espaços extras"),
+    (NormalizationRule.PERSON_NAME, "Nome de pessoa"),
 )
 
 _NORMALIZERS: dict[NormalizationRule, Normalizer] = {
@@ -25,6 +26,7 @@ _NORMALIZERS: dict[NormalizationRule, Normalizer] = {
     NormalizationRule.EMAIL: normalizers.email,
     NormalizationRule.IP_ADDRESS: normalizers.ip_address,
     NormalizationRule.COLLAPSE_WHITESPACE: normalizers.collapse_whitespace,
+    NormalizationRule.PERSON_NAME: normalizers.person_name,
 }
 
 _LABELS = dict(NORMALIZATION_OPTIONS)
@@ -39,4 +41,3 @@ def normalize_value(value: str, rule: NormalizationRule) -> str:
 
 def normalization_label(rule: NormalizationRule) -> str:
     return _LABELS[rule]
-

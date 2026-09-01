@@ -2,8 +2,10 @@ import pytest
 
 from data_mask_studio.anonymization import generate_token
 from data_mask_studio.normalization import (
+    NORMALIZATION_OPTIONS,
     NormalizationError,
     NormalizationRule,
+    normalization_label,
     normalize_value,
 )
 
@@ -97,6 +99,73 @@ def test_text_collapses_repeated_whitespace() -> None:
         normalize_value(value, NormalizationRule.COLLAPSE_WHITESPACE)
         == "João da Silva"
     )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "João da Silva",
+        "JOÃO DA SILVA",
+        "joao da silva",
+        "João   da Silva",
+        "  João da Silva  ",
+    ],
+)
+def test_person_name_variants_have_the_same_canonical_value(value: str) -> None:
+    assert normalize_value(value, NormalizationRule.PERSON_NAME) == "joao da silva"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("José Antônio", "jose antonio"),
+        ("Márcia Gonçalves", "marcia goncalves"),
+    ],
+)
+def test_person_name_removes_unicode_diacritics(value: str, expected: str) -> None:
+    assert normalize_value(value, NormalizationRule.PERSON_NAME) == expected
+
+
+def test_person_name_composed_and_decomposed_unicode_are_equivalent() -> None:
+    composed = "João"
+    decomposed = "Joa\u0303o"
+
+    assert normalize_value(composed, NormalizationRule.PERSON_NAME) == normalize_value(
+        decomposed, NormalizationRule.PERSON_NAME
+    ) == "joao"
+
+
+def test_person_name_preserves_semantically_relevant_punctuation() -> None:
+    hyphenated = normalize_value("Ana-Maria Silva", NormalizationRule.PERSON_NAME)
+    separated = normalize_value("Ana Maria Silva", NormalizationRule.PERSON_NAME)
+
+    assert hyphenated == "ana-maria silva"
+    assert separated == "ana maria silva"
+    assert hyphenated != separated
+
+
+def test_person_name_variants_generate_the_same_deterministic_token() -> None:
+    values = (
+        "João da Silva",
+        "JOÃO DA SILVA",
+        "joao da silva",
+        "João   da Silva",
+    )
+    tokens = {
+        generate_token(
+            b"N" * 32,
+            "NOME",
+            normalize_value(value, NormalizationRule.PERSON_NAME),
+        )
+        for value in values
+    }
+
+    assert len(tokens) == 1
+
+
+def test_person_name_is_registered_with_a_label() -> None:
+    assert (NormalizationRule.PERSON_NAME, "Nome de pessoa") in NORMALIZATION_OPTIONS
+    assert normalization_label(NormalizationRule.PERSON_NAME) == "Nome de pessoa"
 
 
 @pytest.mark.parametrize("rule", list(NormalizationRule))

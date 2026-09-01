@@ -614,6 +614,45 @@ def test_cpf_variations_generate_same_token_and_are_preserved(
         assert b"123.456.789-00" not in stored_bytes
 
 
+def test_person_name_variations_generate_same_token_and_are_preserved(
+    tmp_path: Path,
+) -> None:
+    variants = [
+        "João da Silva",
+        "JOÃO DA SILVA",
+        "joao da silva",
+        "João   da Silva",
+    ]
+    source = tmp_path / "names.csv"
+    source.write_text("Nome\n" + "\n".join(variants) + "\n", encoding="utf-8")
+    destination = tmp_path / "output.csv"
+    repository = make_vault(tmp_path)
+
+    anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig("Nome", True, "NOME", NormalizationRule.PERSON_NAME)
+        ],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    tokens = [row[0] for row in rows[1:]]
+    assert len(set(tokens)) == 1
+
+    mapping = repository.get_decrypted_mapping(tokens[0])
+    assert mapping is not None
+    assert mapping.canonical_value == "joao da silva"
+    assert mapping.normalization_rule is NormalizationRule.PERSON_NAME
+    assert mapping.occurrence_count == len(variants)
+    assert {item.original_value for item in mapping.variations} == set(variants)
+
+
 def test_same_canonical_value_with_different_prefixes_has_different_tokens(
     tmp_path: Path,
 ) -> None:

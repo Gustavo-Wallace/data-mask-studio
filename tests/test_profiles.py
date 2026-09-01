@@ -69,6 +69,19 @@ def test_profiles_persist_between_repository_instances(tmp_path: Path) -> None:
     assert loaded[0].columns[1].normalization_rule is NormalizationRule.CPF
 
 
+def test_person_name_normalization_round_trips_through_profiles(tmp_path: Path) -> None:
+    service, repository = make_service(tmp_path)
+    person_name_configuration = [
+        ColumnConfig("Nome", True, "NOME", NormalizationRule.PERSON_NAME)
+    ]
+
+    created = service.create("Nomes de pessoas", person_name_configuration)
+    loaded = ProfileRepository(repository.path).load()
+
+    assert loaded == [created]
+    assert loaded[0].columns[0].normalization_rule is NormalizationRule.PERSON_NAME
+
+
 def test_multiple_profiles_and_case_insensitive_duplicate_names(
     tmp_path: Path,
 ) -> None:

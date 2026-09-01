@@ -42,7 +42,7 @@ _NORMALIZATIONS = {
     SuggestedType.EMAIL: NormalizationRule.EMAIL,
     SuggestedType.PHONE: NormalizationRule.PHONE,
     SuggestedType.IP_ADDRESS: NormalizationRule.IP_ADDRESS,
-    SuggestedType.NAME: NormalizationRule.COLLAPSE_WHITESPACE,
+    SuggestedType.NAME: NormalizationRule.PERSON_NAME,
     SuggestedType.GENERIC_ID: NormalizationRule.EXACT,
 }
 

@@ -56,3 +56,13 @@ def ip_address(value: str) -> str:
 
 def collapse_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip())
+
+
+def person_name(value: str) -> str:
+    """Normaliza caixa, diacríticos e whitespace sem remover pontuação."""
+    decomposed = unicodedata.normalize("NFD", value.casefold())
+    without_diacritics = "".join(
+        character for character in decomposed if not unicodedata.combining(character)
+    )
+    recomposed = unicodedata.normalize("NFC", without_diacritics)
+    return re.sub(r"\s+", " ", recomposed.strip())

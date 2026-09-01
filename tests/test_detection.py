@@ -67,7 +67,19 @@ def test_detects_name_from_header(tmp_path: Path) -> None:
 
     assert suggestion.suggested_type is SuggestedType.NAME
     assert suggestion.prefix == "NOME"
-    assert suggestion.normalization_rule is NormalizationRule.COLLAPSE_WHITESPACE
+    assert suggestion.normalization_rule is NormalizationRule.PERSON_NAME
+
+
+@pytest.mark.parametrize(
+    "header", ["nome", "nome_completo", "usuario", "responsavel", "titular"]
+)
+def test_person_name_headers_suggest_person_name_normalization(
+    tmp_path: Path, header: str
+) -> None:
+    suggestion = analyze(tmp_path, header, ["Ana Silva"]).suggestions[0]
+
+    assert suggestion.suggested_type is SuggestedType.NAME
+    assert suggestion.normalization_rule is NormalizationRule.PERSON_NAME
 
 
 def test_detects_generic_identifier(tmp_path: Path) -> None:

@@ -10,4 +10,4 @@ class NormalizationRule(StrEnum):
     EMAIL = "email"
     IP_ADDRESS = "ip_address"
     COLLAPSE_WHITESPACE = "collapse_whitespace"
-
+    PERSON_NAME = "person_name"
