@@ -124,6 +124,26 @@ def test_validation_requires_all_exact_headers_and_allows_extra_columns(
     assert all(item.status is BatchFileStatus.INCOMPATIBLE for item in items[1:])
 
 
+def test_batch_validation_uses_synthetic_header_and_reports_warning(
+    tmp_path: Path,
+) -> None:
+    service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
+    profile = service.create(
+        "Layout recuperado",
+        [ColumnConfig("column_1", True, "COLUNA_1")],
+    )
+    path = tmp_path / "empty-header.csv"
+    path.write_text(",CPF\nAna,123\n", encoding="utf-8")
+    item = BatchFile(path)
+
+    validate_file(item, profile, service)
+
+    assert item.status is BatchFileStatus.COMPATIBLE
+    assert item.headers == ("column_1", "CPF")
+    assert "1 cabeçalho vazio foi substituído" in item.result_message
+    assert "coluna 1 → column_1" in item.result_message
+
+
 def test_profile_change_and_new_file_require_validation_again(tmp_path: Path) -> None:
     service, profile = make_profile_service(tmp_path)
     first = tmp_path / "first.csv"

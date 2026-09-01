@@ -5,7 +5,11 @@ from pathlib import Path
 
 from data_mask_studio.batch.exceptions import BatchError
 from data_mask_studio.batch.models import BatchFile, BatchFileStatus
-from data_mask_studio.csv_tools import CSVInspectionError, inspect_csv
+from data_mask_studio.csv_tools import (
+    CSVInspectionError,
+    format_header_replacement_warning,
+    inspect_csv,
+)
 from data_mask_studio.profiles import ConfigurationProfile, ProfileService
 
 
@@ -87,6 +91,7 @@ def validate_file(
     item.delimiter = inspection.delimiter
     item.headers = tuple(inspection.headers)
     item.missing_headers = application.missing_headers
+    warning = format_header_replacement_warning(inspection.header_replacements)
     if application.is_complete:
         item.status = BatchFileStatus.COMPATIBLE
         item.result_message = "Arquivo compatível com o perfil."
@@ -94,6 +99,8 @@ def validate_file(
         item.status = BatchFileStatus.INCOMPATIBLE
         missing = ", ".join(application.missing_headers)
         item.result_message = f"Cabeçalhos não encontrados: {missing}."
+    if warning:
+        item.result_message = f"{item.result_message} {warning}"
 
 
 def validate_output_directory(directory: str | Path) -> Path:

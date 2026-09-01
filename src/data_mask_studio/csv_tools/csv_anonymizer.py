@@ -14,6 +14,7 @@ from data_mask_studio.anonymization.models import (
     ColumnConfig,
     NormalizationFallback,
 )
+from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
 from data_mask_studio.vault import MappingCandidate, VaultCollisionError, VaultError
@@ -94,7 +95,7 @@ def anonymize_csv(
                     buffering=performance_settings.io_buffer_size,
                 ) as source_file:
                     reader = csv.reader(source_file, delimiter=delimiter, strict=True)
-                    headers = next(reader)
+                    headers, _replacements = resolve_empty_headers(next(reader))
                     expected_headers = [
                         configuration.header for configuration in configurations
                     ]

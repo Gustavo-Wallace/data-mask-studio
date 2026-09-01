@@ -146,6 +146,36 @@ def test_single_column_preserves_empty_and_whitespace_only_values(
     assert result.records_processed == 3
 
 
+def test_empty_headers_are_resolved_in_output_without_modifying_source(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "empty-headers.csv"
+    original = b",CPF,,NOME\nabc,123,x,Fulano\n"
+    source.write_bytes(original)
+    destination = tmp_path / "output.csv"
+
+    anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig("column_1", True, "CAMPO"),
+            ColumnConfig("CPF"),
+            ColumnConfig("column_3"),
+            ColumnConfig("NOME"),
+        ],
+        secret_key=KEY,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    assert rows[0] == ["column_1", "CPF", "column_3", "NOME"]
+    assert rows[1][0].startswith("CAMPO-")
+    assert rows[1][1:] == ["123", "x", "Fulano"]
+    assert source.read_bytes() == original
+
+
 @pytest.mark.parametrize(
     ("irregular_row", "found_columns"),
     [

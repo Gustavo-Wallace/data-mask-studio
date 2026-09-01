@@ -7,6 +7,7 @@ from itertools import islice
 from pathlib import Path
 
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
+from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.performance import BALANCED_SETTINGS, BoundedCache, RestorationMetrics
 from data_mask_studio.restoration.analyzer import (
     _bulk_lookup,
@@ -84,7 +85,7 @@ def restore_csv(
                 reader = csv.reader(
                     source_file, delimiter=configuration.delimiter, strict=True
                 )
-                headers = next(reader)
+                headers, _replacements = resolve_empty_headers(next(reader))
                 _validate_current_headers(configuration, headers)
                 writer.writerow(headers)
                 with repository.read_session(metrics) as session:

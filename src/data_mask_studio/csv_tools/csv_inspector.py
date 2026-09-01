@@ -3,6 +3,7 @@ import csv
 from io import StringIO
 from pathlib import Path
 
+from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.csv_tools.models import CSVInspectionResult
 
 SAMPLE_SIZE = 64 * 1024
@@ -22,11 +23,9 @@ def inspect_csv(file_path: str | Path) -> CSVInspectionResult:
         raise CSVInspectionError("O arquivo CSV está vazio.")
 
     encoding, decoded_sample = _detect_encoding(sample)
-    if not decoded_sample.strip():
-        raise CSVInspectionError("O arquivo CSV não contém um cabeçalho válido.")
-
     delimiter = _detect_delimiter(decoded_sample)
-    headers = _read_headers(path, encoding, delimiter)
+    raw_headers = _read_headers(path, encoding, delimiter)
+    headers, replacements = resolve_empty_headers(raw_headers)
     _validate_headers(headers)
 
     return CSVInspectionResult(
@@ -34,6 +33,7 @@ def inspect_csv(file_path: str | Path) -> CSVInspectionResult:
         encoding=encoding,
         delimiter=delimiter,
         headers=headers,
+        header_replacements=replacements,
     )
 
 
@@ -126,7 +126,5 @@ def _read_headers(path: Path, encoding: str, delimiter: str) -> list[str]:
 
 
 def _validate_headers(headers: list[str]) -> None:
-    if not headers or any(not header.strip() for header in headers):
-        raise CSVInspectionError(
-            "O arquivo CSV possui um ou mais cabeçalhos vazios."
-        )
+    if not headers:
+        raise CSVInspectionError("O arquivo CSV não contém um cabeçalho válido.")

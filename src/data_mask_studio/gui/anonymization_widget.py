@@ -28,7 +28,12 @@ from data_mask_studio.anonymization import (
     normalize_prefix,
     validate_configuration,
 )
-from data_mask_studio.csv_tools import CSVInspectionError, CSVInspectionResult, inspect_csv
+from data_mask_studio.csv_tools import (
+    CSVInspectionError,
+    CSVInspectionResult,
+    format_header_replacement_warning,
+    inspect_csv,
+)
 from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.csv_tools.csv_anonymizer import (
     CSVAnonymizationError,
@@ -284,7 +289,11 @@ class AnonymizationWidget(QWidget):
         self.clear_button.setEnabled(True)
         self.analyze_button.setEnabled(True)
         self._update_profile_actions()
-        self._set_status("Cabeçalhos lidos com sucesso.", is_error=False)
+        warning = format_header_replacement_warning(result.header_replacements)
+        status = "Cabeçalhos lidos com sucesso."
+        if warning:
+            status = f"{status} {warning}"
+        self._set_status(status, is_error=False)
 
     def _show_error(self, file_path: str, message: str) -> None:
         selected_path = Path(file_path).expanduser().absolute()

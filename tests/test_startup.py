@@ -140,6 +140,24 @@ def test_window_displays_and_clears_csv(tmp_path: Path) -> None:
     application.quit()
 
 
+def test_window_warns_about_resolved_empty_headers(tmp_path: Path) -> None:
+    csv_path = tmp_path / "empty-headers.csv"
+    csv_path.write_text(",CPF,,NOME\na,123,b,Ana\n", encoding="utf-8")
+    application = create_application([])
+    window = MainWindow(profile_service=profile_service(tmp_path))
+
+    window.load_csv(str(csv_path))
+
+    assert window.config_table.item(0, 1).text() == "column_1"
+    assert window.config_table.item(2, 1).text() == "column_3"
+    assert "2 cabeçalhos vazios foram substituídos" in window.status_label.text()
+    assert "coluna 1 → column_1" in window.status_label.text()
+    assert "coluna 3 → column_3" in window.status_label.text()
+
+    window.close()
+    application.quit()
+
+
 def test_window_configures_and_validates_columns(tmp_path: Path) -> None:
     csv_path = tmp_path / "people.csv"
     csv_path.write_text("Nome Completo,CPF/ID\nAna,123\n", encoding="utf-8")

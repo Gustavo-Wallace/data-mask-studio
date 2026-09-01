@@ -156,6 +156,15 @@ def test_analysis_does_not_create_persistent_files(tmp_path: Path) -> None:
     assert {item.name for item in tmp_path.iterdir()} == before
 
 
+def test_detection_uses_resolved_empty_header(tmp_path: Path) -> None:
+    path = tmp_path / "empty-header.csv"
+    path.write_text(",CPF\nAna,12345678900\n", encoding="utf-8")
+
+    result = analyze_csv_columns(inspect_csv(path))
+
+    assert [item.header for item in result.suggestions] == ["column_1", "CPF"]
+
+
 @pytest.mark.parametrize(
     "value",
     [

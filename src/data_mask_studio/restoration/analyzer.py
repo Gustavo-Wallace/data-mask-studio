@@ -2,6 +2,7 @@ import csv
 from itertools import islice
 from collections.abc import Callable, MutableMapping
 
+from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.restoration.code_classifier import classify_cell_format
 from data_mask_studio.restoration.exceptions import (
     RestorationCancelled,
@@ -54,7 +55,7 @@ def analyze_csv(
             reader = csv.reader(
                 source_file, delimiter=configuration.delimiter, strict=True
             )
-            headers = next(reader)
+            headers, _replacements = resolve_empty_headers(next(reader))
             _validate_current_headers(configuration, headers)
             with repository.read_session(metrics) as session:
                 while window := list(

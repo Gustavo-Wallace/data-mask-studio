@@ -18,7 +18,11 @@ from data_mask_studio.batch_restoration.models import (
     BatchRestorationSummary,
 )
 from data_mask_studio.batch_restoration.output_naming import available_output_path
-from data_mask_studio.csv_tools import CSVInspectionError, inspect_csv
+from data_mask_studio.csv_tools import (
+    CSVInspectionError,
+    format_header_replacement_warning,
+    inspect_csv,
+)
 from data_mask_studio.html_restoration import (
     HTMLMissingCodeError,
     HTMLMissingCodePolicy,
@@ -99,8 +103,12 @@ class BatchRestorationService:
         should_cancel: CancellationCheck | None,
     ) -> None:
         item.result_message = ""
+        header_warning = ""
         if item.file_type is BatchRestorationFileType.CSV:
             inspection = inspect_csv(item.path)
+            header_warning = format_header_replacement_warning(
+                inspection.header_replacements
+            )
             item.encoding = inspection.encoding
             item.delimiter = inspection.delimiter
             item.headers = tuple(inspection.headers)
@@ -148,6 +156,8 @@ class BatchRestorationService:
         else:
             item.status = BatchRestorationStatus.COMPATIBLE
             item.result_message = "Arquivo analisado com sucesso."
+        if header_warning:
+            item.result_message = f"{item.result_message} {header_warning}"
 
     def restore_files(
         self,

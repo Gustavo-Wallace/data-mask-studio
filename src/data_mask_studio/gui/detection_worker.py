@@ -25,6 +25,7 @@ class DetectionWorker(QThread):
             encoding=inspection.encoding,
             delimiter=inspection.delimiter,
             headers=list(inspection.headers),
+            header_replacements=inspection.header_replacements,
         )
         self._row_limit = row_limit
         self._cancel_requested = Event()

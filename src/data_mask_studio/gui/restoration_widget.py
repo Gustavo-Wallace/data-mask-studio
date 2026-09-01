@@ -23,7 +23,12 @@ from PySide6.QtWidgets import (
 )
 from data_mask_studio.performance import calculate_metrics
 
-from data_mask_studio.csv_tools import CSVInspectionError, CSVInspectionResult, inspect_csv
+from data_mask_studio.csv_tools import (
+    CSVInspectionError,
+    CSVInspectionResult,
+    format_header_replacement_warning,
+    inspect_csv,
+)
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
 from data_mask_studio.gui.restoration_worker import (
     CSVRestorationWorker,
@@ -218,7 +223,11 @@ class RestorationWidget(QWidget):
         self.open_folder_button.setVisible(False)
         self._update_selected_count()
         self._update_enabled_state(True)
-        self._set_status("Cabecalhos lidos com sucesso.", is_error=False)
+        warning = format_header_replacement_warning(inspection.header_replacements)
+        status = "Cabecalhos lidos com sucesso."
+        if warning:
+            status = f"{status} {warning}"
+        self._set_status(status, is_error=False)
 
     def select_all_columns(self) -> None:
         for checkbox in self._checkboxes:

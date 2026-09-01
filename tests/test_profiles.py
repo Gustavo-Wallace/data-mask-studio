@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from data_mask_studio.anonymization import ColumnConfig
+from data_mask_studio.csv_tools import inspect_csv
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles import (
     PROFILES_SCHEMA_VERSION,
@@ -80,6 +81,24 @@ def test_person_name_normalization_round_trips_through_profiles(tmp_path: Path) 
 
     assert loaded == [created]
     assert loaded[0].columns[0].normalization_rule is NormalizationRule.PERSON_NAME
+
+
+def test_resolved_empty_headers_are_stable_in_profiles(tmp_path: Path) -> None:
+    source = tmp_path / "empty-header.csv"
+    source.write_text(",CPF\nAna,123\n", encoding="utf-8")
+    inspection = inspect_csv(source)
+    service, repository = make_service(tmp_path)
+
+    created = service.create(
+        "Layout com coluna sintética",
+        [ColumnConfig("column_1", True, "COLUNA_1")],
+    )
+    loaded = ProfileRepository(repository.path).load()[0]
+    application = service.apply(loaded, inspection.headers)
+
+    assert created.columns[0].header == "column_1"
+    assert application.matched_headers == ("column_1",)
+    assert application.is_complete
 
 
 def test_multiple_profiles_and_case_insensitive_duplicate_names(

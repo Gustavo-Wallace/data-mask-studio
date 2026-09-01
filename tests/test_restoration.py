@@ -149,6 +149,32 @@ def test_restores_selected_columns_preserving_structure_and_source(tmp_path: Pat
     assert [item.rows_processed for item in progress] == [1, 2]
 
 
+def test_restoration_resolves_empty_header_and_writes_synthetic_name(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    source = tmp_path / "empty-header-anonymized.csv"
+    original = f";Tipo\n{NAME_CODE};WEB\n".encode()
+    source.write_bytes(original)
+    destination = tmp_path / "restored.csv"
+
+    restore_csv(
+        configuration(
+            source,
+            headers=("column_1", "Tipo"),
+            indexes=(0,),
+        ),
+        destination,
+        repository,
+    )
+
+    assert read_rows(destination) == [
+        ["column_1", "Tipo"],
+        ["João da Silva", "WEB"],
+    ]
+    assert source.read_bytes() == original
+
+
 def test_unselected_column_is_preserved_even_when_it_contains_a_code(
     tmp_path: Path,
 ) -> None:

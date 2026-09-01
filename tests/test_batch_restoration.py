@@ -108,6 +108,20 @@ def test_analyzes_csv_and_html_and_exposes_csv_candidates(tmp_path: Path) -> Non
     assert files[1].missing_codes == 1
 
 
+def test_batch_restoration_reports_resolved_empty_header(tmp_path: Path) -> None:
+    restoration, _ = service(tmp_path)
+    source = tmp_path / "empty-header.csv"
+    source.write_text(f",Observacao\n{CODE},comum\n", encoding="utf-8")
+    files: list[BatchRestorationFile] = []
+    add_files(files, [source])
+
+    restoration.analyze_files(files)
+
+    assert files[0].headers == ("column_1", "Observacao")
+    assert "1 cabeçalho vazio foi substituído" in files[0].result_message
+    assert "coluna 1 → column_1" in files[0].result_message
+
+
 @pytest.mark.parametrize(
     ("representation", "expected"),
     [
