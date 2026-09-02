@@ -1,3 +1,4 @@
+import codecs
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,16 @@ from data_mask_studio.csv_tools import (
 def write_bytes(path: Path, content: bytes) -> Path:
     path.write_bytes(content)
     return path
+
+
+def encode_with_bom(content: str, encoding: str) -> bytes:
+    bom = {
+        "utf-16-le": codecs.BOM_UTF16_LE,
+        "utf-16-be": codecs.BOM_UTF16_BE,
+        "utf-32-le": codecs.BOM_UTF32_LE,
+        "utf-32-be": codecs.BOM_UTF32_BE,
+    }[encoding]
+    return bom + content.encode(encoding)
 
 
 def test_csv_separated_by_comma(tmp_path: Path) -> None:
@@ -66,6 +77,90 @@ def test_csv_windows_1252(tmp_path: Path) -> None:
 
     assert result.encoding == "windows-1252"
     assert result.headers == ["descrição", "preço"]
+
+
+@pytest.mark.parametrize(
+    ("encoding", "delimiter"),
+    [
+        ("utf-16-le", ","),
+        ("utf-16-be", ";"),
+        ("utf-32-le", ","),
+        ("utf-32-be", ";"),
+    ],
+)
+def test_unicode_bom_encodings_are_detected_without_contaminating_header(
+    tmp_path: Path, encoding: str, delimiter: str
+) -> None:
+    content = (
+        f"CPF{delimiter}NOME{delimiter}CIDADE\r\n"
+        f"123{delimiter}João da Silva{delimiter}Brasília\r\n"
+    )
+    path = write_bytes(
+        tmp_path / f"{encoding}.csv",
+        encode_with_bom(content, encoding),
+    )
+
+    result = inspect_csv(path)
+
+    assert result.encoding == encoding
+    assert result.delimiter == delimiter
+    assert result.headers == ["CPF", "NOME", "CIDADE"]
+    assert not result.headers[0].startswith("\ufeff")
+
+
+def test_utf32_le_bom_is_checked_before_ambiguous_utf16_le_bom(
+    tmp_path: Path,
+) -> None:
+    path = write_bytes(
+        tmp_path / "ambiguous.csv",
+        encode_with_bom("CPF,NOME\n123,Márcia Gonçalves\n", "utf-32-le"),
+    )
+
+    assert inspect_csv(path).encoding == "utf-32-le"
+
+
+def test_utf16_empty_headers_use_the_existing_header_resolver(tmp_path: Path) -> None:
+    path = write_bytes(
+        tmp_path / "empty-headers.csv",
+        encode_with_bom(",CPF,,NOME\r\nx,123,y,João\r\n", "utf-16-le"),
+    )
+
+    result = inspect_csv(path)
+
+    assert result.headers == ["column_1", "CPF", "column_3", "NOME"]
+    assert [item.position for item in result.header_replacements] == [1, 3]
+
+
+@pytest.mark.parametrize(
+    ("payload", "declared_encoding"),
+    [
+        (codecs.BOM_UTF16_BE + b"\x00", "UTF-16-BE"),
+        (codecs.BOM_UTF32_LE + b"\x00\x00", "UTF-32-LE"),
+    ],
+)
+def test_truncated_declared_unicode_encoding_fails_without_legacy_fallback(
+    tmp_path: Path, payload: bytes, declared_encoding: str
+) -> None:
+    path = write_bytes(tmp_path / "truncated.csv", payload)
+
+    with pytest.raises(CSVInspectionError, match=declared_encoding):
+        inspect_csv(path)
+
+
+def test_bomless_null_encoded_file_is_rejected_conservatively(tmp_path: Path) -> None:
+    path = write_bytes(
+        tmp_path / "bomless.csv",
+        "CPF,NOME\n123,João\n".encode("utf-16-le"),
+    )
+
+    with pytest.raises(CSVInspectionError, match="sem BOM"):
+        inspect_csv(path)
+
+
+def test_latin1_fallback_remains_available(tmp_path: Path) -> None:
+    path = write_bytes(tmp_path / "latin1.csv", b"name,note\nAna,\x81\n")
+
+    assert inspect_csv(path).encoding == "latin-1"
 
 
 def test_empty_file(tmp_path: Path) -> None:

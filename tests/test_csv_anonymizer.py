@@ -346,6 +346,42 @@ def test_windows_1252_input_is_supported(tmp_path: Path) -> None:
     assert rows[1][1].startswith("CIDADE-")
 
 
+def test_utf16_input_uses_person_name_normalization_and_preserves_source(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "names-utf16.csv"
+    content = (
+        "NOME;CIDADE\r\n"
+        "João     da Silva;Brasília\r\n"
+        "JOAO DA SILVA;São Paulo\r\n"
+    )
+    original = codecs.BOM_UTF16_LE + content.encode("utf-16-le")
+    source.write_bytes(original)
+    inspection = inspect_csv(source)
+    destination = tmp_path / "output.csv"
+
+    anonymize_csv(
+        source,
+        destination,
+        encoding=inspection.encoding,
+        delimiter=inspection.delimiter,
+        configurations=[
+            ColumnConfig("NOME", True, "NOME", NormalizationRule.PERSON_NAME),
+            ColumnConfig("CIDADE"),
+        ],
+        secret_key=KEY,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file, delimiter=";"))
+    assert inspection.encoding == "utf-16-le"
+    assert rows[1][0] == rows[2][0]
+    assert rows[1][1:] == ["Brasília"]
+    assert rows[2][1:] == ["São Paulo"]
+    assert destination.read_bytes().startswith(codecs.BOM_UTF8)
+    assert source.read_bytes() == original
+
+
 def test_empty_and_whitespace_values_are_preserved_in_csv(tmp_path: Path) -> None:
     source = tmp_path / "empty-values.csv"
     source.write_text('name,note\n,"   "\n', encoding="utf-8")

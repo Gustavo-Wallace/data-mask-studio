@@ -3,6 +3,7 @@ from collections.abc import Callable, Sequence
 
 from data_mask_studio.anonymization import normalize_prefix
 from data_mask_studio.csv_tools import CSVInspectionResult
+from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.detection.exceptions import DetectionCancelled, DetectionError
 from data_mask_studio.detection.header_rules import detect_header_type
 from data_mask_studio.detection.models import (
@@ -59,12 +60,9 @@ def analyze_csv_columns(
     cancel_requested = should_cancel or (lambda: False)
     samples: list[list[str]] = [[] for _ in inspection.headers]
     rows_analyzed = 0
-    python_encoding = (
-        "cp1252" if inspection.encoding == "windows-1252" else inspection.encoding
-    )
     try:
         with inspection.path.open(
-            "r", encoding=python_encoding, newline=""
+            "r", encoding=python_codec(inspection.encoding), newline=""
         ) as csv_file:
             reader = csv.reader(csv_file, delimiter=inspection.delimiter, strict=True)
             next(reader)

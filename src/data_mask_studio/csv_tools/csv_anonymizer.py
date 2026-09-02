@@ -14,6 +14,7 @@ from data_mask_studio.anonymization.models import (
     ColumnConfig,
     NormalizationFallback,
 )
+from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
@@ -65,7 +66,7 @@ def anonymize_csv(
     started_at = time.perf_counter()
     records_processed = 0
     vault_summary = VaultUpdateSummary()
-    input_encoding = "cp1252" if encoding == "windows-1252" else encoding
+    input_encoding = python_codec(encoding)
     pending_mappings: dict[str, MappingCandidate] = {}
     fallback_counts: dict[int, int] = {}
     transaction_context = (

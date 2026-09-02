@@ -3,6 +3,13 @@ import csv
 from io import StringIO
 from pathlib import Path
 
+from data_mask_studio.csv_tools.encoding import (
+    BOM_ENCODINGS,
+    LATIN_1,
+    UTF_8,
+    WINDOWS_1252,
+    python_codec,
+)
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.csv_tools.models import CSVInspectionResult
 
@@ -54,30 +61,49 @@ def _read_sample(path: Path) -> bytes:
 
 
 def _detect_encoding(sample: bytes) -> tuple[str, str]:
-    if sample.startswith(codecs.BOM_UTF8):
+    sample_is_complete = len(sample) < SAMPLE_SIZE
+    for bom, encoding in BOM_ENCODINGS:
+        if not sample.startswith(bom):
+            continue
         try:
-            return "utf-8-sig", _decode_sample(sample, "utf-8-sig")
+            decoded = _decode_sample(
+                sample,
+                python_codec(encoding),
+                final=sample_is_complete,
+            )
         except UnicodeDecodeError as error:
             raise CSVInspectionError(
-                "O arquivo possui uma codificação UTF-8 inválida."
+                f"O arquivo declara {encoding.upper()} pelo BOM, "
+                "mas seu conteúdo está inválido."
             ) from error
+        return encoding, decoded
+
+    if b"\x00" in sample:
+        raise CSVInspectionError(
+            "O arquivo contém bytes NUL e pode ser UTF-16 ou UTF-32 sem BOM, "
+            "formato que não pode ser identificado com segurança."
+        )
 
     for encoding, display_name in (
-        ("utf-8", "utf-8"),
-        ("cp1252", "windows-1252"),
-        ("latin-1", "latin-1"),
+        (python_codec(UTF_8), UTF_8),
+        (python_codec(WINDOWS_1252), WINDOWS_1252),
+        (python_codec(LATIN_1), LATIN_1),
     ):
         try:
-            return display_name, _decode_sample(sample, encoding)
+            return display_name, _decode_sample(
+                sample,
+                encoding,
+                final=sample_is_complete,
+            )
         except UnicodeDecodeError:
             continue
 
     raise CSVInspectionError("Não foi possível identificar a codificação do arquivo.")
 
 
-def _decode_sample(sample: bytes, encoding: str) -> str:
+def _decode_sample(sample: bytes, encoding: str, *, final: bool = False) -> str:
     decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
-    return decoder.decode(sample, final=False)
+    return decoder.decode(sample, final=final)
 
 
 def _detect_delimiter(sample: str) -> str:
@@ -104,9 +130,8 @@ def _is_valid_single_column_sample(sample: str) -> bool:
 
 
 def _read_headers(path: Path, encoding: str, delimiter: str) -> list[str]:
-    python_encoding = "cp1252" if encoding == "windows-1252" else encoding
     try:
-        with path.open("r", encoding=python_encoding, newline="") as csv_file:
+        with path.open("r", encoding=python_codec(encoding), newline="") as csv_file:
             reader = csv.reader(csv_file, delimiter=delimiter, strict=True)
             return next(reader)
     except StopIteration as error:

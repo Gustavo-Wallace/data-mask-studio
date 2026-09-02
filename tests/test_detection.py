@@ -1,3 +1,4 @@
+import codecs
 from pathlib import Path
 
 import pytest
@@ -163,6 +164,19 @@ def test_detection_uses_resolved_empty_header(tmp_path: Path) -> None:
     result = analyze_csv_columns(inspect_csv(path))
 
     assert [item.header for item in result.suggestions] == ["column_1", "CPF"]
+
+
+def test_utf16_person_name_detection_reads_unicode_values(tmp_path: Path) -> None:
+    path = tmp_path / "names-utf16.csv"
+    content = "NOME,CIDADE\r\nJoão     da Silva,Brasília\r\n"
+    path.write_bytes(codecs.BOM_UTF16_BE + content.encode("utf-16-be"))
+
+    result = analyze_csv_columns(inspect_csv(path))
+    suggestion = result.suggestions[0]
+
+    assert suggestion.header == "NOME"
+    assert suggestion.suggested_type is SuggestedType.NAME
+    assert suggestion.normalization_rule is NormalizationRule.PERSON_NAME
 
 
 @pytest.mark.parametrize(

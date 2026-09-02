@@ -1,3 +1,4 @@
+import codecs
 from pathlib import Path
 
 import pytest
@@ -202,6 +203,36 @@ def test_batch_processes_sequentially_with_one_transaction_per_file(
     assert summary.completed_files == 2
     assert summary.records_processed == 2
     assert len(list(output.glob("*.csv"))) == 2
+
+
+def test_batch_propagates_utf32_encoding_through_validation_and_processing(
+    tmp_path: Path,
+) -> None:
+    service, profile = make_profile_service(tmp_path)
+    source = tmp_path / "utf32.csv"
+    content = "Nome,CPF,Extra\r\nMárcia,12345678900,Brasília\r\n"
+    original = codecs.BOM_UTF32_LE + content.encode("utf-32-le")
+    source.write_bytes(original)
+    item = BatchFile(source)
+    validate_file(item, profile, service)
+    output = tmp_path / "out"
+    output.mkdir()
+    repository = CountingRepository(tmp_path / "vault.db")
+
+    summary = BatchService(service).process(
+        [item],
+        profile,
+        output,
+        FixedKeyProvider(),
+        lambda: repository,
+    )
+
+    generated = output / "utf32_anonimizado.csv"
+    assert item.encoding == "utf-32-le"
+    assert item.status is BatchFileStatus.COMPLETED
+    assert summary.completed_files == 1
+    assert generated.read_bytes().startswith(codecs.BOM_UTF8)
+    assert source.read_bytes() == original
 
 
 def test_batch_uses_fallback_for_invalid_value_and_continues(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@ import csv
 from itertools import islice
 from collections.abc import Callable, MutableMapping
 
+from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.restoration.code_classifier import classify_cell_format
 from data_mask_studio.restoration.exceptions import (
@@ -208,7 +209,7 @@ def _validate_row(
 
 
 def _python_encoding(encoding: str) -> str:
-    return "cp1252" if encoding == "windows-1252" else encoding
+    return python_codec(encoding)
 
 
 def _raise_if_cancelled(should_cancel: CancellationCheck | None) -> None:

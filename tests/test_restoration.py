@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from data_mask_studio.csv_tools import inspect_csv
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.restoration import (
     CellClassification,
@@ -320,6 +321,32 @@ def test_supported_input_encodings_produce_utf8_bom(
 
     assert destination.read_bytes().startswith(codecs.BOM_UTF8)
     assert read_rows(destination)[0] == ["CPF", "Nome", "Tipo"]
+
+
+def test_utf32_be_input_is_restored_and_output_contract_remains_utf8_bom(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    source = tmp_path / "utf32-be.csv"
+    content = f"CPF;Nome;Tipo\r\n{CPF_CODE};Márcia;Brasília\r\n"
+    original = codecs.BOM_UTF32_BE + content.encode("utf-32-be")
+    source.write_bytes(original)
+    inspection = inspect_csv(source)
+    destination = tmp_path / "restored.csv"
+
+    restore_csv(
+        configuration(source, encoding=inspection.encoding),
+        destination,
+        repository,
+    )
+
+    assert inspection.encoding == "utf-32-be"
+    assert read_rows(destination) == [
+        ["CPF", "Nome", "Tipo"],
+        ["123.456.789-00", "Márcia", "Brasília"],
+    ]
+    assert destination.read_bytes().startswith(codecs.BOM_UTF8)
+    assert source.read_bytes() == original
 
 
 def test_validation_blocks_input_path_existing_destination_and_empty_selection(
