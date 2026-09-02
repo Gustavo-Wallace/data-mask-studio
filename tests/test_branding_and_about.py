@@ -129,7 +129,7 @@ def test_about_dialog_contains_only_public_information() -> None:
     text = " ".join(label.text() for label in dialog.findChildren(QLabel))
 
     assert "Data Mask Studio" in text
-    assert "Versão 1.0.4" in text
+    assert "Versão 1.1.0" in text
     assert "Schema suportado: 3" in text
     assert "Processamento local" in text
     assert "Sem telemetria" in text

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Nova normalização `PERSON_NAME` para variações de caixa, diacríticos e whitespace.
+- Recuperação determinística de cabeçalhos CSV vazios com nomes `column_<posição>` e resolução de colisões.
+- Suporte de entrada a CSV UTF-16 LE/BE e UTF-32 LE/BE com BOM.
+- Integração das novas capacidades aos fluxos individual, em lote e de restauração.
+- Nenhuma alteração em criptografia, tokens, cofre, backups ou formatos persistentes.
+
 ## 1.0.4
 
 - Otimização da análise e restauração de HTML comprovada por benchmarks sintéticos reproduzíveis.

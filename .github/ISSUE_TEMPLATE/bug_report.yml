@@ -12,7 +12,7 @@ body:
     id: version
     attributes:
       label: Versão do Data Mask Studio
-      placeholder: Exemplo: 1.0.4
+      placeholder: Exemplo: 1.1.0
     validations:
       required: true
   - type: dropdown
