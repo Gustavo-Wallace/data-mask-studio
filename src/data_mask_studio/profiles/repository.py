@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles.exceptions import (
     ProfileFormatError,
@@ -117,6 +118,7 @@ def _serialize_document(profiles: list[ConfigurationProfile]) -> dict[str, Any]:
                         "prefix": column.prefix,
                         "normalization_rule": column.normalization_rule.value,
                         "anonymize": column.anonymize,
+                        "action": column.action.value,
                     }
                     for column in profile.columns
                 ],
@@ -169,6 +171,14 @@ def _parse_column(value: object) -> ProfileColumn:
     anonymize = value["anonymize"]
     if not isinstance(anonymize, bool):
         raise TypeError
+    raw_action = value.get("action")
+    action = (
+        ColumnAction(raw_action)
+        if raw_action is not None
+        else (ColumnAction.MASK if anonymize else ColumnAction.PRESERVE)
+    )
+    if raw_action is not None and anonymize != (action is ColumnAction.MASK):
+        raise ValueError
     return ProfileColumn(
         header=_required_string(value, "header"),
         prefix=_required_string(value, "prefix"),
@@ -176,6 +186,7 @@ def _parse_column(value: object) -> ProfileColumn:
             _required_string(value, "normalization_rule")
         ),
         anonymize=anonymize,
+        action=action,
     )
 
 

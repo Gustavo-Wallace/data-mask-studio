@@ -95,6 +95,15 @@ def test_sidebar_navigation_order_accessibility_and_state(tmp_path: Path) -> Non
         for category in window.navigation.categories
     )
     assert window.navigation.buttons[0].isChecked()
+    expected_description = (
+        "Defina como cada coluna será tratada no CSV de saída: "
+        "preservar, mascarar ou excluir."
+    )
+    assert window.page_shells[0].header.description_label.text() == expected_description
+    assert (
+        window.navigation.buttons[0].accessibleDescription()
+        == expected_description
+    )
     assert "tabs" not in window.__dict__
 
     window.consultant_widget.codes_input.setPlainText("CPF-ABCDEFGHI234")

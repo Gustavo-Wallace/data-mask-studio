@@ -2,6 +2,7 @@ from collections import Counter
 from collections.abc import Sequence
 
 from data_mask_studio.anonymization.models import (
+    ColumnAction,
     ColumnConfig,
     ColumnValidationResult,
     ConfigurationValidationResult,
@@ -17,9 +18,13 @@ def create_column_configs(headers: Sequence[str]) -> list[ColumnConfig]:
 def validate_configuration(
     configurations: Sequence[ColumnConfig],
 ) -> ConfigurationValidationResult:
-    """Valida as colunas selecionadas e ignora as demais."""
-    selected = [configuration for configuration in configurations if configuration.anonymize]
-    if not selected:
+    """Valida o conjunto e os campos usados exclusivamente para mascaramento."""
+    remaining = [
+        configuration
+        for configuration in configurations
+        if configuration.action is not ColumnAction.EXCLUDE
+    ]
+    if not remaining:
         return ConfigurationValidationResult(
             is_valid=False,
             selected_count=0,
@@ -27,14 +32,20 @@ def validate_configuration(
                 ColumnValidationResult(configuration.header, is_valid=True)
                 for configuration in configurations
             ],
-            error_message="Selecione ao menos uma coluna para anonimizar.",
+            error_message="Ao menos uma coluna precisa permanecer no arquivo de saída.",
         )
+
+    selected = [
+        configuration
+        for configuration in configurations
+        if configuration.action is ColumnAction.MASK
+    ]
 
     prefix_counts = Counter(configuration.prefix for configuration in selected)
     column_results: list[ColumnValidationResult] = []
 
     for configuration in configurations:
-        if not configuration.anonymize:
+        if configuration.action is not ColumnAction.MASK:
             column_results.append(
                 ColumnValidationResult(configuration.header, is_valid=True)
             )
@@ -63,4 +74,3 @@ def validate_configuration(
             else "Corrija as configurações inválidas antes de continuar."
         ),
     )
-

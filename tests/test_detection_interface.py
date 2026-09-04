@@ -5,6 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QMessageBox
 
+from data_mask_studio.anonymization import ColumnAction
 from data_mask_studio.app import create_application
 from data_mask_studio.csv_tools import inspect_csv
 from data_mask_studio.detection import ConfidenceLevel, SuggestedType
@@ -128,7 +129,9 @@ def test_manual_configuration_is_preserved_without_confirmation(
     application = create_application([])
     widget = make_widget(tmp_path)
     widget.load_csv(str(sample_csv(tmp_path)))
-    widget._checkboxes[0].setChecked(True)
+    widget._action_fields[0].setCurrentIndex(
+        widget._action_fields[0].findData(ColumnAction.MASK.value)
+    )
     widget._prefix_fields[0].setText("MANUAL")
     run_analysis(widget, application)
     monkeypatch.setattr(
@@ -150,7 +153,9 @@ def test_clearing_suggestions_preserves_current_configuration(tmp_path: Path) ->
     application = create_application([])
     widget = make_widget(tmp_path)
     widget.load_csv(str(sample_csv(tmp_path)))
-    widget._checkboxes[0].setChecked(True)
+    widget._action_fields[0].setCurrentIndex(
+        widget._action_fields[0].findData(ColumnAction.MASK.value)
+    )
     widget._prefix_fields[0].setText("MEU_CPF")
     run_analysis(widget, application)
 

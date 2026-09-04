@@ -2,7 +2,11 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from data_mask_studio.anonymization import ColumnConfig, NormalizationFallback
+from data_mask_studio.anonymization import (
+    ColumnAction,
+    ColumnConfig,
+    NormalizationFallback,
+)
 from data_mask_studio.batch.exceptions import BatchError, BatchStructuralError
 from data_mask_studio.batch.models import (
     BatchErrorType,
@@ -165,7 +169,11 @@ def _profile_configurations(
     return [
         ColumnConfig(
             header=header,
-            anonymize=header in columns,
+            action=(
+                columns[header].action
+                if header in columns
+                else ColumnAction.PRESERVE
+            ),
             prefix=columns[header].prefix if header in columns else "",
             normalization_rule=(
                 columns[header].normalization_rule

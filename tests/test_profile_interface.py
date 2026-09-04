@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
-from data_mask_studio.anonymization import ColumnConfig
+from data_mask_studio.anonymization import ColumnAction, ColumnConfig
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.normalization import NormalizationRule
@@ -77,6 +77,46 @@ def test_complete_profile_is_applied_and_validated(tmp_path: Path) -> None:
     application.quit()
 
 
+def test_profile_actions_are_restored_in_the_configuration_table(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "actions.csv"
+    csv_path.write_text("Nome,Idade,Observacao\nAna,30,interno\n", encoding="utf-8")
+    service = make_service(tmp_path)
+    service.create(
+        "Preparação de dados",
+        [
+            ColumnConfig("Nome", True, "NOME", NormalizationRule.PERSON_NAME),
+            ColumnConfig("Idade", action=ColumnAction.PRESERVE),
+            ColumnConfig("Observacao", action=ColumnAction.EXCLUDE),
+        ],
+    )
+    application = create_application([])
+    window = MainWindow(profile_service=service)
+    window.load_csv(str(csv_path))
+
+    window.apply_profile_button.click()
+
+    assert [item.action for item in window._column_configs] == [
+        ColumnAction.MASK,
+        ColumnAction.PRESERVE,
+        ColumnAction.EXCLUDE,
+    ]
+    assert window._prefix_fields[0].isEnabled()
+    assert not window._prefix_fields[1].isEnabled()
+    assert not window._prefix_fields[2].isEnabled()
+    assert [field.property("columnAction") for field in window._action_fields] == [
+        "mask",
+        "preserve",
+        "exclude",
+    ]
+    assert len({field.styleSheet() for field in window._action_fields}) == 3
+    assert window.generate_button.isEnabled()
+
+    window.close()
+    application.quit()
+
+
 def test_partial_profile_requires_review(tmp_path: Path) -> None:
     csv_path = tmp_path / "partial.csv"
     csv_path.write_text("Nome,Extra\nAna,x\n", encoding="utf-8")
@@ -140,7 +180,9 @@ def test_manual_configuration_is_not_replaced_without_confirmation(
     application = create_application([])
     window = MainWindow(profile_service=service)
     window.load_csv(str(csv_path))
-    window._checkboxes[0].setChecked(True)
+    window._action_fields[0].setCurrentIndex(
+        window._action_fields[0].findData(ColumnAction.MASK.value)
+    )
     window._prefix_fields[0].setText("MANUAL")
     monkeypatch.setattr(
         QMessageBox,
@@ -166,7 +208,9 @@ def test_save_rename_update_and_delete_profile_from_interface(
     application = create_application([])
     window = MainWindow(profile_service=service)
     window.load_csv(str(csv_path))
-    window._checkboxes[0].setChecked(True)
+    window._action_fields[0].setCurrentIndex(
+        window._action_fields[0].findData(ColumnAction.MASK.value)
+    )
     window.validate_current_configuration()
     names = iter((("Perfil inicial", True), ("Perfil final", True)))
     monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: next(names))

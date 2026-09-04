@@ -1,6 +1,7 @@
 import pytest
 
 from data_mask_studio.anonymization import (
+    ColumnAction,
     ColumnConfig,
     create_column_configs,
     normalize_prefix,
@@ -90,9 +91,51 @@ def test_column_order_is_preserved() -> None:
     assert [configuration.header for configuration in configurations] == headers
 
 
-def test_at_least_one_column_must_be_selected() -> None:
+def test_legacy_anonymize_flag_maps_to_typed_actions() -> None:
+    masked = ColumnConfig("Nome", anonymize=True, prefix="NOME")
+    preserved = ColumnConfig("Cidade", anonymize=False)
+
+    assert masked.action is ColumnAction.MASK
+    assert preserved.action is ColumnAction.PRESERVE
+    preserved.anonymize = True
+    assert preserved.action is ColumnAction.MASK
+
+
+def test_preserve_and_exclude_ignore_masking_fields_during_validation() -> None:
+    result = validate_configuration(
+        [
+            ColumnConfig(
+                "Preservada",
+                prefix="prefixo inválido",
+                action=ColumnAction.PRESERVE,
+            ),
+            ColumnConfig(
+                "Excluída",
+                prefix="OUTRO-inválido",
+                action=ColumnAction.EXCLUDE,
+            ),
+        ]
+    )
+
+    assert result.is_valid
+    assert all(item.is_valid for item in result.column_results)
+
+
+def test_all_columns_can_be_preserved_without_masking() -> None:
     result = validate_configuration(create_column_configs(["Nome", "CPF"]))
+
+    assert result.is_valid
+    assert result.selected_count == 0
+
+
+def test_at_least_one_column_must_remain_in_output() -> None:
+    configurations = [
+        ColumnConfig("Nome", action=ColumnAction.EXCLUDE),
+        ColumnConfig("CPF", action=ColumnAction.EXCLUDE),
+    ]
+
+    result = validate_configuration(configurations)
 
     assert not result.is_valid
     assert result.selected_count == 0
-    assert "ao menos uma coluna" in (result.error_message or "")
+    assert "Ao menos uma coluna" in (result.error_message or "")

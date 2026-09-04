@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
+from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.anonymization.prefix_rules import validate_prefix
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles.exceptions import ProfileValidationError
@@ -51,8 +52,10 @@ def validate_profile(profile: ConfigurationProfile) -> None:
         raise ProfileValidationError("As datas do perfil são inválidas.")
     if not profile.columns:
         raise ProfileValidationError("O perfil não possui colunas configuradas.")
-    if not any(column.anonymize for column in profile.columns):
-        raise ProfileValidationError("O perfil não possui colunas selecionadas.")
+    if all(column.action is ColumnAction.EXCLUDE for column in profile.columns):
+        raise ProfileValidationError(
+            "O perfil precisa manter ao menos uma coluna no arquivo de saída."
+        )
 
     seen_headers: set[str] = set()
     selected_prefixes: set[str] = set()
@@ -63,9 +66,12 @@ def validate_profile(profile: ConfigurationProfile) -> None:
                 "O perfil possui cabeçalhos duplicados."
             )
         seen_headers.add(column.header)
-        if column.anonymize and column.prefix in selected_prefixes:
+        if (
+            column.action is ColumnAction.MASK
+            and column.prefix in selected_prefixes
+        ):
             raise ProfileValidationError("O perfil possui prefixos duplicados.")
-        if column.anonymize:
+        if column.action is ColumnAction.MASK:
             selected_prefixes.add(column.prefix)
 
 
@@ -74,15 +80,16 @@ def validate_profile_column(column: ProfileColumn) -> None:
         raise ProfileValidationError("Um cabeçalho do perfil é inválido.")
     if not isinstance(column.prefix, str):
         raise ProfileValidationError("Um prefixo do perfil é inválido.")
-    prefix_error = validate_prefix(column.prefix)
-    if prefix_error is not None:
-        raise ProfileValidationError(f"Prefixo inválido no perfil: {prefix_error}")
+    if column.action is ColumnAction.MASK:
+        prefix_error = validate_prefix(column.prefix)
+        if prefix_error is not None:
+            raise ProfileValidationError(f"Prefixo inválido no perfil: {prefix_error}")
     if not isinstance(column.normalization_rule, NormalizationRule):
         raise ProfileValidationError(
             "Uma regra de normalização do perfil é inválida."
         )
-    if not isinstance(column.anonymize, bool):
-        raise ProfileValidationError("A seleção de uma coluna do perfil é inválida.")
+    if not isinstance(column.action, ColumnAction):
+        raise ProfileValidationError("A ação de uma coluna do perfil é inválida.")
 
 
 def validate_unique_names(profiles: Sequence[ConfigurationProfile]) -> None:

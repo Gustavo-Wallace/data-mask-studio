@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from data_mask_studio.anonymization.models import ColumnConfig
+from data_mask_studio.anonymization.models import ColumnAction, ColumnConfig
 from data_mask_studio.anonymization.token_generator import generate_token
 from data_mask_studio.normalization import (
     NormalizationError,
@@ -44,13 +44,13 @@ def anonymize_row_with_metadata(
     tuple[int, ...],
 ]:
     """Anonimiza e informa regras efetivas e fallbacks sem reter valores extras."""
-    anonymized = list(row)
+    transformed = list(row)
     canonical_values: dict[int, str] = {}
     effective_rules: dict[int, NormalizationRule] = {}
     fallback_indexes: list[int] = []
     for index, configuration in enumerate(configurations):
-        if configuration.anonymize and index < len(anonymized):
-            original_value = anonymized[index]
+        if configuration.action is ColumnAction.MASK and index < len(transformed):
+            original_value = transformed[index]
             if original_value == "" or original_value.isspace():
                 continue
             try:
@@ -64,9 +64,15 @@ def anonymize_row_with_metadata(
                 fallback_indexes.append(index)
             canonical_values[index] = canonical_value
             effective_rules[index] = effective_rule
-            anonymized[index] = generate_token(
+            transformed[index] = generate_token(
                 secret_key,
                 configuration.prefix,
                 canonical_value,
             )
-    return anonymized, canonical_values, effective_rules, tuple(fallback_indexes)
+    output = [
+        value
+        for index, value in enumerate(transformed)
+        if index >= len(configurations)
+        or configurations[index].action is not ColumnAction.EXCLUDE
+    ]
+    return output, canonical_values, effective_rules, tuple(fallback_indexes)

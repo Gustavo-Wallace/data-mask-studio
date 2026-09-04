@@ -4,9 +4,11 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QCheckBox, QLineEdit
+from PySide6.QtWidgets import QCheckBox, QComboBox, QHeaderView, QLineEdit
 
+from data_mask_studio.anonymization import ColumnAction
 from data_mask_studio.app import create_application
+from data_mask_studio.gui.column_configuration_table import ColumnConfigurationTable
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.gui.styles import (
     APPLICATION_THEME_NAME,
@@ -125,7 +127,7 @@ def test_window_displays_and_clears_csv(tmp_path: Path) -> None:
     assert window.config_table.rowCount() == 2
     assert window.config_table.item(0, 1).text() == "name"
     assert window.config_table.item(1, 1).text() == "age"
-    assert window.config_table.columnCount() == 5
+    assert window.config_table.columnCount() == 4
     assert window._normalization_fields[0].currentText() == "Valor exato"
     assert not window._normalization_fields[0].isEnabled()
     assert window.status_label.text() == "Cabeçalhos lidos com sucesso."
@@ -169,7 +171,7 @@ def test_window_configures_and_validates_columns(tmp_path: Path) -> None:
 
     assert window._prefix_fields[0].text() == "NOME_COMPLETO"
     assert window._prefix_fields[1].text() == "CPF_ID"
-    assert window.selected_count_label.text() == "2 de 2 colunas selecionadas"
+    assert window.selected_count_label.text() == "2 de 2 colunas para mascarar"
     assert window._normalization_fields[0].isEnabled()
     cpf_index = window._normalization_fields[0].findData(NormalizationRule.CPF.value)
     window._normalization_fields[0].setCurrentIndex(cpf_index)
@@ -178,20 +180,132 @@ def test_window_configures_and_validates_columns(tmp_path: Path) -> None:
 
     window.validate_button.click()
 
-    assert window.status_label.text() == "Configuração válida para 2 colunas."
+    assert "2 para mascarar" in window.status_label.text()
     assert window.generate_button.isEnabled()
 
     window._prefix_fields[0].setText("INVALID-prefix")
 
     assert not window.generate_button.isEnabled()
+    assert "#b42318" in window._prefix_fields[0].styleSheet()
 
     window._prefix_fields[0].setText("NOME_COMPLETO")
+    assert window._prefix_fields[0].styleSheet() == ""
     window.validate_button.click()
 
     window.unselect_all_button.click()
     window.validate_button.click()
 
-    assert "ao menos uma coluna" in window.status_label.text()
+    assert "0 para mascarar" in window.status_label.text()
+    assert "2 para preservar" in window.status_label.text()
+    assert window.generate_button.isEnabled()
+
+    window.close()
+    application.quit()
+
+
+def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path) -> None:
+    csv_path = tmp_path / "actions.csv"
+    csv_path.write_text("Nome,Idade,Observacao\nAna,30,interno\n", encoding="utf-8")
+    application = create_application([])
+    window = MainWindow(profile_service=profile_service(tmp_path))
+    window.load_csv(str(csv_path))
+
+    assert [
+        window.config_table.horizontalHeaderItem(index).text()
+        for index in range(window.config_table.columnCount())
+    ] == ["Ação", "Cabeçalho", "Prefixo", "Normalização"]
+    header = window.config_table.horizontalHeader()
+    assert [header.sectionResizeMode(index) for index in range(4)] == [
+        QHeaderView.ResizeMode.ResizeToContents,
+        QHeaderView.ResizeMode.Interactive,
+        QHeaderView.ResizeMode.Interactive,
+        QHeaderView.ResizeMode.ResizeToContents,
+    ]
+    window.config_table.resize(900, 300)
+    application.processEvents()
+    assert header.sectionSize(1) > header.sectionSize(2)
+    prefix_text_width = window.config_table.fontMetrics().horizontalAdvance(
+        window._prefix_fields[0].placeholderText()
+    )
+    assert header.sectionSize(2) > prefix_text_width
+
+    responsive_table = ColumnConfigurationTable()
+    responsive_table.resize(780, 300)
+    responsive_table.show()
+    application.processEvents()
+    responsive_header = responsive_table.horizontalHeader()
+    flexible_widths = (
+        responsive_header.sectionSize(1),
+        responsive_header.sectionSize(2),
+    )
+    fixed_widths = (
+        responsive_header.sectionSize(0),
+        responsive_header.sectionSize(3),
+    )
+    responsive_table.resize(1200, 300)
+    application.processEvents()
+    assert responsive_header.sectionSize(1) > flexible_widths[0]
+    assert responsive_header.sectionSize(2) > flexible_widths[1]
+    assert sum(
+        responsive_header.sectionSize(index) for index in (1, 2)
+    ) > sum(flexible_widths)
+    assert (
+        responsive_header.sectionSize(0),
+        responsive_header.sectionSize(3),
+    ) == fixed_widths
+    responsive_table.close()
+    assert [window._action_fields[0].itemText(index) for index in range(3)] == [
+        "Preservar",
+        "Mascarar",
+        "Excluir",
+    ]
+    assert all(
+        field.sizeAdjustPolicy() is QComboBox.SizeAdjustPolicy.AdjustToContents
+        for field in (
+            window._action_fields[0],
+            window._normalization_fields[0],
+        )
+    )
+    preserve_style = window._action_fields[0].styleSheet()
+    assert window._action_fields[0].property("columnAction") == "preserve"
+    window._action_fields[0].setCurrentIndex(
+        window._action_fields[0].findData(ColumnAction.MASK.value)
+    )
+    window._action_fields[2].setCurrentIndex(
+        window._action_fields[2].findData(ColumnAction.EXCLUDE.value)
+    )
+
+    assert window._prefix_fields[0].isEnabled()
+    assert window._normalization_fields[0].isEnabled()
+    assert not window._prefix_fields[1].isEnabled()
+    assert not window._normalization_fields[2].isEnabled()
+    assert window._action_fields[0].property("columnAction") == "mask"
+    assert window._action_fields[2].property("columnAction") == "exclude"
+    action_styles = {
+        preserve_style,
+        window._action_fields[0].styleSheet(),
+        window._action_fields[2].styleSheet(),
+    }
+    assert len(action_styles) == 3
+    assert all(action_styles)
+
+    window.close()
+    application.quit()
+
+
+def test_window_rejects_excluding_every_column(tmp_path: Path) -> None:
+    csv_path = tmp_path / "all-excluded.csv"
+    csv_path.write_text("A,B\none,two\n", encoding="utf-8")
+    application = create_application([])
+    window = MainWindow(profile_service=profile_service(tmp_path))
+    window.load_csv(str(csv_path))
+    for field in window._action_fields:
+        field.setCurrentIndex(field.findData(ColumnAction.EXCLUDE.value))
+
+    window.validate_button.click()
+
+    assert "Ao menos uma coluna" in window.status_label.text()
+    assert not window.generate_button.isEnabled()
 
     window.close()
     application.quit()
@@ -213,7 +327,10 @@ def test_loading_another_csv_discards_column_configuration(tmp_path: Path) -> No
     assert window.config_table.rowCount() == 2
     assert window.config_table.item(0, 1).text() == "Cidade"
     assert window.config_table.item(1, 1).text() == "Estado"
-    assert all(not checkbox.isChecked() for checkbox in window._checkboxes)
+    assert all(
+        field.currentData() == ColumnAction.PRESERVE.value
+        for field in window._action_fields
+    )
     assert all(not field.isEnabled() for field in window._prefix_fields)
     assert all(field.text() == "" for field in window._prefix_fields)
 
@@ -234,7 +351,9 @@ def test_window_generates_csv_in_background(tmp_path: Path) -> None:
         profile_service=profile_service(tmp_path),
     )
     window.load_csv(str(csv_path))
-    window._checkboxes[0].setChecked(True)
+    window._action_fields[0].setCurrentIndex(
+        window._action_fields[0].findData(ColumnAction.MASK.value)
+    )
     window.validate_button.click()
 
     window._start_processing(output_path, overwrite=False)
@@ -274,7 +393,9 @@ def test_window_reports_structured_normalization_fallback_without_value(
         profile_service=profile_service(tmp_path),
     )
     window.load_csv(str(csv_path))
-    window._checkboxes[0].setChecked(True)
+    window._action_fields[0].setCurrentIndex(
+        window._action_fields[0].findData(ColumnAction.MASK.value)
+    )
     normalization = window._normalization_fields[0]
     normalization.setCurrentIndex(
         normalization.findData(NormalizationRule.IP_ADDRESS.value)

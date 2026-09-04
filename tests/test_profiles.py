@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from data_mask_studio.anonymization import ColumnConfig
+from data_mask_studio.anonymization import ColumnAction, ColumnConfig
 from data_mask_studio.csv_tools import inspect_csv
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles import (
@@ -44,6 +44,12 @@ def test_first_profile_is_created_and_persisted_without_csv_data(
     assert [column["header"] for column in document["profiles"][0]["columns"]] == [
         "Nome",
         "CPF",
+        "Cidade",
+    ]
+    assert [column["action"] for column in document["profiles"][0]["columns"]] == [
+        "mask",
+        "mask",
+        "preserve",
     ]
     serialized = repository.path.read_text(encoding="utf-8")
     for forbidden in (
@@ -137,14 +143,103 @@ def test_profile_application_uses_only_exact_header_matches(tmp_path: Path) -> N
     partial = service.apply(profile, ["Nome", "Cidade"])
     none = service.apply(profile, ["nome", "C P F", "Nóme"])
 
-    assert complete.is_complete
+    assert not complete.is_complete
     assert complete.matched_headers == ("Nome", "CPF")
+    assert complete.missing_headers == ("Cidade",)
     assert [column.anonymize for column in complete.configurations] == [True, True, False]
     assert complete.configurations[0].normalization_rule is NormalizationRule.COLLAPSE_WHITESPACE
-    assert partial.matched_headers == ("Nome",)
+    assert partial.matched_headers == ("Nome", "Cidade")
     assert partial.missing_headers == ("CPF",)
     assert not partial.is_complete
     assert not none.has_matches
+
+
+def test_profile_round_trip_preserves_all_column_actions(tmp_path: Path) -> None:
+    service, repository = make_service(tmp_path)
+    configurations = [
+        ColumnConfig("Nome", True, "NOME"),
+        ColumnConfig("Idade", action=ColumnAction.PRESERVE),
+        ColumnConfig("Observacao", action=ColumnAction.EXCLUDE),
+    ]
+
+    created = service.create("Preparação de dados", configurations)
+    loaded = ProfileRepository(repository.path).load()[0]
+
+    assert loaded == created
+    assert [column.action for column in loaded.columns] == [
+        ColumnAction.MASK,
+        ColumnAction.PRESERVE,
+        ColumnAction.EXCLUDE,
+    ]
+
+
+def test_profile_with_only_preserved_columns_is_valid(tmp_path: Path) -> None:
+    service, repository = make_service(tmp_path)
+
+    created = service.create(
+        "Somente preservação",
+        [
+            ColumnConfig("A", action=ColumnAction.PRESERVE),
+            ColumnConfig("B", action=ColumnAction.PRESERVE),
+        ],
+    )
+
+    assert ProfileRepository(repository.path).load() == [created]
+
+
+def test_profile_with_only_excluded_columns_is_rejected(tmp_path: Path) -> None:
+    service, repository = make_service(tmp_path)
+
+    with pytest.raises(ProfileValidationError, match="Ao menos uma coluna"):
+        service.create(
+            "Somente exclusão",
+            [ColumnConfig("A", action=ColumnAction.EXCLUDE)],
+        )
+
+    assert not repository.path.exists()
+
+
+def test_legacy_profile_without_action_preserves_previous_semantics(
+    tmp_path: Path,
+) -> None:
+    repository = ProfileRepository(tmp_path / "profiles.json")
+    repository.path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profiles": [
+                    {
+                        "identifier": "00000000-0000-0000-0000-000000000001",
+                        "name": "Perfil legado",
+                        "format_version": 1,
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "modified_at": "2026-01-01T00:00:00+00:00",
+                        "columns": [
+                            {
+                                "header": "CPF",
+                                "prefix": "CPF_ID",
+                                "normalization_rule": "cpf",
+                                "anonymize": True,
+                            },
+                            {
+                                "header": "Cidade",
+                                "prefix": "",
+                                "normalization_rule": "exact",
+                                "anonymize": False,
+                            },
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ProfileService(repository)
+
+    application = service.apply(service.list_profiles()[0], ["CPF", "Cidade"])
+
+    assert application.configurations[0].action is ColumnAction.MASK
+    assert application.configurations[1].action is ColumnAction.PRESERVE
 
 
 def test_update_preserves_identifier_and_creation_date(tmp_path: Path) -> None:

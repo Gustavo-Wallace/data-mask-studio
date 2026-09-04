@@ -6,6 +6,7 @@ from data_mask_studio.anonymization.column_config import (
 )
 from data_mask_studio.anonymization.models import (
     AnonymizationResult,
+    ColumnAction,
     ColumnConfig,
     ColumnValidationResult,
     ConfigurationValidationResult,
@@ -16,6 +17,7 @@ from data_mask_studio.anonymization.token_generator import TokenGenerator, gener
 
 __all__ = [
     "AnonymizationResult",
+    "ColumnAction",
     "ColumnConfig",
     "ColumnValidationResult",
     "ConfigurationValidationResult",

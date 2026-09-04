@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from data_mask_studio.anonymization import ColumnConfig
+from data_mask_studio.anonymization import ColumnAction, ColumnConfig
 from data_mask_studio.batch import (
     BatchError,
     BatchFile,
@@ -203,6 +203,36 @@ def test_batch_processes_sequentially_with_one_transaction_per_file(
     assert summary.completed_files == 2
     assert summary.records_processed == 2
     assert len(list(output.glob("*.csv"))) == 2
+
+
+def test_batch_applies_preserve_mask_and_exclude_from_profile(tmp_path: Path) -> None:
+    service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
+    profile = service.create(
+        "Preparação em lote",
+        [
+            ColumnConfig("A", action=ColumnAction.PRESERVE),
+            ColumnConfig("B", True, "NOME", NormalizationRule.PERSON_NAME),
+            ColumnConfig("C", action=ColumnAction.EXCLUDE),
+        ],
+    )
+    source = tmp_path / "mixed.csv"
+    source.write_text("A,B,C\nkeep,Ana,drop\n", encoding="utf-8")
+    item = BatchFile(source)
+    validate_file(item, profile, service)
+    output = tmp_path / "out"
+    output.mkdir()
+    repository = CountingRepository(tmp_path / "vault.db")
+
+    summary = BatchService(service).process(
+        [item], profile, output, FixedKeyProvider(), lambda: repository
+    )
+
+    generated = (output / "mixed_anonimizado.csv").read_text(encoding="utf-8-sig")
+    assert generated.splitlines()[0] == "A,B"
+    assert generated.splitlines()[1].startswith("keep,NOME-")
+    assert "drop" not in generated
+    assert repository.count() == 1
+    assert summary.new_mappings == 1
 
 
 def test_batch_propagates_utf32_encoding_through_validation_and_processing(

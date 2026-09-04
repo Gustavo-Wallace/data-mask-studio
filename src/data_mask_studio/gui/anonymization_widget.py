@@ -3,9 +3,8 @@ from pathlib import Path
 import time
 
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -23,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from data_mask_studio.anonymization import (
     AnonymizationResult,
+    ColumnAction,
     ColumnConfig,
     create_column_configs,
     normalize_prefix,
@@ -46,7 +46,10 @@ from data_mask_studio.detection import (
     SuggestedType,
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
-from data_mask_studio.gui.column_configuration_table import ColumnConfigurationTable
+from data_mask_studio.gui.column_configuration_table import (
+    PREFIX_PLACEHOLDER,
+    ColumnConfigurationTable,
+)
 from data_mask_studio.gui.detection_dialog import DetectionDialog
 from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls
@@ -77,6 +80,24 @@ SEPARATOR_NAMES = {
     ";": "Ponto e vírgula (;)",
     "\t": "Tabulação",
     "|": "Barra vertical (|)",
+}
+
+ACTION_OPTIONS = (
+    (ColumnAction.PRESERVE, "Preservar"),
+    (ColumnAction.MASK, "Mascarar"),
+    (ColumnAction.EXCLUDE, "Excluir"),
+)
+
+ACTION_INDICATOR_STYLES = {
+    ColumnAction.PRESERVE: (
+        "QComboBox { background-color: #18202a; border-color: #465569; }"
+    ),
+    ColumnAction.MASK: (
+        "QComboBox { background-color: #1d3449; border-color: #347db8; }"
+    ),
+    ColumnAction.EXCLUDE: (
+        "QComboBox { background-color: #352322; border-color: #854842; }"
+    ),
 }
 
 
@@ -146,15 +167,15 @@ class AnonymizationWidget(QWidget):
         self.rename_profile_button = self.profile_controls.rename_button
         self.delete_profile_button = self.profile_controls.delete_button
 
-        self.select_all_button = QPushButton("Selecionar todas")
+        self.select_all_button = QPushButton("Mascarar todas")
         self.select_all_button.clicked.connect(self.select_all_columns)
         self.select_all_button.setEnabled(False)
 
-        self.unselect_all_button = QPushButton("Desmarcar todas")
+        self.unselect_all_button = QPushButton("Preservar todas")
         self.unselect_all_button.clicked.connect(self.unselect_all_columns)
         self.unselect_all_button.setEnabled(False)
 
-        self.selected_count_label = QLabel("0 colunas selecionadas")
+        self.selected_count_label = QLabel("0 colunas para mascarar")
 
         selection_layout = QHBoxLayout()
         selection_layout.addWidget(self.select_all_button)
@@ -183,7 +204,7 @@ class AnonymizationWidget(QWidget):
         action_layout.addStretch()
 
         self._column_configs: list[ColumnConfig] = []
-        self._checkboxes: list[QCheckBox] = []
+        self._action_fields: list[QComboBox] = []
         self._prefix_fields: list[QLineEdit] = []
         self._normalization_fields: list[QComboBox] = []
         self._inspection_result: CSVInspectionResult | None = None
@@ -336,14 +357,20 @@ class AnonymizationWidget(QWidget):
         self.config_table.setRowCount(len(headers))
 
         for row, configuration in enumerate(self._column_configs):
-            checkbox = QCheckBox()
-            checkbox.setToolTip(f"Anonimizar a coluna {configuration.header}")
-            checkbox_container = QWidget()
-            checkbox_layout = QHBoxLayout(checkbox_container)
-            checkbox_layout.setContentsMargins(0, 0, 0, 0)
-            checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            checkbox_layout.addWidget(checkbox)
-            self.config_table.setCellWidget(row, 0, checkbox_container)
+            action_field = QComboBox()
+            action_field.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToContents
+            )
+            action_field.setAccessibleName(
+                f"Ação da coluna {configuration.header}"
+            )
+            for action, label in ACTION_OPTIONS:
+                action_field.addItem(label, action.value)
+            action_field.setCurrentIndex(
+                action_field.findData(configuration.action.value)
+            )
+            self._apply_action_indicator(action_field, configuration.action)
+            self.config_table.setCellWidget(row, 0, action_field)
 
             header_item = QTableWidgetItem(configuration.header)
             header_item.setFlags(header_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -352,24 +379,21 @@ class AnonymizationWidget(QWidget):
             prefix_field = QLineEdit()
             prefix_field.setEnabled(False)
             prefix_field.setMaxLength(24)
-            prefix_field.setPlaceholderText("Marque a coluna para definir")
+            prefix_field.setPlaceholderText(PREFIX_PLACEHOLDER)
             self.config_table.setCellWidget(row, 2, prefix_field)
 
             normalization_field = QComboBox()
+            normalization_field.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToContents
+            )
             for rule, label in NORMALIZATION_OPTIONS:
                 normalization_field.addItem(label, rule.value)
             normalization_field.setCurrentIndex(0)
             normalization_field.setEnabled(False)
             self.config_table.setCellWidget(row, 3, normalization_field)
 
-            status_item = QTableWidgetItem("Não selecionada")
-            status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.config_table.setItem(row, 4, status_item)
-
-            checkbox.toggled.connect(
-                lambda checked, current_row=row: self._column_toggled(
-                    current_row, checked
-                )
+            action_field.currentIndexChanged.connect(
+                lambda _index, current_row=row: self._action_changed(current_row)
             )
             prefix_field.textChanged.connect(
                 lambda text, current_row=row: self._prefix_changed(current_row, text)
@@ -379,7 +403,7 @@ class AnonymizationWidget(QWidget):
                     current_row
                 )
             )
-            self._checkboxes.append(checkbox)
+            self._action_fields.append(action_field)
             self._prefix_fields.append(prefix_field)
             self._normalization_fields.append(normalization_field)
 
@@ -392,35 +416,37 @@ class AnonymizationWidget(QWidget):
     def _clear_configuration_table(self) -> None:
         self.config_table.setRowCount(0)
         self._column_configs = []
-        self._checkboxes = []
+        self._action_fields = []
         self._prefix_fields = []
         self._normalization_fields = []
         self._manually_changed_rows.clear()
         self.select_all_button.setEnabled(False)
         self.unselect_all_button.setEnabled(False)
         self.validate_button.setEnabled(False)
-        self.selected_count_label.setText("0 colunas selecionadas")
+        self.selected_count_label.setText("0 colunas para mascarar")
 
-    def _column_toggled(self, row: int, checked: bool) -> None:
+    def _action_changed(self, row: int) -> None:
         if not self._applying_suggestion:
             self._manually_changed_rows.add(row)
         configuration = self._column_configs[row]
         prefix_field = self._prefix_fields[row]
         normalization_field = self._normalization_fields[row]
-        configuration.anonymize = checked
-        prefix_field.setEnabled(checked)
-        normalization_field.setEnabled(checked)
-        if checked and not prefix_field.text():
+        configuration.action = ColumnAction(self._action_fields[row].currentData())
+        self._apply_action_indicator(self._action_fields[row], configuration.action)
+        is_masked = configuration.action is ColumnAction.MASK
+        prefix_field.setEnabled(is_masked)
+        normalization_field.setEnabled(is_masked)
+        if is_masked and not prefix_field.text():
             prefix_field.setText(normalize_prefix(configuration.header))
         self._update_selected_count()
-        self._refresh_row_statuses()
+        self._refresh_validation_indicators()
         self._configuration_changed()
 
     def _prefix_changed(self, row: int, text: str) -> None:
         if not self._applying_suggestion:
             self._manually_changed_rows.add(row)
         self._column_configs[row].prefix = text
-        self._refresh_row_statuses()
+        self._refresh_validation_indicators()
         self._configuration_changed()
 
     def _normalization_changed(self, row: int) -> None:
@@ -440,50 +466,57 @@ class AnonymizationWidget(QWidget):
         )
 
     def select_all_columns(self) -> None:
-        for checkbox in self._checkboxes:
-            checkbox.setChecked(True)
+        for action_field in self._action_fields:
+            action_field.setCurrentIndex(
+                action_field.findData(ColumnAction.MASK.value)
+            )
 
     def unselect_all_columns(self) -> None:
-        for checkbox in self._checkboxes:
-            checkbox.setChecked(False)
+        for action_field in self._action_fields:
+            action_field.setCurrentIndex(
+                action_field.findData(ColumnAction.PRESERVE.value)
+            )
 
     def _update_selected_count(self) -> None:
         selected_count = sum(
             configuration.anonymize for configuration in self._column_configs
         )
         self.selected_count_label.setText(
-            f"{selected_count} de {len(self._column_configs)} colunas selecionadas"
+            f"{selected_count} de {len(self._column_configs)} colunas para mascarar"
         )
 
-    def _refresh_row_statuses(self) -> None:
+    @staticmethod
+    def _apply_action_indicator(
+        action_field: QComboBox, action: ColumnAction
+    ) -> None:
+        action_field.setProperty("columnAction", action.value)
+        action_field.setStyleSheet(ACTION_INDICATOR_STYLES[action])
+
+    def _refresh_validation_indicators(self) -> None:
         result = validate_configuration(self._column_configs)
-        for row, (configuration, row_result) in enumerate(
-            zip(self._column_configs, result.column_results, strict=True)
-        ):
-            status_item = self.config_table.item(row, 4)
+        for row, row_result in enumerate(result.column_results):
             prefix_field = self._prefix_fields[row]
-            if not configuration.anonymize:
-                status_item.setText("Não selecionada")
-                status_item.setBackground(QColor("transparent"))
-                prefix_field.setStyleSheet("")
-            elif row_result.is_valid:
-                status_item.setText("Válida")
-                status_item.setBackground(QColor("#dcfce7"))
+            if row_result.is_valid:
                 prefix_field.setStyleSheet("")
             else:
-                status_item.setText(row_result.error_message or "Inválida")
-                status_item.setBackground(QColor("#fee2e2"))
                 prefix_field.setStyleSheet("border: 1px solid #b42318;")
 
     def validate_current_configuration(self) -> None:
         result = validate_configuration(self._column_configs)
-        self._refresh_row_statuses()
+        self._refresh_validation_indicators()
         if result.is_valid:
             self._configuration_validated = True
             self.generate_button.setEnabled(True)
-            suffix = "coluna" if result.selected_count == 1 else "colunas"
+            preserved = sum(
+                item.action is ColumnAction.PRESERVE for item in self._column_configs
+            )
+            excluded = sum(
+                item.action is ColumnAction.EXCLUDE for item in self._column_configs
+            )
             self._set_status(
-                f"Configuração válida para {result.selected_count} {suffix}.",
+                "Configuração válida: "
+                f"{result.selected_count} para mascarar, "
+                f"{preserved} para preservar e {excluded} para excluir.",
                 is_error=False,
             )
         else:
@@ -637,7 +670,12 @@ class AnonymizationWidget(QWidget):
     ) -> bool:
         configuration = self._column_configs[row]
         return (
-            configuration.anonymize != suggestion.anonymize
+            configuration.action
+            is not (
+                ColumnAction.MASK
+                if suggestion.anonymize
+                else ColumnAction.PRESERVE
+            )
             or configuration.prefix != suggestion.prefix
             or configuration.normalization_rule is not suggestion.normalization_rule
         )
@@ -648,24 +686,32 @@ class AnonymizationWidget(QWidget):
             for row in rows:
                 suggestion = self._suggestions[row]
                 configuration = self._column_configs[row]
-                checkbox = self._checkboxes[row]
+                action_field = self._action_fields[row]
                 prefix_field = self._prefix_fields[row]
                 normalization_field = self._normalization_fields[row]
+                action = (
+                    ColumnAction.MASK
+                    if suggestion.anonymize
+                    else ColumnAction.PRESERVE
+                )
                 blockers = (
-                    QSignalBlocker(checkbox),
+                    QSignalBlocker(action_field),
                     QSignalBlocker(prefix_field),
                     QSignalBlocker(normalization_field),
                 )
-                configuration.anonymize = suggestion.anonymize
+                configuration.action = action
                 configuration.prefix = suggestion.prefix
                 configuration.normalization_rule = suggestion.normalization_rule
-                checkbox.setChecked(suggestion.anonymize)
+                action_field.setCurrentIndex(
+                    action_field.findData(action.value)
+                )
+                self._apply_action_indicator(action_field, action)
                 prefix_field.setText(suggestion.prefix)
-                prefix_field.setEnabled(suggestion.anonymize)
+                prefix_field.setEnabled(action is ColumnAction.MASK)
                 normalization_field.setCurrentIndex(
                     normalization_field.findData(suggestion.normalization_rule.value)
                 )
-                normalization_field.setEnabled(suggestion.anonymize)
+                normalization_field.setEnabled(action is ColumnAction.MASK)
                 del blockers
                 self._manually_changed_rows.discard(row)
         finally:
@@ -850,28 +896,31 @@ class AnonymizationWidget(QWidget):
     ) -> None:
         for row, profile_column in enumerate(configurations):
             configuration = self._column_configs[row]
-            checkbox = self._checkboxes[row]
+            action_field = self._action_fields[row]
             prefix_field = self._prefix_fields[row]
             normalization_field = self._normalization_fields[row]
             blockers = (
-                QSignalBlocker(checkbox),
+                QSignalBlocker(action_field),
                 QSignalBlocker(prefix_field),
                 QSignalBlocker(normalization_field),
             )
-            configuration.anonymize = profile_column.anonymize
+            configuration.action = profile_column.action
             configuration.prefix = profile_column.prefix
             configuration.normalization_rule = profile_column.normalization_rule
-            checkbox.setChecked(profile_column.anonymize)
+            action_field.setCurrentIndex(
+                action_field.findData(profile_column.action.value)
+            )
+            self._apply_action_indicator(action_field, profile_column.action)
             prefix_field.setText(profile_column.prefix)
-            prefix_field.setEnabled(profile_column.anonymize)
+            prefix_field.setEnabled(profile_column.action is ColumnAction.MASK)
             normalization_field.setCurrentIndex(
                 normalization_field.findData(profile_column.normalization_rule.value)
             )
-            normalization_field.setEnabled(profile_column.anonymize)
+            normalization_field.setEnabled(profile_column.action is ColumnAction.MASK)
             del blockers
             self._manually_changed_rows.add(row)
         self._update_selected_count()
-        self._refresh_row_statuses()
+        self._refresh_validation_indicators()
 
     def rename_selected_profile(self) -> None:
         profile = self._selected_profile()

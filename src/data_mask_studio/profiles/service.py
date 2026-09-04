@@ -3,7 +3,11 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from data_mask_studio.anonymization import ColumnConfig, validate_configuration
+from data_mask_studio.anonymization import (
+    ColumnAction,
+    ColumnConfig,
+    validate_configuration,
+)
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles.exceptions import ProfileValidationError
 from data_mask_studio.profiles.models import (
@@ -96,7 +100,7 @@ class ProfileService:
                     header=header,
                     prefix="",
                     normalization_rule=NormalizationRule.EXACT,
-                    anonymize=False,
+                    action=ColumnAction.PRESERVE,
                 ),
             )
             for header in headers
@@ -131,10 +135,9 @@ def _selected_profile_columns(
             header=configuration.header,
             prefix=configuration.prefix,
             normalization_rule=configuration.normalization_rule,
-            anonymize=True,
+            action=configuration.action,
         )
         for configuration in configurations
-        if configuration.anonymize
     )
 
 

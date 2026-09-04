@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from data_mask_studio.anonymization import ColumnConfig, generate_token
+from data_mask_studio.anonymization import ColumnAction, ColumnConfig, generate_token
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.normalization import NormalizationError
 from data_mask_studio.restoration import (
@@ -77,6 +77,124 @@ def test_anonymization_preserves_structure_and_original_file(tmp_path: Path) -> 
     assert progress == [1, 2, 3]
 
 
+def test_preserve_mask_and_exclude_are_applied_in_original_order(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "mixed.csv"
+    original = b"A,B,C,D\nkeep-a,Ana,drop-me,keep-d\n"
+    source.write_bytes(original)
+    destination = tmp_path / "mixed-output.csv"
+    repository = make_vault(tmp_path)
+
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig("A", action=ColumnAction.PRESERVE),
+            ColumnConfig("B", True, "NOME", NormalizationRule.PERSON_NAME),
+            ColumnConfig("C", action=ColumnAction.EXCLUDE),
+            ColumnConfig("D", action=ColumnAction.PRESERVE),
+        ],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    assert rows[0] == ["A", "B", "D"]
+    assert rows[1][0] == "keep-a"
+    assert re_full_base32_token(rows[1][1], "NOME")
+    assert rows[1][2] == "keep-d"
+    assert "drop-me" not in destination.read_text(encoding="utf-8-sig")
+    assert source.read_bytes() == original
+    assert result.new_mappings == 1
+    assert repository.count() == 1
+    with sqlite3.connect(repository.database_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM vault_mappings"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM vault_variations"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT source_header FROM vault_mappings"
+        ).fetchone()[0] == "B"
+
+    restored = tmp_path / "mixed-restored.csv"
+    restore_csv(
+        RestorationConfiguration(
+            destination,
+            "utf-8-sig",
+            ",",
+            ("A", "B", "D"),
+            (SelectedColumn(1, "B"),),
+        ),
+        restored,
+        repository,
+    )
+    with restored.open("r", encoding="utf-8-sig", newline="") as restored_file:
+        assert list(csv.reader(restored_file)) == [
+            ["A", "B", "D"],
+            ["keep-a", "Ana", "keep-d"],
+        ]
+
+
+def test_all_excluded_columns_are_rejected_without_output_or_vault_records(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "excluded.csv"
+    source.write_text("A,B\none,two\n", encoding="utf-8")
+    destination = tmp_path / "excluded-output.csv"
+    repository = make_vault(tmp_path)
+
+    with pytest.raises(CSVAnonymizationError, match="Ao menos uma coluna"):
+        anonymize_csv(
+            source,
+            destination,
+            encoding="utf-8",
+            delimiter=",",
+            configurations=[
+                ColumnConfig("A", action=ColumnAction.EXCLUDE),
+                ColumnConfig("B", action=ColumnAction.EXCLUDE),
+            ],
+            secret_key=KEY,
+            vault_repository=repository,
+        )
+
+    assert not destination.exists()
+    assert repository.count() == 0
+
+
+def test_synthetic_headers_support_all_column_actions(tmp_path: Path) -> None:
+    source = tmp_path / "empty-mixed.csv"
+    source.write_text(",CPF,\nAna,123,private\n", encoding="utf-8")
+    destination = tmp_path / "empty-mixed-output.csv"
+    repository = make_vault(tmp_path)
+
+    anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig("column_1", action=ColumnAction.PRESERVE),
+            ColumnConfig("CPF", True, "CPF_ID", NormalizationRule.CPF),
+            ColumnConfig("column_3", action=ColumnAction.EXCLUDE),
+        ],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    assert rows[0] == ["column_1", "CPF"]
+    assert rows[1][0] == "Ana"
+    assert re_full_base32_token(rows[1][1], "CPF_ID")
+    assert repository.count() == 1
+
+
 def test_single_column_csv_is_inspected_anonymized_and_keeps_structure(
     tmp_path: Path,
 ) -> None:
@@ -103,24 +221,28 @@ def test_single_column_csv_is_inspected_anonymized_and_keeps_structure(
     assert result.records_processed == 2
 
 
-def test_single_unselected_column_still_requires_anonymization_selection(
+def test_single_preserved_column_generates_copy_without_mapping(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "single.csv"
     source.write_text("Campo\nvalor\n", encoding="utf-8")
     destination = tmp_path / "output.csv"
 
-    with pytest.raises(CSVAnonymizationError, match="Selecione ao menos uma coluna"):
-        anonymize_csv(
-            source,
-            destination,
-            encoding="utf-8",
-            delimiter=",",
-            configurations=[ColumnConfig("Campo")],
-            secret_key=KEY,
-        )
+    repository = make_vault(tmp_path)
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[ColumnConfig("Campo")],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
 
-    assert not destination.exists()
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        assert list(csv.reader(output_file)) == [["Campo"], ["valor"]]
+    assert result.records_processed == 1
+    assert repository.count() == 0
 
 
 def test_single_column_preserves_empty_and_whitespace_only_values(

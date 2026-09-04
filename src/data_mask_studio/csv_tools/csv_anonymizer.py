@@ -11,6 +11,7 @@ from data_mask_studio.anonymization.anonymizer import anonymize_row_with_metadat
 from data_mask_studio.anonymization.column_config import validate_configuration
 from data_mask_studio.anonymization.models import (
     AnonymizationResult,
+    ColumnAction,
     ColumnConfig,
     NormalizationFallback,
 )
@@ -104,7 +105,15 @@ def anonymize_csv(
                         raise CSVAnonymizationError(
                             "Os cabeçalhos do arquivo foram alterados desde a seleção."
                         )
-                    writer.writerow(headers)
+                    writer.writerow(
+                        [
+                            header
+                            for header, configuration in zip(
+                                headers, configurations, strict=True
+                            )
+                            if configuration.action is not ColumnAction.EXCLUDE
+                        ]
+                    )
 
                     for row in reader:
                         if len(configurations) == 1 and not row:
@@ -203,17 +212,22 @@ def _collect_mappings(
     configurations: Sequence[ColumnConfig],
     pending: dict[str, MappingCandidate],
 ) -> None:
+    output_index = 0
     for index, configuration in enumerate(configurations):
+        if configuration.action is ColumnAction.EXCLUDE:
+            continue
         if (
-            not configuration.anonymize
+            configuration.action is not ColumnAction.MASK
             or index >= len(original_row)
             or index not in canonical_values
         ):
+            output_index += 1
             continue
         original_value = original_row[index]
         if original_value == "" or original_value.isspace():
             continue
-        code = anonymized_row[index]
+        code = anonymized_row[output_index]
+        output_index += 1
         effective_rule = effective_rules[index]
         existing = pending.get(code)
         if existing is None:
