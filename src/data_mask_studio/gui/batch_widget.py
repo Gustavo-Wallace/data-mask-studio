@@ -499,7 +499,7 @@ def _render_summary(summary: BatchSummary) -> str:
     ]
     if summary.normalization_fallbacks:
         lines.append(
-            "Valores incompatíveis anonimizados por valor exato: "
+            "Valores incompatíveis processados por valor exato: "
             + "; ".join(
                 f"{item.header}: {item.count} fallback(s)"
                 for item in summary.normalization_fallbacks

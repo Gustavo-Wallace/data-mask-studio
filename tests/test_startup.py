@@ -30,6 +30,23 @@ def profile_service(tmp_path: Path) -> ProfileService:
     return ProfileService(ProfileRepository(tmp_path / "profiles.json"))
 
 
+def assert_configuration_controls_fit(window: MainWindow) -> None:
+    header = window.config_table.horizontalHeader()
+    action_width = header.sectionSize(0)
+    normalization_width = header.sectionSize(3)
+    assert action_width >= max(
+        field.sizeHint().width() for field in window._action_fields
+    )
+    assert normalization_width >= max(
+        field.sizeHint().width() for field in window._normalization_fields
+    )
+    assert all(field.width() <= action_width for field in window._action_fields)
+    assert all(
+        field.width() <= normalization_width
+        for field in window._normalization_fields
+    )
+
+
 def test_application_and_main_window_startup(tmp_path: Path) -> None:
     application = create_application([])
     window = MainWindow(profile_service=profile_service(tmp_path))
@@ -120,6 +137,8 @@ def test_window_displays_and_clears_csv(tmp_path: Path) -> None:
     window = MainWindow(profile_service=profile_service(tmp_path))
 
     window.load_csv(str(csv_path))
+    window.show()
+    application.processEvents()
 
     assert window.file_name_label.text() == "people.csv"
     assert window.path_field.text() == str(csv_path.resolve())
@@ -129,7 +148,8 @@ def test_window_displays_and_clears_csv(tmp_path: Path) -> None:
     assert window.config_table.item(1, 1).text() == "age"
     assert window.config_table.columnCount() == 4
     assert window._normalization_fields[0].currentText() == "Valor exato"
-    assert not window._normalization_fields[0].isEnabled()
+    assert window._normalization_fields[0].isEnabled()
+    assert_configuration_controls_fit(window)
     assert window.status_label.text() == "Cabeçalhos lidos com sucesso."
 
     window.clear_button.click()
@@ -223,7 +243,6 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     ]
     window.config_table.resize(900, 300)
     application.processEvents()
-    assert header.sectionSize(1) > header.sectionSize(2)
     prefix_text_width = window.config_table.fontMetrics().horizontalAdvance(
         window._prefix_fields[0].placeholderText()
     )
@@ -246,6 +265,7 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     application.processEvents()
     assert responsive_header.sectionSize(1) > flexible_widths[0]
     assert responsive_header.sectionSize(2) > flexible_widths[1]
+    assert responsive_header.sectionSize(1) > responsive_header.sectionSize(2)
     assert sum(
         responsive_header.sectionSize(index) for index in (1, 2)
     ) > sum(flexible_widths)
@@ -278,7 +298,10 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     assert window._prefix_fields[0].isEnabled()
     assert window._normalization_fields[0].isEnabled()
     assert not window._prefix_fields[1].isEnabled()
+    assert window._normalization_fields[1].isEnabled()
     assert not window._normalization_fields[2].isEnabled()
+    assert "não gera token" in window._normalization_fields[1].toolTip()
+    assert "cofre" in window._normalization_fields[1].toolTip()
     assert window._action_fields[0].property("columnAction") == "mask"
     assert window._action_fields[2].property("columnAction") == "exclude"
     action_styles = {
@@ -319,10 +342,13 @@ def test_loading_another_csv_discards_column_configuration(tmp_path: Path) -> No
     application = create_application([])
     window = MainWindow(profile_service=profile_service(tmp_path))
     window.load_csv(str(first_csv))
+    window.show()
+    application.processEvents()
     window.select_all_button.click()
     window._prefix_fields[0].setText("PESSOA")
 
     window.load_csv(str(second_csv))
+    application.processEvents()
 
     assert window.config_table.rowCount() == 2
     assert window.config_table.item(0, 1).text() == "Cidade"
@@ -333,6 +359,7 @@ def test_loading_another_csv_discards_column_configuration(tmp_path: Path) -> No
     )
     assert all(not field.isEnabled() for field in window._prefix_fields)
     assert all(field.text() == "" for field in window._prefix_fields)
+    assert_configuration_controls_fit(window)
 
     window.close()
     application.quit()
@@ -409,7 +436,7 @@ def test_window_reports_structured_normalization_fallback_without_value(
 
     status = window.status_label.text()
     assert output_path.exists()
-    assert "anonimizados por valor exato" in status
+    assert "processados por valor exato" in status
     assert "IP: 1 fallback(s)" in status
     assert sensitive_value not in status
 

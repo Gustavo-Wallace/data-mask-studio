@@ -179,12 +179,20 @@ def _parse_column(value: object) -> ProfileColumn:
     )
     if raw_action is not None and anonymize != (action is ColumnAction.MASK):
         raise ValueError
+    try:
+        raw_normalization_rule = value["normalization_rule"]
+    except KeyError:
+        if action is not ColumnAction.PRESERVE:
+            raise
+        normalization_rule = NormalizationRule.EXACT
+    else:
+        if not isinstance(raw_normalization_rule, str):
+            raise TypeError
+        normalization_rule = NormalizationRule(raw_normalization_rule)
     return ProfileColumn(
         header=_required_string(value, "header"),
         prefix=_required_string(value, "prefix"),
-        normalization_rule=NormalizationRule(
-            _required_string(value, "normalization_rule")
-        ),
+        normalization_rule=normalization_rule,
         anonymize=anonymize,
         action=action,
     )

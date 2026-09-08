@@ -158,7 +158,11 @@ def test_profile_round_trip_preserves_all_column_actions(tmp_path: Path) -> None
     service, repository = make_service(tmp_path)
     configurations = [
         ColumnConfig("Nome", True, "NOME"),
-        ColumnConfig("Idade", action=ColumnAction.PRESERVE),
+        ColumnConfig(
+            "Idade",
+            normalization_rule=NormalizationRule.COLLAPSE_WHITESPACE,
+            action=ColumnAction.PRESERVE,
+        ),
         ColumnConfig("Observacao", action=ColumnAction.EXCLUDE),
     ]
 
@@ -171,6 +175,10 @@ def test_profile_round_trip_preserves_all_column_actions(tmp_path: Path) -> None
         ColumnAction.PRESERVE,
         ColumnAction.EXCLUDE,
     ]
+    assert (
+        loaded.columns[1].normalization_rule
+        is NormalizationRule.COLLAPSE_WHITESPACE
+    )
 
 
 def test_profile_with_only_preserved_columns_is_valid(tmp_path: Path) -> None:
@@ -224,7 +232,6 @@ def test_legacy_profile_without_action_preserves_previous_semantics(
                             {
                                 "header": "Cidade",
                                 "prefix": "",
-                                "normalization_rule": "exact",
                                 "anonymize": False,
                             },
                         ],
@@ -240,6 +247,10 @@ def test_legacy_profile_without_action_preserves_previous_semantics(
 
     assert application.configurations[0].action is ColumnAction.MASK
     assert application.configurations[1].action is ColumnAction.PRESERVE
+    assert (
+        application.configurations[1].normalization_rule
+        is NormalizationRule.EXACT
+    )
 
 
 def test_update_preserves_identifier_and_creation_date(tmp_path: Path) -> None:

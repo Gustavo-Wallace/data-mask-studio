@@ -121,6 +121,12 @@ def test_preserve_mask_and_exclude_are_applied_in_original_order(
         assert connection.execute(
             "SELECT source_header FROM vault_mappings"
         ).fetchone()[0] == "B"
+        assert connection.execute(
+            "SELECT SUM(total_occurrences) FROM vault_mappings"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT SUM(occurrence_count) FROM vault_variations"
+        ).fetchone()[0] == 1
 
     restored = tmp_path / "mixed-restored.csv"
     restore_csv(
@@ -242,6 +248,122 @@ def test_single_preserved_column_generates_copy_without_mapping(
     with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
         assert list(csv.reader(output_file)) == [["Campo"], ["valor"]]
     assert result.records_processed == 1
+    assert repository.count() == 0
+
+
+def test_preserved_columns_apply_normalization_without_vault_records(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "preserved-normalized.csv"
+    original = (
+        "Exact,Name,Whitespace,Digits,Email,Drop\n"
+        '"  unchanged  ","JOÃO      DA SILVA",'
+        '"  texto    com   espaços  ","CPF 123.456.789-00",'
+        '"  USER@EXAMPLE.COM  ","not-a-cpf"\n'
+        '"   ","   ","   ","   ","   ","   "\n'
+    ).encode("utf-8")
+    source.write_bytes(original)
+    destination = tmp_path / "preserved-normalized-output.csv"
+    repository = make_vault(tmp_path)
+
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig("Exact", action=ColumnAction.PRESERVE),
+            ColumnConfig(
+                "Name",
+                normalization_rule=NormalizationRule.PERSON_NAME,
+                action=ColumnAction.PRESERVE,
+            ),
+            ColumnConfig(
+                "Whitespace",
+                normalization_rule=NormalizationRule.COLLAPSE_WHITESPACE,
+                action=ColumnAction.PRESERVE,
+            ),
+            ColumnConfig(
+                "Digits",
+                normalization_rule=NormalizationRule.DIGITS_ONLY,
+                action=ColumnAction.PRESERVE,
+            ),
+            ColumnConfig(
+                "Email",
+                normalization_rule=NormalizationRule.EMAIL,
+                action=ColumnAction.PRESERVE,
+            ),
+            ColumnConfig(
+                "Drop",
+                normalization_rule=NormalizationRule.CPF,
+                action=ColumnAction.EXCLUDE,
+            ),
+        ],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        rows = list(csv.reader(output_file))
+    assert rows == [
+        ["Exact", "Name", "Whitespace", "Digits", "Email"],
+        [
+            "  unchanged  ",
+            "joao da silva",
+            "texto com espaços",
+            "12345678900",
+            "user@example.com",
+        ],
+        ["   ", "   ", "   ", "   ", "   "],
+    ]
+    assert source.read_bytes() == original
+    assert result.new_mappings == 0
+    assert result.updated_mappings == 0
+    assert result.normalization_fallbacks == ()
+    assert repository.count() == 0
+    with sqlite3.connect(repository.database_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM vault_mappings"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM vault_variations"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COALESCE(SUM(total_occurrences), 0) FROM vault_mappings"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COALESCE(SUM(occurrence_count), 0) FROM vault_variations"
+        ).fetchone()[0] == 0
+
+
+def test_preserved_normalization_uses_existing_fallback_semantics(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "preserved-invalid.csv"
+    source.write_text("CPF\ninvalid-cpf\n", encoding="utf-8")
+    destination = tmp_path / "preserved-invalid-output.csv"
+    repository = make_vault(tmp_path)
+
+    result = anonymize_csv(
+        source,
+        destination,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig(
+                "CPF",
+                normalization_rule=NormalizationRule.CPF,
+                action=ColumnAction.PRESERVE,
+            )
+        ],
+        secret_key=KEY,
+        vault_repository=repository,
+    )
+
+    with destination.open("r", encoding="utf-8-sig", newline="") as output_file:
+        assert list(csv.reader(output_file)) == [["CPF"], ["invalid-cpf"]]
+    assert result.normalization_fallbacks[0].header == "CPF"
+    assert result.normalization_fallbacks[0].count == 1
     assert repository.count() == 0
 
 

@@ -17,6 +17,7 @@ from data_mask_studio.batch import (
     suggested_output_name,
     validate_file,
 )
+from data_mask_studio.csv_tools import anonymize_csv
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles import ProfileRepository, ProfileService
 from data_mask_studio.vault import VaultCipher, VaultEncryptionError, VaultRepository
@@ -210,13 +211,20 @@ def test_batch_applies_preserve_mask_and_exclude_from_profile(tmp_path: Path) ->
     profile = service.create(
         "Preparação em lote",
         [
-            ColumnConfig("A", action=ColumnAction.PRESERVE),
+            ColumnConfig(
+                "A",
+                normalization_rule=NormalizationRule.PERSON_NAME,
+                action=ColumnAction.PRESERVE,
+            ),
             ColumnConfig("B", True, "NOME", NormalizationRule.PERSON_NAME),
             ColumnConfig("C", action=ColumnAction.EXCLUDE),
         ],
     )
     source = tmp_path / "mixed.csv"
-    source.write_text("A,B,C\nkeep,Ana,drop\n", encoding="utf-8")
+    source.write_text(
+        'A,B,C\n"JOÃO      DA SILVA",Ana,drop\n',
+        encoding="utf-8",
+    )
     item = BatchFile(source)
     validate_file(item, profile, service)
     output = tmp_path / "out"
@@ -229,10 +237,31 @@ def test_batch_applies_preserve_mask_and_exclude_from_profile(tmp_path: Path) ->
 
     generated = (output / "mixed_anonimizado.csv").read_text(encoding="utf-8-sig")
     assert generated.splitlines()[0] == "A,B"
-    assert generated.splitlines()[1].startswith("keep,NOME-")
+    assert generated.splitlines()[1].startswith("joao da silva,NOME-")
     assert "drop" not in generated
     assert repository.count() == 1
     assert summary.new_mappings == 1
+
+    individual_output = tmp_path / "mixed-individual.csv"
+    anonymize_csv(
+        source,
+        individual_output,
+        encoding="utf-8",
+        delimiter=",",
+        configurations=[
+            ColumnConfig(
+                "A",
+                normalization_rule=NormalizationRule.PERSON_NAME,
+                action=ColumnAction.PRESERVE,
+            ),
+            ColumnConfig("B", True, "NOME", NormalizationRule.PERSON_NAME),
+            ColumnConfig("C", action=ColumnAction.EXCLUDE),
+        ],
+        secret_key=b"B" * 32,
+        vault_repository=CountingRepository(tmp_path / "individual-vault.db"),
+    )
+    batch_output = output / "mixed_anonimizado.csv"
+    assert individual_output.read_bytes() == batch_output.read_bytes()
 
 
 def test_batch_propagates_utf32_encoding_through_validation_and_processing(

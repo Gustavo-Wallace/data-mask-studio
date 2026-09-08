@@ -1,3 +1,4 @@
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QStyle
 
@@ -30,7 +31,16 @@ class ColumnConfigurationTable(EmptyStateTable):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.sectionResized.connect(self._fixed_section_resized)
         self._resizing_flexible_sections = False
+        self._layout_refresh_timer = QTimer(self)
+        self._layout_refresh_timer.setSingleShot(True)
+        self._layout_refresh_timer.timeout.connect(self._apply_deferred_column_layout)
         self._resize_flexible_sections()
+
+    def refresh_column_layout(self) -> None:
+        """Recalcula as seções após os widgets das células serem populados."""
+        self._apply_content_sizes()
+        if not self._layout_refresh_timer.isActive():
+            self._layout_refresh_timer.start(0)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -41,6 +51,21 @@ class ColumnConfigurationTable(EmptyStateTable):
     ) -> None:
         if logical_index in (0, 3):
             self._resize_flexible_sections()
+
+    def _apply_deferred_column_layout(self) -> None:
+        self.ensurePolished()
+        self._apply_content_sizes()
+
+    def _apply_content_sizes(self) -> None:
+        self._resizing_flexible_sections = True
+        try:
+            self.resizeColumnToContents(0)
+            self.resizeColumnToContents(3)
+        finally:
+            self._resizing_flexible_sections = False
+        self._resize_flexible_sections()
+        self.viewport().updateGeometry()
+        self.viewport().update()
 
     def _resize_flexible_sections(self) -> None:
         if self._resizing_flexible_sections:

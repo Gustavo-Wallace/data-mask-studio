@@ -389,7 +389,14 @@ class AnonymizationWidget(QWidget):
             for rule, label in NORMALIZATION_OPTIONS:
                 normalization_field.addItem(label, rule.value)
             normalization_field.setCurrentIndex(0)
-            normalization_field.setEnabled(False)
+            normalization_field.setEnabled(True)
+            normalization_field.setAccessibleName(
+                f"Normalização da coluna {configuration.header}"
+            )
+            normalization_field.setToolTip(
+                "Em Preservar, altera somente o valor em claro no CSV de saída; "
+                "não gera token nem grava no cofre."
+            )
             self.config_table.setCellWidget(row, 3, normalization_field)
 
             action_field.currentIndexChanged.connect(
@@ -412,6 +419,7 @@ class AnonymizationWidget(QWidget):
         self.unselect_all_button.setEnabled(has_headers)
         self.validate_button.setEnabled(has_headers)
         self._update_selected_count()
+        self.config_table.refresh_column_layout()
 
     def _clear_configuration_table(self) -> None:
         self.config_table.setRowCount(0)
@@ -435,7 +443,9 @@ class AnonymizationWidget(QWidget):
         self._apply_action_indicator(self._action_fields[row], configuration.action)
         is_masked = configuration.action is ColumnAction.MASK
         prefix_field.setEnabled(is_masked)
-        normalization_field.setEnabled(is_masked)
+        normalization_field.setEnabled(
+            configuration.action is not ColumnAction.EXCLUDE
+        )
         if is_masked and not prefix_field.text():
             prefix_field.setText(normalize_prefix(configuration.header))
         self._update_selected_count()
@@ -711,13 +721,14 @@ class AnonymizationWidget(QWidget):
                 normalization_field.setCurrentIndex(
                     normalization_field.findData(suggestion.normalization_rule.value)
                 )
-                normalization_field.setEnabled(action is ColumnAction.MASK)
+                normalization_field.setEnabled(action is not ColumnAction.EXCLUDE)
                 del blockers
                 self._manually_changed_rows.discard(row)
         finally:
             self._applying_suggestion = False
         self._configuration_dirty = True
         self._update_selected_count()
+        self.config_table.refresh_column_layout()
         self.validate_current_configuration()
 
     def clear_detection_suggestions(self) -> None:
@@ -916,11 +927,14 @@ class AnonymizationWidget(QWidget):
             normalization_field.setCurrentIndex(
                 normalization_field.findData(profile_column.normalization_rule.value)
             )
-            normalization_field.setEnabled(profile_column.action is ColumnAction.MASK)
+            normalization_field.setEnabled(
+                profile_column.action is not ColumnAction.EXCLUDE
+            )
             del blockers
             self._manually_changed_rows.add(row)
         self._update_selected_count()
         self._refresh_validation_indicators()
+        self.config_table.refresh_column_layout()
 
     def rename_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -1065,14 +1079,19 @@ class AnonymizationWidget(QWidget):
             )
             fallback_notice = (
                 " Alguns valores incompatíveis com a normalização configurada "
-                f"foram anonimizados por valor exato. {details}."
+                f"foram processados por valor exato. {details}."
             )
+        vault_notice = (
+            "O cofre local foi atualizado."
+            if result.new_mappings or result.updated_mappings
+            else "Nenhum mapeamento foi criado ou atualizado no cofre local."
+        )
         self._set_status(
             "CSV anonimizado gerado com sucesso. "
             f"{result.records_processed} registros processados; "
             f"{result.new_mappings} novos mapeamentos; "
             f"{result.updated_mappings} mapeamentos existentes atualizados. "
-            f"O cofre local foi atualizado.{fallback_notice}",
+            f"{vault_notice}{fallback_notice}",
             is_error=False,
         )
 

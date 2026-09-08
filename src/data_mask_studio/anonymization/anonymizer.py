@@ -49,26 +49,37 @@ def anonymize_row_with_metadata(
     effective_rules: dict[int, NormalizationRule] = {}
     fallback_indexes: list[int] = []
     for index, configuration in enumerate(configurations):
-        if configuration.action is ColumnAction.MASK and index < len(transformed):
-            original_value = transformed[index]
-            if original_value == "" or original_value.isspace():
+        if index >= len(transformed) or configuration.action is ColumnAction.EXCLUDE:
+            continue
+        original_value = transformed[index]
+        if configuration.action is ColumnAction.PRESERVE:
+            if configuration.normalization_rule is NormalizationRule.EXACT:
                 continue
-            try:
-                canonical_value = normalize_value(
-                    original_value, configuration.normalization_rule
+            normalized_value, _effective_rule, used_fallback = (
+                _normalize_with_fallback(
+                    original_value,
+                    configuration.normalization_rule,
                 )
-                effective_rule = configuration.normalization_rule
-            except NormalizationError:
-                canonical_value = normalize_value(original_value, NormalizationRule.EXACT)
-                effective_rule = NormalizationRule.EXACT
-                fallback_indexes.append(index)
-            canonical_values[index] = canonical_value
-            effective_rules[index] = effective_rule
-            transformed[index] = generate_token(
-                secret_key,
-                configuration.prefix,
-                canonical_value,
             )
+            transformed[index] = normalized_value
+            if used_fallback:
+                fallback_indexes.append(index)
+            continue
+        if original_value == "" or original_value.isspace():
+            continue
+        canonical_value, effective_rule, used_fallback = _normalize_with_fallback(
+            original_value,
+            configuration.normalization_rule,
+        )
+        if used_fallback:
+            fallback_indexes.append(index)
+        canonical_values[index] = canonical_value
+        effective_rules[index] = effective_rule
+        transformed[index] = generate_token(
+            secret_key,
+            configuration.prefix,
+            canonical_value,
+        )
     output = [
         value
         for index, value in enumerate(transformed)
@@ -76,3 +87,17 @@ def anonymize_row_with_metadata(
         or configurations[index].action is not ColumnAction.EXCLUDE
     ]
     return output, canonical_values, effective_rules, tuple(fallback_indexes)
+
+
+def _normalize_with_fallback(
+    original_value: str,
+    rule: NormalizationRule,
+) -> tuple[str, NormalizationRule, bool]:
+    try:
+        return normalize_value(original_value, rule), rule, False
+    except NormalizationError:
+        return (
+            normalize_value(original_value, NormalizationRule.EXACT),
+            NormalizationRule.EXACT,
+            True,
+        )

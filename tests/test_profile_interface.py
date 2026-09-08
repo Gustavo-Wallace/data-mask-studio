@@ -64,8 +64,11 @@ def test_complete_profile_is_applied_and_validated(tmp_path: Path) -> None:
     application = create_application([])
     window = MainWindow(profile_service=service)
     window.load_csv(str(csv_path))
+    window.show()
+    application.processEvents()
 
     window.apply_profile_button.click()
+    application.processEvents()
 
     assert window.profile_combo.currentData() == profile.identifier
     assert [item.anonymize for item in window._column_configs] == [True, True, False]
@@ -87,7 +90,11 @@ def test_profile_actions_are_restored_in_the_configuration_table(
         "Preparação de dados",
         [
             ColumnConfig("Nome", True, "NOME", NormalizationRule.PERSON_NAME),
-            ColumnConfig("Idade", action=ColumnAction.PRESERVE),
+            ColumnConfig(
+                "Idade",
+                normalization_rule=NormalizationRule.COLLAPSE_WHITESPACE,
+                action=ColumnAction.PRESERVE,
+            ),
             ColumnConfig("Observacao", action=ColumnAction.EXCLUDE),
         ],
     )
@@ -105,12 +112,26 @@ def test_profile_actions_are_restored_in_the_configuration_table(
     assert window._prefix_fields[0].isEnabled()
     assert not window._prefix_fields[1].isEnabled()
     assert not window._prefix_fields[2].isEnabled()
+    assert window._normalization_fields[0].isEnabled()
+    assert window._normalization_fields[1].isEnabled()
+    assert not window._normalization_fields[2].isEnabled()
+    assert (
+        window._normalization_fields[1].currentData()
+        == NormalizationRule.COLLAPSE_WHITESPACE.value
+    )
     assert [field.property("columnAction") for field in window._action_fields] == [
         "mask",
         "preserve",
         "exclude",
     ]
     assert len({field.styleSheet() for field in window._action_fields}) == 3
+    header = window.config_table.horizontalHeader()
+    assert header.sectionSize(0) >= max(
+        field.sizeHint().width() for field in window._action_fields
+    )
+    assert header.sectionSize(3) >= max(
+        field.sizeHint().width() for field in window._normalization_fields
+    )
     assert window.generate_button.isEnabled()
 
     window.close()
