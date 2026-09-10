@@ -129,7 +129,7 @@ def test_profile_actions_are_restored_in_the_configuration_table(
     assert header.sectionSize(0) >= max(
         field.sizeHint().width() for field in window._action_fields
     )
-    assert header.sectionSize(3) >= max(
+    assert header.sectionSize(4) >= max(
         field.sizeHint().width() for field in window._normalization_fields
     )
     assert window.generate_button.isEnabled()

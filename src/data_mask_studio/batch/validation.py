@@ -5,6 +5,7 @@ from pathlib import Path
 
 from data_mask_studio.batch.exceptions import BatchError
 from data_mask_studio.batch.models import BatchFile, BatchFileStatus
+from data_mask_studio.anonymization import ColumnConfig, validate_configuration
 from data_mask_studio.csv_tools import (
     CSVInspectionError,
     format_header_replacement_warning,
@@ -93,8 +94,24 @@ def validate_file(
     item.missing_headers = application.missing_headers
     warning = format_header_replacement_warning(inspection.header_replacements)
     if application.is_complete:
-        item.status = BatchFileStatus.COMPATIBLE
-        item.result_message = "Arquivo compatível com o perfil."
+        validation = validate_configuration([
+            ColumnConfig(
+                column.header,
+                prefix=column.prefix,
+                action=column.action,
+                normalization_rule=column.normalization_rule,
+                output_name=column.output_name,
+            )
+            for column in application.configurations
+        ])
+        item.status = (
+            BatchFileStatus.COMPATIBLE if validation.is_valid
+            else BatchFileStatus.INCOMPATIBLE
+        )
+        item.result_message = (
+            "Arquivo compatível com o perfil." if validation.is_valid
+            else validation.error_message or "Configuração inválida para este arquivo."
+        )
     else:
         item.status = BatchFileStatus.INCOMPATIBLE
         missing = ", ".join(application.missing_headers)

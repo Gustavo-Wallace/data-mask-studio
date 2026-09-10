@@ -119,6 +119,7 @@ def _serialize_document(profiles: list[ConfigurationProfile]) -> dict[str, Any]:
                         "normalization_rule": column.normalization_rule.value,
                         "anonymize": column.anonymize,
                         "action": column.action.value,
+                        "output_name": column.output_name,
                     }
                     for column in profile.columns
                 ],
@@ -195,6 +196,9 @@ def _parse_column(value: object) -> ProfileColumn:
         normalization_rule=normalization_rule,
         anonymize=anonymize,
         action=action,
+        output_name=(
+            _required_string(value, "output_name") if "output_name" in value else ""
+        ),
     )
 
 

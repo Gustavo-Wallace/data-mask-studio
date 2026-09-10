@@ -53,6 +53,8 @@ from data_mask_studio.gui.column_configuration_table import (
 from data_mask_studio.gui.detection_dialog import DetectionDialog
 from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls
+from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
     NormalizationRule,
@@ -206,6 +208,7 @@ class AnonymizationWidget(QWidget):
         self._column_configs: list[ColumnConfig] = []
         self._action_fields: list[QComboBox] = []
         self._prefix_fields: list[QLineEdit] = []
+        self._output_name_fields: list[QLineEdit] = []
         self._normalization_fields: list[QComboBox] = []
         self._inspection_result: CSVInspectionResult | None = None
         self._configuration_validated = False
@@ -357,7 +360,7 @@ class AnonymizationWidget(QWidget):
         self.config_table.setRowCount(len(headers))
 
         for row, configuration in enumerate(self._column_configs):
-            action_field = QComboBox()
+            action_field = ScrollSafeComboBox()
             action_field.setSizeAdjustPolicy(
                 QComboBox.SizeAdjustPolicy.AdjustToContents
             )
@@ -376,13 +379,18 @@ class AnonymizationWidget(QWidget):
             header_item.setFlags(header_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.config_table.setItem(row, 1, header_item)
 
+            output_name_field = QLineEdit()
+            output_name_field.setPlaceholderText("Manter original")
+            output_name_field.setAccessibleName(f"Nome de saída da coluna {configuration.header}")
+            self.config_table.setCellWidget(row, 2, output_name_field)
+
             prefix_field = QLineEdit()
             prefix_field.setEnabled(False)
             prefix_field.setMaxLength(24)
             prefix_field.setPlaceholderText(PREFIX_PLACEHOLDER)
-            self.config_table.setCellWidget(row, 2, prefix_field)
+            self.config_table.setCellWidget(row, 3, prefix_field)
 
-            normalization_field = QComboBox()
+            normalization_field = ScrollSafeComboBox()
             normalization_field.setSizeAdjustPolicy(
                 QComboBox.SizeAdjustPolicy.AdjustToContents
             )
@@ -397,7 +405,11 @@ class AnonymizationWidget(QWidget):
                 "Em Preservar, altera somente o valor em claro no CSV de saída; "
                 "não gera token nem grava no cofre."
             )
-            self.config_table.setCellWidget(row, 3, normalization_field)
+            self.config_table.setCellWidget(row, 4, normalization_field)
+
+            output_name_field.textChanged.connect(
+                lambda text, current_row=row: self._output_name_changed(current_row, text)
+            )
 
             action_field.currentIndexChanged.connect(
                 lambda _index, current_row=row: self._action_changed(current_row)
@@ -412,6 +424,7 @@ class AnonymizationWidget(QWidget):
             )
             self._action_fields.append(action_field)
             self._prefix_fields.append(prefix_field)
+            self._output_name_fields.append(output_name_field)
             self._normalization_fields.append(normalization_field)
 
         has_headers = bool(headers)
@@ -426,6 +439,7 @@ class AnonymizationWidget(QWidget):
         self._column_configs = []
         self._action_fields = []
         self._prefix_fields = []
+        self._output_name_fields = []
         self._normalization_fields = []
         self._manually_changed_rows.clear()
         self.select_all_button.setEnabled(False)
@@ -440,6 +454,7 @@ class AnonymizationWidget(QWidget):
         prefix_field = self._prefix_fields[row]
         normalization_field = self._normalization_fields[row]
         configuration.action = ColumnAction(self._action_fields[row].currentData())
+        self._output_name_fields[row].setEnabled(configuration.action is not ColumnAction.EXCLUDE)
         self._apply_action_indicator(self._action_fields[row], configuration.action)
         is_masked = configuration.action is ColumnAction.MASK
         prefix_field.setEnabled(is_masked)
@@ -449,6 +464,11 @@ class AnonymizationWidget(QWidget):
         if is_masked and not prefix_field.text():
             prefix_field.setText(normalize_prefix(configuration.header))
         self._update_selected_count()
+        self._refresh_validation_indicators()
+        self._configuration_changed()
+
+    def _output_name_changed(self, row: int, text: str) -> None:
+        self._column_configs[row].output_name = text
         self._refresh_validation_indicators()
         self._configuration_changed()
 
@@ -504,9 +524,13 @@ class AnonymizationWidget(QWidget):
 
     def _refresh_validation_indicators(self) -> None:
         result = validate_configuration(self._column_configs)
+        name_errors = output_header_errors(self._column_configs)
         for row, row_result in enumerate(result.column_results):
+            output_field = self._output_name_fields[row]
+            output_field.setStyleSheet("border: 1px solid #b42318;" if row in name_errors else "")
+            output_field.setToolTip(name_errors.get(row, ""))
             prefix_field = self._prefix_fields[row]
-            if row_result.is_valid:
+            if row_result.is_valid or row_result.error_message == name_errors.get(row):
                 prefix_field.setStyleSheet("")
             else:
                 prefix_field.setStyleSheet("border: 1px solid #b42318;")
@@ -710,6 +734,7 @@ class AnonymizationWidget(QWidget):
                     QSignalBlocker(normalization_field),
                 )
                 configuration.action = action
+                self._output_name_fields[row].setEnabled(action is not ColumnAction.EXCLUDE)
                 configuration.prefix = suggestion.prefix
                 configuration.normalization_rule = suggestion.normalization_rule
                 action_field.setCurrentIndex(
@@ -890,7 +915,8 @@ class AnonymizationWidget(QWidget):
         if application.is_complete:
             self.validate_current_configuration()
             self._configuration_dirty = False
-            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False)
+            if self._configuration_validated:
+                self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False)
             return
 
         self._configuration_validated = False
@@ -907,15 +933,20 @@ class AnonymizationWidget(QWidget):
     ) -> None:
         for row, profile_column in enumerate(configurations):
             configuration = self._column_configs[row]
+            output_name_field = self._output_name_fields[row]
             action_field = self._action_fields[row]
             prefix_field = self._prefix_fields[row]
             normalization_field = self._normalization_fields[row]
             blockers = (
+                QSignalBlocker(output_name_field),
                 QSignalBlocker(action_field),
                 QSignalBlocker(prefix_field),
                 QSignalBlocker(normalization_field),
             )
             configuration.action = profile_column.action
+            configuration.output_name = profile_column.output_name
+            output_name_field.setText(profile_column.output_name)
+            output_name_field.setEnabled(profile_column.action is not ColumnAction.EXCLUDE)
             configuration.prefix = profile_column.prefix
             configuration.normalization_rule = profile_column.normalization_rule
             action_field.setCurrentIndex(

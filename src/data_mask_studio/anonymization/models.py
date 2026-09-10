@@ -21,6 +21,7 @@ class ColumnConfig:
     prefix: str
     normalization_rule: NormalizationRule
     action: ColumnAction
+    output_name: str
 
     def __init__(
         self,
@@ -30,13 +31,19 @@ class ColumnConfig:
         normalization_rule: NormalizationRule = NormalizationRule.EXACT,
         *,
         action: ColumnAction | None = None,
+        output_name: str = "",
     ) -> None:
         self.header = header
+        self.output_name = output_name
         self.prefix = prefix
         self.normalization_rule = normalization_rule
         self.action = action or (
             ColumnAction.MASK if anonymize else ColumnAction.PRESERVE
         )
+
+    @property
+    def effective_output_header(self) -> str:
+        return self.output_name.strip() or self.header
 
     @property
     def anonymize(self) -> bool:

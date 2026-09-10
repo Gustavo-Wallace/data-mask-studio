@@ -33,7 +33,7 @@ def profile_service(tmp_path: Path) -> ProfileService:
 def assert_configuration_controls_fit(window: MainWindow) -> None:
     header = window.config_table.horizontalHeader()
     action_width = header.sectionSize(0)
-    normalization_width = header.sectionSize(3)
+    normalization_width = header.sectionSize(4)
     assert action_width >= max(
         field.sizeHint().width() for field in window._action_fields
     )
@@ -146,7 +146,7 @@ def test_window_displays_and_clears_csv(tmp_path: Path) -> None:
     assert window.config_table.rowCount() == 2
     assert window.config_table.item(0, 1).text() == "name"
     assert window.config_table.item(1, 1).text() == "age"
-    assert window.config_table.columnCount() == 4
+    assert window.config_table.columnCount() == 5
     assert window._normalization_fields[0].currentText() == "Valor exato"
     assert window._normalization_fields[0].isEnabled()
     assert_configuration_controls_fit(window)
@@ -233,10 +233,11 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     assert [
         window.config_table.horizontalHeaderItem(index).text()
         for index in range(window.config_table.columnCount())
-    ] == ["Ação", "Cabeçalho", "Prefixo", "Normalização"]
+    ] == ["Ação", "Cabeçalho", "Nome de saída", "Prefixo", "Normalização"]
     header = window.config_table.horizontalHeader()
-    assert [header.sectionResizeMode(index) for index in range(4)] == [
+    assert [header.sectionResizeMode(index) for index in range(5)] == [
         QHeaderView.ResizeMode.ResizeToContents,
+        QHeaderView.ResizeMode.Interactive,
         QHeaderView.ResizeMode.Interactive,
         QHeaderView.ResizeMode.Interactive,
         QHeaderView.ResizeMode.ResizeToContents,
@@ -246,7 +247,7 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     prefix_text_width = window.config_table.fontMetrics().horizontalAdvance(
         window._prefix_fields[0].placeholderText()
     )
-    assert header.sectionSize(2) > prefix_text_width
+    assert header.sectionSize(3) > prefix_text_width
 
     responsive_table = ColumnConfigurationTable()
     responsive_table.resize(780, 300)
@@ -255,23 +256,23 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     responsive_header = responsive_table.horizontalHeader()
     flexible_widths = (
         responsive_header.sectionSize(1),
-        responsive_header.sectionSize(2),
+        responsive_header.sectionSize(3),
     )
     fixed_widths = (
         responsive_header.sectionSize(0),
-        responsive_header.sectionSize(3),
+        responsive_header.sectionSize(4),
     )
     responsive_table.resize(1200, 300)
     application.processEvents()
     assert responsive_header.sectionSize(1) > flexible_widths[0]
-    assert responsive_header.sectionSize(2) > flexible_widths[1]
-    assert responsive_header.sectionSize(1) > responsive_header.sectionSize(2)
+    assert responsive_header.sectionSize(3) > flexible_widths[1]
+    assert responsive_header.sectionSize(1) > responsive_header.sectionSize(3)
     assert sum(
-        responsive_header.sectionSize(index) for index in (1, 2)
+        responsive_header.sectionSize(index) for index in (1, 3)
     ) > sum(flexible_widths)
     assert (
         responsive_header.sectionSize(0),
-        responsive_header.sectionSize(3),
+        responsive_header.sectionSize(4),
     ) == fixed_widths
     responsive_table.close()
     assert [window._action_fields[0].itemText(index) for index in range(3)] == [

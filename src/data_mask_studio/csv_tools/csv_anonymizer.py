@@ -107,7 +107,7 @@ def anonymize_csv(
                         )
                     writer.writerow(
                         [
-                            header
+                            configuration.effective_output_header
                             for header, configuration in zip(
                                 headers, configurations, strict=True
                             )

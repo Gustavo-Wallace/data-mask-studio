@@ -47,6 +47,7 @@ class AnonymizationWorker(QThread):
                 item.prefix,
                 item.normalization_rule,
                 action=item.action,
+                output_name=item.output_name,
             )
             for item in configurations
         ]

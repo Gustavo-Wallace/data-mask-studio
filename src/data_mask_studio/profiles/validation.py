@@ -3,7 +3,8 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from data_mask_studio.anonymization.models import ColumnAction
+from data_mask_studio.anonymization.models import ColumnAction, ColumnConfig
+from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.anonymization.prefix_rules import validate_prefix
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles.exceptions import ProfileValidationError
@@ -74,12 +75,21 @@ def validate_profile(profile: ConfigurationProfile) -> None:
         if column.action is ColumnAction.MASK:
             selected_prefixes.add(column.prefix)
 
+    errors = output_header_errors([
+        ColumnConfig(column.header, action=column.action, output_name=column.output_name)
+        for column in profile.columns
+    ])
+    if errors:
+        raise ProfileValidationError(next(iter(errors.values())))
+
 
 def validate_profile_column(column: ProfileColumn) -> None:
     if not isinstance(column.header, str) or not column.header:
         raise ProfileValidationError("Um cabeçalho do perfil é inválido.")
     if not isinstance(column.prefix, str):
         raise ProfileValidationError("Um prefixo do perfil é inválido.")
+    if not isinstance(column.output_name, str):
+        raise ProfileValidationError("Um nome de saída do perfil é inválido.")
     if column.action is ColumnAction.MASK:
         prefix_error = validate_prefix(column.prefix)
         if prefix_error is not None:

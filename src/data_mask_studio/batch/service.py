@@ -169,6 +169,7 @@ def _profile_configurations(
     return [
         ColumnConfig(
             header=header,
+            output_name=columns[header].output_name if header in columns else "",
             action=(
                 columns[header].action
                 if header in columns

@@ -18,7 +18,7 @@ def create_column_configs(headers: Sequence[str]) -> list[ColumnConfig]:
 def validate_configuration(
     configurations: Sequence[ColumnConfig],
 ) -> ConfigurationValidationResult:
-    """Valida o conjunto e os campos usados exclusivamente para mascaramento."""
+    """Valida os nomes finais e os campos usados para mascaramento."""
     remaining = [
         configuration
         for configuration in configurations
@@ -42,18 +42,24 @@ def validate_configuration(
     ]
 
     prefix_counts = Counter(configuration.prefix for configuration in selected)
+    output_errors = output_header_errors(configurations)
     column_results: list[ColumnValidationResult] = []
 
-    for configuration in configurations:
+    for index, configuration in enumerate(configurations):
         if configuration.action is not ColumnAction.MASK:
             column_results.append(
-                ColumnValidationResult(configuration.header, is_valid=True)
+                ColumnValidationResult(
+                    configuration.header,
+                    is_valid=index not in output_errors,
+                    error_message=output_errors.get(index),
+                )
             )
             continue
 
         error_message = validate_prefix(configuration.prefix)
         if error_message is None and prefix_counts[configuration.prefix] > 1:
             error_message = "O prefixo está repetido em outra coluna selecionada."
+        error_message = error_message or output_errors.get(index)
 
         column_results.append(
             ColumnValidationResult(
@@ -71,6 +77,23 @@ def validate_configuration(
         error_message=(
             None
             if is_valid
-            else "Corrija as configurações inválidas antes de continuar."
+            else next(iter(output_errors.values()),
+                      "Corrija as configurações inválidas antes de continuar.")
         ),
     )
+
+
+def output_header_errors(configurations: Sequence[ColumnConfig]) -> dict[int, str]:
+    """Compara nomes literalmente, somente entre colunas presentes na saída."""
+    groups: dict[str, list[int]] = {}
+    for index, configuration in enumerate(configurations):
+        if configuration.action is not ColumnAction.EXCLUDE:
+            groups.setdefault(configuration.effective_output_header, []).append(index)
+    errors: dict[int, str] = {}
+    for name, indexes in groups.items():
+        if len(indexes) < 2:
+            continue
+        origins = ", ".join(configurations[index].header for index in indexes)
+        message = f"Nome de saída repetido “{name}” nas colunas: {origins}."
+        errors.update((index, message) for index in indexes)
+    return errors

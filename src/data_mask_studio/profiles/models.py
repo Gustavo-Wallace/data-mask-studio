@@ -14,6 +14,7 @@ class ProfileColumn:
     prefix: str
     normalization_rule: NormalizationRule
     action: ColumnAction
+    output_name: str
 
     def __init__(
         self,
@@ -23,8 +24,10 @@ class ProfileColumn:
         anonymize: bool = True,
         *,
         action: ColumnAction | None = None,
+        output_name: str = "",
     ) -> None:
         object.__setattr__(self, "header", header)
+        object.__setattr__(self, "output_name", output_name)
         object.__setattr__(self, "prefix", prefix)
         object.__setattr__(self, "normalization_rule", normalization_rule)
         object.__setattr__(

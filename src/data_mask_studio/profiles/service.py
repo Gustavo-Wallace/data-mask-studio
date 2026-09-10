@@ -136,6 +136,7 @@ def _selected_profile_columns(
             prefix=configuration.prefix,
             normalization_rule=configuration.normalization_rule,
             action=configuration.action,
+            output_name=configuration.output_name,
         )
         for configuration in configurations
     )
