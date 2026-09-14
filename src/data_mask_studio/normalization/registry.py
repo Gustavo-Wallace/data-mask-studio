@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from data_mask_studio.normalization import normalizers
+from data_mask_studio.normalization.exceptions import NormalizationError
 from data_mask_studio.normalization.models import NormalizationRule
 
 Normalizer = Callable[[str], str]
@@ -36,7 +37,10 @@ def normalize_value(value: str, rule: NormalizationRule) -> str:
     """Aplica uma regra; vazios e espaços são sempre preservados."""
     if value == "" or value.isspace():
         return value
-    return _NORMALIZERS[rule](value)
+    normalized = _NORMALIZERS[rule](value)
+    if normalized == "":
+        raise NormalizationError("A normalização produziu um valor vazio para uma entrada não vazia.")
+    return normalized
 
 
 def normalization_label(rule: NormalizationRule) -> str:
