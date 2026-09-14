@@ -47,7 +47,7 @@ def test_database_and_versioned_schema_are_created_automatically(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
             ("vault_variations",),
         ).fetchone()
-    assert version == 3
+    assert version == 4
     assert table == ("vault_mappings",)
     assert variations_table == ("vault_variations",)
     repository_connection = connect(repository.database_path)

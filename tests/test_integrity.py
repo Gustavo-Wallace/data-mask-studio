@@ -91,7 +91,7 @@ def test_valid_environment_is_intact_and_audit_is_read_only(tmp_path: Path) -> N
     report = auditor(paths).run(progress_callback=lambda done, total: progress.append((done, total)))
 
     assert report.status is IntegrityStatus.INTACT
-    assert report.schema_version == 3
+    assert report.schema_version == 4
     assert check(report, "Integridade do SQLite").status is IntegrityStatus.INTACT
     assert check(report, "Recomputação dos tokens").failures == 0
     assert database_hashes(paths) == before

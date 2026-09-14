@@ -160,7 +160,7 @@ def test_v2_migration_reencrypts_and_preserves_codes_and_metadata(tmp_path: Path
     assert encrypted_state(path) != before
     assert tuple(len(rows) for rows in complete_state(path)) == counts_before == (1, 1)
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
         assert connection.execute(
             "SELECT identifier FROM vault_variations"
         ).fetchone()[0] == 7
@@ -275,7 +275,7 @@ def test_application_startup_migrates_v2_before_tabs_are_available(
     )
 
     with sqlite3.connect(paths.vault_database_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
     assert window.page_stack.count() == 9
     assert audit(paths).status is IntegrityStatus.INTACT
     assert audit_check(audit(paths), "Autenticação AES-GCM").failures == 0
@@ -410,7 +410,7 @@ def test_v2_backup_is_restored_and_migrated_to_v3(
 
     assert result.mapping_count == 1
     with sqlite3.connect(destination.vault_database_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
     repository = VaultRepository(destination.vault_database_path, VaultCipher(KEY))
     mapping = repository.get_decrypted_mapping(CODE)
     assert mapping is not None

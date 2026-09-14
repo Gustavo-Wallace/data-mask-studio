@@ -200,6 +200,10 @@ class VaultTransaction:
         for offset in range(0, len(unique), 400):
             chunk = unique[offset : offset + 400]
             placeholders = ",".join("?" for _ in chunk)
+            if self._connection.execute(
+                f"SELECT 1 FROM composite_mappings WHERE code IN ({placeholders}) LIMIT 1", chunk,
+            ).fetchone():
+                raise VaultCollisionError("Foi detectado um conflito de tipo de código no cofre local.")
             rows = self._connection.execute(
                 "SELECT code, prefix, canonical_encrypted_value AS encrypted_value, "
                 "canonical_nonce AS nonce, source_header, normalization_rule, "

@@ -62,6 +62,17 @@ class VaultCipher:
         )
         return EncryptedValue(ciphertext=ciphertext, nonce=nonce)
 
+    def encrypt_payload(self, payload: bytes, associated_data: bytes) -> EncryptedValue:
+        """Payload binário tipado com AAD fornecido pelo contrato composto."""
+        nonce = os.urandom(NONCE_SIZE)
+        return EncryptedValue(self._cipher.encrypt(nonce, payload, associated_data), nonce)
+
+    def decrypt_payload(self, ciphertext: bytes, nonce: bytes, associated_data: bytes) -> bytes:
+        try:
+            return self._cipher.decrypt(nonce, ciphertext, associated_data)
+        except (InvalidTag, ValueError, TypeError):
+            raise VaultEncryptionError("Não foi possível autenticar um registro composto.") from None
+
     def decrypt(
         self,
         code: str,

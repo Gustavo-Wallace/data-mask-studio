@@ -10,7 +10,7 @@ def test_1_0_stability_contract_preserves_known_token_and_schema() -> None:
     assert generate_token(key, "CPF_ID", "123.456.789-00") == (
         "CPF_ID-IQPEWAE2ES36"
     )
-    assert SCHEMA_VERSION == 3
+    assert SCHEMA_VERSION == 4
 
 
 def test_compatibility_document_records_recovery_guarantees() -> None:

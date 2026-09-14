@@ -31,6 +31,15 @@ CancellationCheck = Callable[[], bool]
 _CURRENT_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,23}-[A-Z2-7]{12}$")
 _LEGACY_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,23}-[A-F0-9]{24}$")
 _EXPECTED_COLUMNS = {
+    "composite_mappings": {
+        "code", "prefix", "identity_version", "payload_version", "aad_version",
+        "component_count", "rules", "encrypted_value", "nonce", "first_seen",
+        "last_seen", "total_occurrences",
+    },
+    "composite_variations": {
+        "identifier", "code", "encrypted_value", "nonce", "first_seen",
+        "last_seen", "occurrence_count",
+    },
     "vault_mappings": {
         "code",
         "prefix",
@@ -203,6 +212,16 @@ class IntegrityAuditor:
             )
             progress(4)
             self._raise_if_cancelled(should_cancel)
+
+            if not schema_failures and (
+                connection.execute("SELECT 1 FROM composite_mappings LIMIT 1").fetchone()
+                or connection.execute("SELECT 1 FROM composite_variations LIMIT 1").fetchone()
+            ):
+                checks.append(_failed(
+                    "Auditoria de registros compostos",
+                    "A verificação integral de registros compostos ainda não é suportada. "
+                    "Não é possível atestar a integridade completa deste cofre.",
+                ))
 
             rows = connection.execute(
                 "SELECT code, prefix, canonical_encrypted_value, canonical_nonce, "

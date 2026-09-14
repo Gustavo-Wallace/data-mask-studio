@@ -5,9 +5,10 @@ from pathlib import Path
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.vault.encryption import VaultCipher
 from data_mask_studio.vault.exceptions import VaultError
+from data_mask_studio.vault.composite_schema import create_composite_schema
 
-SCHEMA_VERSION = 3
-RESTORABLE_SCHEMA_VERSIONS = frozenset({1, 2, SCHEMA_VERSION})
+SCHEMA_VERSION = 4
+RESTORABLE_SCHEMA_VERSIONS = frozenset({1, 2, 3, SCHEMA_VERSION})
 DATABASE_FILE_NAME = "vault.db"
 SQLITE_TIMEOUT_SECONDS = 30.0
 MIGRATION_BATCH_SIZE = 1_000
@@ -101,6 +102,7 @@ def initialize_schema(database_path: Path, cipher: VaultCipher) -> None:
             connection.execute("BEGIN IMMEDIATE")
             try:
                 _create_schema(connection)
+                create_composite_schema(connection)
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 connection.commit()
             except Exception:
@@ -111,6 +113,9 @@ def initialize_schema(database_path: Path, cipher: VaultCipher) -> None:
             version = 2
         if version == 2:
             _migrate_v2_to_v3(connection, cipher)
+            version = 3
+        if version == 3:
+            _migrate_v3_to_v4(connection)
         elif version not in (0, SCHEMA_VERSION):
             raise VaultError("A versão do cofre local não é compatível.")
     except VaultError:
@@ -202,7 +207,19 @@ def _migrate_v2_to_v3(
         _migrate_v2_mappings(connection, cipher)
         _migrate_v2_variations(connection, cipher)
 
-        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.execute("PRAGMA user_version = 3")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def _migrate_v3_to_v4(connection: sqlite3.Connection) -> None:
+    """Adiciona tipos compostos sem ler ou recriptografar valores escalares."""
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        create_composite_schema(connection)
+        connection.execute("PRAGMA user_version = 4")
         connection.commit()
     except Exception:
         connection.rollback()

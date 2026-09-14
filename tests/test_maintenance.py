@@ -107,7 +107,7 @@ def test_healthy_diagnostic_has_correct_aggregated_statistics(tmp_path: Path) ->
     result = diagnostics(paths).run()
 
     assert result.status is MaintenanceStatus.HEALTHY
-    assert result.statistics.schema_version == 3
+    assert result.statistics.schema_version == 4
     assert result.statistics.mapping_count == 2
     assert result.statistics.variation_count == 2
     assert result.statistics.total_occurrences == 3

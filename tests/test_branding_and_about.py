@@ -130,7 +130,7 @@ def test_about_dialog_contains_only_public_information() -> None:
 
     assert "Data Mask Studio" in text
     assert "Versão 1.1.0" in text
-    assert "Schema suportado: 3" in text
+    assert "Schema suportado: 4" in text
     assert "Processamento local" in text
     assert "Sem telemetria" in text
     assert "github.com/Gustavo-Wallace/data-mask-studio" in text
