@@ -157,9 +157,9 @@ def test_locate_and_cleanup_only_known_old_temporaries(tmp_path: Path) -> None:
     output = tmp_path / "output"
     local.mkdir()
     output.mkdir()
-    temporary = local / ".profile-123.tmp"
+    temporary = local / ".profiles.json.ab12_cd3.tmp"
     temporary.write_bytes(b"temporary")
-    directory = output / ".dms-restore-old"
+    directory = output / ".dms-restore-ab12_cd3"
     directory.mkdir()
     (directory / "payload").write_bytes(b"temporary")
     final_csv = output / "dados_restaurado.csv"
@@ -185,19 +185,20 @@ def test_locate_and_cleanup_only_known_old_temporaries(tmp_path: Path) -> None:
 def test_recent_or_in_use_temporary_is_preserved(tmp_path: Path, monkeypatch) -> None:
     local = tmp_path / "local"
     local.mkdir()
-    recent = local / ".recent.tmp"
+    recent = local / ".secret-recent01.tmp"
     recent.write_bytes(b"recent")
-    old_locked = local / ".locked.tmp"
+    old_locked = local / ".secret-locked01.tmp"
     old_locked.write_bytes(b"locked")
     old = time.time() - 7200
     os.utime(old_locked, (old, old))
     monkeypatch.setattr(
         cleanup_module,
         "_probably_in_use",
-        lambda path: path.name == ".locked.tmp",
+        lambda path: path.name == ".secret-locked01.tmp",
     )
 
     items = locate_temporaries(local)
+    assert len(items) == 2
     for item in items:
         item.selected = True
     result = cleanup_temporaries(items, local)

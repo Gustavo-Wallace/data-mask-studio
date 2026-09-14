@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import time
 from collections.abc import Iterable
@@ -7,8 +8,17 @@ from pathlib import Path
 from data_mask_studio.maintenance.models import CleanupResult, TemporaryItem
 
 MINIMUM_AGE_SECONDS = 60 * 60
-_DIRECTORY_PREFIXES = (".dms-backup-", ".dms-restore-")
-_FILE_PREFIXES = (".dms-write-", ".secret-")
+# Sufixo gerado por tempfile no runtime atual. Formatos futuros desconhecidos
+# ficam preservados. Nomes genéricos .<destino>.<random>.tmp não provam autoria.
+_RANDOM = r"[a-z0-9_]{8}"
+_DIRECTORY_NAME = re.compile(r"\.dms-(?:backup|restore)-" + _RANDOM)
+_FILE_NAME = re.compile(
+    r"(?:\.dms-(?:write|access)-" + _RANDOM
+    + r"|\..+\.dmsbackup\." + _RANDOM + r"\.tmp)"
+)
+_LOCAL_FILE_NAME = re.compile(
+    r"(?:\.secret-" + _RANDOM + r"\.tmp|\.profiles\.json\." + _RANDOM + r"\.tmp)"
+)
 
 
 def locate_temporaries(
@@ -29,7 +39,7 @@ def locate_temporaries(
         except OSError:
             continue
         for path in candidates:
-            if not _recognized(path):
+            if not _recognized(path, roots[0]):
                 continue
             key = str(path.resolve()).casefold()
             if key in seen:
@@ -66,14 +76,18 @@ def cleanup_temporaries(
             item.result = "Preservado"
             preserved += 1
             continue
-        path = item.path.resolve()
-        if not _inside_roots(path, roots) or not _recognized(path):
+        path = item.path.absolute()
+        if not _inside_roots(path, roots) or not _recognized(path, roots[0]):
             item.result = "Preservado por segurança"
             preserved += 1
             continue
         try:
             if not path.exists():
                 item.result = "Já não existe"
+                preserved += 1
+            elif time.time() - path.stat().st_mtime < MINIMUM_AGE_SECONDS:
+                item.recent = True
+                item.result = "Preservado por ser recente"
                 preserved += 1
             elif _probably_in_use(path):
                 item.in_use = True
@@ -110,11 +124,16 @@ def _inside_roots(path: Path, roots: tuple[Path, ...]) -> bool:
     return any(path.parent == root for root in roots)
 
 
-def _recognized(path: Path) -> bool:
-    name = path.name.casefold()
+def _recognized(path: Path, application_directory: Path) -> bool:
+    if path.is_symlink() or path.is_junction():
+        return False
+    name = path.name
     if path.is_dir():
-        return name.startswith(_DIRECTORY_PREFIXES)
-    return name.endswith(".tmp") or name.startswith(_FILE_PREFIXES)
+        return _DIRECTORY_NAME.fullmatch(name) is not None
+    return path.is_file() and (
+        _FILE_NAME.fullmatch(name) is not None
+        or (path.parent == application_directory and _LOCAL_FILE_NAME.fullmatch(name) is not None)
+    )
 
 
 def _size(path: Path) -> int:
@@ -131,8 +150,6 @@ def _size(path: Path) -> int:
 
 
 def _probably_in_use(path: Path) -> bool:
-    try:
-        os.rename(path, path)
-        return False
-    except OSError:
-        return True
+    # Apenas veto por permissão; acesso permitido não prova ausência de uso.
+    # Não há locking: falhas de remoção do sistema operacional são preservadas.
+    return not os.access(path, os.W_OK)
