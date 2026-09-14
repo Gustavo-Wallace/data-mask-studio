@@ -59,6 +59,7 @@ def test_complete_profile_is_applied_and_validated(tmp_path: Path) -> None:
         [
             ColumnConfig("Nome", True, "NOME", NormalizationRule.COLLAPSE_WHITESPACE),
             ColumnConfig("CPF", True, "CPF_ID", NormalizationRule.CPF),
+            ColumnConfig("Extra", action=ColumnAction.PRESERVE),
         ],
     )
     application = create_application([])

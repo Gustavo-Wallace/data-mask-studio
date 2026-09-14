@@ -921,10 +921,13 @@ class AnonymizationWidget(QWidget):
 
         self._configuration_validated = False
         self.generate_button.setEnabled(False)
-        missing = ", ".join(application.missing_headers)
+        validation = validate_configuration(self._column_configs)
+        details = application.compatibility_message
+        if not validation.is_valid:
+            details += " " + (validation.error_message or "Configuração inválida.")
         self._set_status(
             "O perfil foi aplicado parcialmente. "
-            f"Cabeçalhos não encontrados: {missing}.",
+            + details,
             is_error=True,
         )
 

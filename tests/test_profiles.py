@@ -104,7 +104,8 @@ def test_resolved_empty_headers_are_stable_in_profiles(tmp_path: Path) -> None:
 
     assert created.columns[0].header == "column_1"
     assert application.matched_headers == ("column_1",)
-    assert application.is_complete
+    assert application.extra_headers == ("CPF",)
+    assert not application.is_complete
 
 
 def test_multiple_profiles_and_case_insensitive_duplicate_names(

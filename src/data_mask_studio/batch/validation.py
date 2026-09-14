@@ -93,17 +93,17 @@ def validate_file(
     item.headers = tuple(inspection.headers)
     item.missing_headers = application.missing_headers
     warning = format_header_replacement_warning(inspection.header_replacements)
+    validation = validate_configuration([
+        ColumnConfig(
+            column.header,
+            prefix=column.prefix,
+            action=column.action,
+            normalization_rule=column.normalization_rule,
+            output_name=column.output_name,
+        )
+        for column in application.configurations
+    ])
     if application.is_complete:
-        validation = validate_configuration([
-            ColumnConfig(
-                column.header,
-                prefix=column.prefix,
-                action=column.action,
-                normalization_rule=column.normalization_rule,
-                output_name=column.output_name,
-            )
-            for column in application.configurations
-        ])
         item.status = (
             BatchFileStatus.COMPATIBLE if validation.is_valid
             else BatchFileStatus.INCOMPATIBLE
@@ -114,8 +114,9 @@ def validate_file(
         )
     else:
         item.status = BatchFileStatus.INCOMPATIBLE
-        missing = ", ".join(application.missing_headers)
-        item.result_message = f"Cabeçalhos não encontrados: {missing}."
+        item.result_message = application.compatibility_message
+        if not validation.is_valid:
+            item.result_message += " " + (validation.error_message or "Configuração inválida.")
     if warning:
         item.result_message = f"{item.result_message} {warning}"
 

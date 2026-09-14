@@ -53,6 +53,7 @@ def make_profile_service(tmp_path: Path) -> tuple[ProfileService, object]:
         [
             ColumnConfig("Nome", True, "NOME", NormalizationRule.EXACT),
             ColumnConfig("CPF", True, "CPF_ID", NormalizationRule.CPF),
+            ColumnConfig("Extra", action=ColumnAction.PRESERVE),
         ],
     )
     return service, profile
@@ -97,7 +98,7 @@ def test_folder_discovery_is_sorted_and_not_recursive(tmp_path: Path) -> None:
     assert discover_csv_files(empty) == []
 
 
-def test_validation_requires_all_exact_headers_and_allows_extra_columns(
+def test_validation_requires_all_exact_headers_including_explicit_preserve(
     tmp_path: Path,
 ) -> None:
     service, profile = make_profile_service(tmp_path)
@@ -132,7 +133,7 @@ def test_batch_validation_uses_synthetic_header_and_reports_warning(
     service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     profile = service.create(
         "Layout recuperado",
-        [ColumnConfig("column_1", True, "COLUNA_1")],
+        [ColumnConfig("column_1", True, "COLUNA_1"), ColumnConfig("CPF")],
     )
     path = tmp_path / "empty-header.csv"
     path.write_text(",CPF\nAna,123\n", encoding="utf-8")

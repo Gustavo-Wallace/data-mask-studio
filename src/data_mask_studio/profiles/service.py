@@ -105,7 +105,8 @@ class ProfileService:
             )
             for header in headers
         )
-        return ProfileApplicationResult(configurations, matched, missing)
+        extra = tuple(header for header in headers if header not in profile_columns)
+        return ProfileApplicationResult(configurations, matched, missing, extra)
 
     @staticmethod
     def _ensure_unique_name(

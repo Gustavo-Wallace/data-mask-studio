@@ -20,7 +20,7 @@ def test_batch_tab_validates_and_processes_offscreen(tmp_path: Path) -> None:
     profile_service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     profile_service.create(
         "Perfil em lote",
-        [ColumnConfig("Nome", True, "NOME", NormalizationRule.EXACT)],
+        [ColumnConfig("Nome", True, "NOME", NormalizationRule.EXACT), ColumnConfig("Extra")],
     )
     source = tmp_path / "data.csv"
     source.write_text("Nome,Extra\nAna,x\n", encoding="utf-8")
@@ -64,7 +64,7 @@ def test_changing_profile_invalidates_batch_validation(tmp_path: Path) -> None:
     profile_service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     profile_service.create(
         "Perfil A",
-        [ColumnConfig("Nome", True, "NOME", NormalizationRule.EXACT)],
+        [ColumnConfig("Nome", True, "NOME", NormalizationRule.EXACT), ColumnConfig("CPF")],
     )
     profile_service.create(
         "Perfil B",
@@ -98,7 +98,7 @@ def test_batch_interface_reports_aggregated_fallback_without_value(
     profile_service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     profile_service.create(
         "IPs",
-        [ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS)],
+        [ColumnConfig("IP", True, "IP", NormalizationRule.IP_ADDRESS), ColumnConfig("Extra")],
     )
     source = tmp_path / "addresses.csv"
     source.write_text(

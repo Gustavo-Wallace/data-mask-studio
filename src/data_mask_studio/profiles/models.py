@@ -58,6 +58,7 @@ class ProfileApplicationResult:
     configurations: tuple[ProfileColumn, ...]
     matched_headers: tuple[str, ...]
     missing_headers: tuple[str, ...]
+    extra_headers: tuple[str, ...] = ()
 
     @property
     def has_matches(self) -> bool:
@@ -65,4 +66,13 @@ class ProfileApplicationResult:
 
     @property
     def is_complete(self) -> bool:
-        return self.has_matches and not self.missing_headers
+        return self.has_matches and not self.missing_headers and not self.extra_headers
+
+    @property
+    def compatibility_message(self) -> str:
+        messages = []
+        if self.missing_headers:
+            messages.append(f"Cabeçalhos não encontrados: {', '.join(self.missing_headers)}.")
+        if self.extra_headers:
+            messages.append(f"Colunas adicionais não conhecidas pelo perfil: {', '.join(self.extra_headers)}. Revise a configuração.")
+        return " ".join(messages)
