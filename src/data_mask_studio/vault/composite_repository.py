@@ -137,7 +137,10 @@ def _check_rules(rules, count):
 def _check_tuple(original, rules, canonical):
     try:
         if len(original) != len(canonical) or tuple(
-            normalize_value(value, rule) for value, rule in zip(original, rules, strict=True)
+            # Execução composta canonicaliza brancos como ausência. Mantém também
+            # a leitura de tuples antigas que preservavam whitespace literalmente.
+            "" if (value == "" or value.isspace()) and expected == "" else normalize_value(value, rule)
+            for value, rule, expected in zip(original, rules, canonical, strict=True)
         ) != canonical:
             raise VaultError("Tuple original incompatível com a identidade composta.")
     except (ValueError, TypeError, NormalizationError):
