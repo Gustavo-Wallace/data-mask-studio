@@ -1,6 +1,7 @@
 import csv
 import json
 import sqlite3
+from dataclasses import replace
 
 import pytest
 
@@ -122,11 +123,30 @@ def test_profile_rename_round_trip_and_legacy_default(tmp_path):
     assert [c.output_name for c in applied.configurations] == ["DOCUMENTO", "PESSOA", "IGNORADA"]
     assert [c.header for c in applied.configurations] == ["CPF", "NOME", "OBS"]
     document = json.loads(repository.path.read_text(encoding="utf-8"))
+    # Documento v1 real: container/formato legados, booleano obrigatório e sem
+    # campos exclusivos de v2. A action recente continua autoritativa em v1.
+    document["schema_version"] = 1
+    profile = document["profiles"][0]
+    profile["format_version"] = 1
+    del profile["composites"], profile["unknown_column_policy"]
     for column in document["profiles"][0]["columns"]:
+        column["anonymize"] = column["action"] == "mask"
         del column["output_name"]
     legacy = json.dumps(document).encode("utf-8")
-    assert all(c.output_name == "" for c in repository.parse_bytes(legacy)[0].columns)
+    legacy_columns = repository.parse_bytes(legacy)[0].columns
+    assert all(c.output_name == "" for c in legacy_columns)
+    assert [c.action for c in legacy_columns] == [ColumnAction.PRESERVE, ColumnAction.MASK, ColumnAction.EXCLUDE]
     document["profiles"][0]["columns"][0]["output_name"] = 123
+    with pytest.raises(ProfileFormatError):
+        repository.parse_bytes(json.dumps(document).encode("utf-8"))
+
+
+def test_profile_v2_missing_required_output_name_is_rejected(tmp_path):
+    repository = ProfileRepository(tmp_path / "profiles.json")
+    ProfileService(repository).create("Perfil v2", [ColumnConfig("NOME", output_name="PESSOA")])
+    document = json.loads(repository.path.read_text(encoding="utf-8"))
+    assert document["schema_version"] == document["profiles"][0]["format_version"] == 2
+    del document["profiles"][0]["columns"][0]["output_name"]
     with pytest.raises(ProfileFormatError):
         repository.parse_bytes(json.dumps(document).encode("utf-8"))
 
@@ -173,5 +193,23 @@ def test_batch_validation_catches_profile_rename_collision_with_extra_column(tmp
     item = BatchFile(source)
     validate_file(item, profile, service)
     assert item.status is BatchFileStatus.INCOMPATIBLE
+    assert "Colunas adicionais não conhecidas pelo perfil: CPF" in item.result_message
+    assert "Nome de saída repetido" not in item.result_message
+
+
+def test_batch_validation_catches_profile_rename_collision_with_known_columns(tmp_path):
+    from data_mask_studio.batch import BatchFile, BatchFileStatus, validate_file
+
+    service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
+    profile = service.create("Colunas conhecidas", [ColumnConfig("NOME"), ColumnConfig("CPF")])
+    # O serviço já rejeita salvar esse conflito; injeta-o em memória para testar
+    # a defesa da validação batch com todas as colunas físicas conhecidas.
+    profile = replace(profile, columns=(replace(profile.columns[0], output_name=" CPF "), profile.columns[1]))
+    source = tmp_path / "known.csv"
+    source.write_text("NOME,CPF\nAna,123\n", encoding="utf-8")
+    item = BatchFile(source)
+    validate_file(item, profile, service)
+    assert item.status is BatchFileStatus.INCOMPATIBLE
     assert "Nome de saída repetido" in item.result_message
     assert "NOME" in item.result_message and "CPF" in item.result_message
+    assert "Colunas adicionais" not in item.result_message
