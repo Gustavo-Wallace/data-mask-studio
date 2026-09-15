@@ -2,6 +2,11 @@ from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from data_mask_studio.csv_tools.models import CSVInspectionResult
+    from data_mask_studio.processing.models import ProcessingPlan
 
 from data_mask_studio.anonymization import (
     ColumnAction,
@@ -28,6 +33,25 @@ class ProfileService:
 
     def list_profiles(self) -> list[ConfigurationProfile]:
         return sorted(self.repository.load(), key=lambda item: item.name.casefold())
+
+    def build_plan(
+        self, profile: ConfigurationProfile, inspection: "CSVInspectionResult",
+    ) -> "ProcessingPlan":
+        """Resolve políticas físicas e delega todo binding ao planner de domínio."""
+        from data_mask_studio.processing.planner import PlanningError, build_processing_plan
+
+        if profile.unknown_column_policy is not UnknownColumnPolicy.REQUIRE_EXPLICIT:
+            raise PlanningError("Política de colunas desconhecidas não suportada.")
+        application = self.apply(profile, inspection.headers)
+        # A capacidade do consumidor não faz parte da compatibilidade estrutural.
+        structural = replace(application, composites=())
+        if not structural.is_complete:
+            raise PlanningError(structural.compatibility_message or "Perfil incompatível com o CSV.")
+        configurations = [ColumnConfig(
+            column.header, prefix=column.prefix, action=column.action,
+            normalization_rule=column.normalization_rule, output_name=column.output_name,
+        ) for column in application.configurations]
+        return build_processing_plan(inspection, configurations, profile.composites)
 
     def create(
         self, name: str, configurations: Sequence[ColumnConfig], *,

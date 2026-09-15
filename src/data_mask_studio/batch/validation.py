@@ -5,13 +5,13 @@ from pathlib import Path
 
 from data_mask_studio.batch.exceptions import BatchError
 from data_mask_studio.batch.models import BatchFile, BatchFileStatus
-from data_mask_studio.anonymization import ColumnConfig, validate_configuration
 from data_mask_studio.csv_tools import (
     CSVInspectionError,
     format_header_replacement_warning,
     inspect_csv,
 )
 from data_mask_studio.profiles import ConfigurationProfile, ProfileService
+from data_mask_studio.processing.planner import PlanningError
 
 
 def add_files(files: list[BatchFile], paths: Iterable[str | Path]) -> int:
@@ -60,6 +60,7 @@ def invalidate_files(files: list[BatchFile]) -> None:
         item.updated_mappings = 0
         item.normalization_fallbacks = ()
         item.error_type = None
+        item.processing_result = None
 
 
 def validate_file(
@@ -80,6 +81,7 @@ def validate_file(
     item.updated_mappings = 0
     item.normalization_fallbacks = ()
     item.error_type = None
+    item.processing_result = None
     try:
         inspection = inspect_csv(item.path)
     except CSVInspectionError as error:
@@ -93,30 +95,14 @@ def validate_file(
     item.headers = tuple(inspection.headers)
     item.missing_headers = application.missing_headers
     warning = format_header_replacement_warning(inspection.header_replacements)
-    validation = validate_configuration([
-        ColumnConfig(
-            column.header,
-            prefix=column.prefix,
-            action=column.action,
-            normalization_rule=column.normalization_rule,
-            output_name=column.output_name,
-        )
-        for column in application.configurations
-    ])
-    if application.is_complete:
-        item.status = (
-            BatchFileStatus.COMPATIBLE if validation.is_valid
-            else BatchFileStatus.INCOMPATIBLE
-        )
-        item.result_message = (
-            "Arquivo compatível com o perfil." if validation.is_valid
-            else validation.error_message or "Configuração inválida para este arquivo."
-        )
-    else:
+    try:
+        profile_service.build_plan(profile, inspection)
+    except PlanningError as error:
         item.status = BatchFileStatus.INCOMPATIBLE
-        item.result_message = application.compatibility_message
-        if not validation.is_valid:
-            item.result_message += " " + (validation.error_message or "Configuração inválida.")
+        item.result_message = str(error)
+    else:
+        item.status = BatchFileStatus.COMPATIBLE
+        item.result_message = "Arquivo compatível com o perfil."
     if warning:
         item.result_message = f"{item.result_message} {warning}"
 

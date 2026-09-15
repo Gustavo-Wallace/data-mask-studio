@@ -3,7 +3,7 @@ from enum import StrEnum
 from pathlib import Path
 from threading import Event
 
-from data_mask_studio.anonymization.models import NormalizationFallback
+from data_mask_studio.anonymization.models import AnonymizationResult, NormalizationFallback
 
 
 class BatchFileStatus(StrEnum):
@@ -51,6 +51,7 @@ class BatchFile:
     updated_mappings: int = 0
     normalization_fallbacks: tuple[NormalizationFallback, ...] = ()
     error_type: BatchErrorType | None = None
+    processing_result: AnonymizationResult | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +71,7 @@ class BatchFileResult:
     output_path: Path | None = None
     message: str = ""
     records_processed: int = 0
+    processing_result: AnonymizationResult | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)

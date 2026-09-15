@@ -1,10 +1,12 @@
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from data_mask_studio.processing.models import ProcessingPlan
 
 from data_mask_studio.anonymization import (
-    ColumnAction,
-    ColumnConfig,
     NormalizationFallback,
 )
 from data_mask_studio.batch.exceptions import BatchError, BatchStructuralError
@@ -19,9 +21,9 @@ from data_mask_studio.batch.models import (
 )
 from data_mask_studio.batch.output_naming import reserve_output_path
 from data_mask_studio.batch.validation import validate_file, validate_output_directory
-from data_mask_studio.csv_tools import ProcessingCancelled, anonymize_csv
+from data_mask_studio.csv_tools import CSVInspectionError, ProcessingCancelled, anonymize_csv, inspect_csv
 from data_mask_studio.csv_tools.csv_anonymizer import CSVAnonymizationError
-from data_mask_studio.normalization import NormalizationRule
+from data_mask_studio.processing.planner import PlanningError
 from data_mask_studio.profiles import ConfigurationProfile, ProfileService
 from data_mask_studio.security import KeyProvider, KeyProviderError
 from data_mask_studio.vault import (
@@ -73,14 +75,40 @@ class BatchService:
             raise BatchError("Valide todos os arquivos antes de iniciar o lote.")
         if not compatible:
             raise BatchError("O lote não possui arquivos compatíveis.")
+        started_at = time.perf_counter()
+        cancellation = cancellation or CancellationRequest()
+        # Reinspeciona antes dos recursos seguros e de qualquer reserva de saída.
+        # Cada arquivo tem seu próprio plano: nunca reutiliza índices de outro CSV.
+        plans: dict[int, "ProcessingPlan"] = {}
+        for item in compatible:
+            if cancellation.is_requested():
+                _mark_remaining_cancelled(compatible, file_callback)
+                return _summary(files, len(compatible), Path(output_directory), started_at)
+            item.processing_result = None
+            try:
+                inspection = inspect_csv(item.path)
+                plans[id(item)] = self.profile_service.build_plan(profile, inspection)
+                item.headers = tuple(inspection.headers)
+                item.encoding = inspection.encoding
+                item.delimiter = inspection.delimiter
+            except PlanningError as error:
+                item.status = BatchFileStatus.INCOMPATIBLE
+                item.result_message = str(error)
+                _notify_file(item, file_callback)
+            except CSVInspectionError as error:
+                item.status = BatchFileStatus.ERROR
+                item.error_type = BatchErrorType.FILE
+                item.result_message = str(error)
+                _notify_file(item, file_callback)
+        if not plans:
+            return _summary(files, 0, Path(output_directory), started_at)
+        compatible = [item for item in compatible if id(item) in plans]
         try:
             output = validate_output_directory(output_directory)
         except BatchError as error:
             _mark_remaining_skipped(compatible, file_callback)
             raise BatchStructuralError(str(error)) from error
 
-        started_at = time.perf_counter()
-        cancellation = cancellation or CancellationRequest()
         try:
             secret_key = key_provider.get_key()
             vault_repository = vault_repository_factory()
@@ -106,7 +134,6 @@ class BatchService:
             reservation: Path | None = None
             try:
                 reservation = reserve_output_path(output, item.path)
-                configurations = _profile_configurations(profile, item.headers)
 
                 def report_records(records: int) -> None:
                     item.records_processed = records
@@ -120,7 +147,7 @@ class BatchService:
                     reservation,
                     encoding=item.encoding or "utf-8",
                     delimiter=item.delimiter or ",",
-                    configurations=configurations,
+                    processing_plan=plans[id(item)],
                     secret_key=secret_key,
                     overwrite=True,
                     progress_callback=report_records,
@@ -154,36 +181,13 @@ class BatchService:
             item.new_mappings = result.new_mappings
             item.updated_mappings = result.updated_mappings
             item.normalization_fallbacks = result.normalization_fallbacks
+            item.processing_result = result
             item.result_message = _completed_message(result.normalization_fallbacks)
             _notify_file(item, file_callback)
             if progress_callback is not None:
                 progress_callback(_progress(files, item, current_index, len(compatible)))
 
         return _summary(files, len(compatible), output, started_at)
-
-
-def _profile_configurations(
-    profile: ConfigurationProfile, headers: tuple[str, ...]
-) -> list[ColumnConfig]:
-    columns = {column.header: column for column in profile.columns}
-    return [
-        ColumnConfig(
-            header=header,
-            output_name=columns[header].output_name if header in columns else "",
-            action=(
-                columns[header].action
-                if header in columns
-                else ColumnAction.PRESERVE
-            ),
-            prefix=columns[header].prefix if header in columns else "",
-            normalization_rule=(
-                columns[header].normalization_rule
-                if header in columns
-                else NormalizationRule.EXACT
-            ),
-        )
-        for header in headers
-    ]
 
 
 def _is_structural_error(error: Exception) -> bool:
@@ -227,6 +231,8 @@ def _mark_remaining_cancelled(
     files: list[BatchFile], callback: FileCallback | None
 ) -> None:
     for item in files:
+        if item.status is not BatchFileStatus.COMPATIBLE:
+            continue
         item.status = BatchFileStatus.CANCELLED
         item.error_type = BatchErrorType.CANCELLATION
         item.result_message = "Não processado devido ao cancelamento."
@@ -237,6 +243,8 @@ def _mark_remaining_skipped(
     files: list[BatchFile], callback: FileCallback | None
 ) -> None:
     for item in files:
+        if item.status is not BatchFileStatus.COMPATIBLE:
+            continue
         item.status = BatchFileStatus.SKIPPED
         item.result_message = "Ignorado devido a uma falha estrutural."
         _notify_file(item, callback)
@@ -291,6 +299,7 @@ def _summary(
                 output_path=item.output_path,
                 message=item.result_message,
                 records_processed=item.records_processed,
+                processing_result=item.processing_result,
             )
             for item in files
         ),

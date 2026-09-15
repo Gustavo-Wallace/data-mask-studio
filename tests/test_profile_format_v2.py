@@ -211,17 +211,19 @@ def test_scalar_only_v2_round_trip(tmp_path):
     assert 'anonymize' not in raw['columns'][0]
 
 
-def test_existing_batch_does_not_execute_a_composite_profile(tmp_path):
+def test_batch_support_does_not_release_unadapted_profile_consumers(tmp_path):
     from data_mask_studio.batch.models import BatchFile, BatchFileStatus
     from data_mask_studio.batch.validation import validate_file
 
     service, _, profile, inspection = case(tmp_path)
-    # Todos os headers escalares conhecidos: a incompatibilidade vem da composite.
+    # Batch agora é adaptado; aplicação genérica/GUI continua falhando fechado.
     profile = service.update(profile.identifier, [ColumnConfig('NOME'), ColumnConfig('CPF')])
     item = BatchFile(path=inspection.path)
     validate_file(item, profile, service)
-    assert item.status is BatchFileStatus.INCOMPATIBLE
-    assert 'composites' in item.result_message
+    assert item.status is BatchFileStatus.COMPATIBLE
+    application = service.apply(profile, inspection.headers)
+    assert not application.is_complete
+    assert 'composites' in application.compatibility_message
 
 
 def test_policy_stays_explicit_after_service_round_trip(tmp_path):
