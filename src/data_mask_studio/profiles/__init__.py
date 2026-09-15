@@ -10,6 +10,7 @@ from data_mask_studio.profiles.models import (
     ConfigurationProfile,
     ProfileApplicationResult,
     ProfileColumn,
+    UnknownColumnPolicy,
 )
 from data_mask_studio.profiles.repository import ProfileRepository, default_profiles_path
 from data_mask_studio.profiles.service import ProfileService
@@ -21,6 +22,7 @@ __all__ = [
     "ConfigurationProfile",
     "ProfileApplicationResult",
     "ProfileColumn",
+    "UnknownColumnPolicy",
     "ProfileError",
     "ProfileFormatError",
     "ProfileRepository",

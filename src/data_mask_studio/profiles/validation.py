@@ -12,7 +12,9 @@ from data_mask_studio.profiles.models import (
     PROFILE_FORMAT_VERSION,
     ConfigurationProfile,
     ProfileColumn,
+    UnknownColumnPolicy,
 )
+from data_mask_studio.profiles.composite_format import validate_composite
 
 
 def validate_profile_name(name: str) -> str:
@@ -45,7 +47,7 @@ def validate_profile(profile: ConfigurationProfile) -> None:
         raise ProfileValidationError("O identificador do perfil é inválido.") from error
     if validate_profile_name(profile.name) != profile.name:
         raise ProfileValidationError("O nome do perfil possui espaços nas extremidades.")
-    if profile.format_version != PROFILE_FORMAT_VERSION:
+    if type(profile.format_version) is not int or profile.format_version != PROFILE_FORMAT_VERSION:
         raise ProfileValidationError("A versão do perfil não é suportada.")
     if not isinstance(profile.created_at, datetime) or not isinstance(
         profile.modified_at, datetime
@@ -53,7 +55,20 @@ def validate_profile(profile: ConfigurationProfile) -> None:
         raise ProfileValidationError("As datas do perfil são inválidas.")
     if not profile.columns:
         raise ProfileValidationError("O perfil não possui colunas configuradas.")
-    if all(column.action is ColumnAction.EXCLUDE for column in profile.columns):
+    if not isinstance(profile.unknown_column_policy, UnknownColumnPolicy):
+        raise ProfileValidationError("Política de colunas desconhecidas inválida.")
+    if not isinstance(profile.composites, tuple):
+        raise ProfileValidationError("Coleção de composites inválida.")
+    identifiers = set()
+    for composite in profile.composites:
+        try:
+            validate_composite(composite)
+            if composite.identifier in identifiers:
+                raise ValueError
+            identifiers.add(composite.identifier)
+        except (TypeError, ValueError):
+            raise ProfileValidationError("Configuração composta inválida no perfil.") from None
+    if not profile.composites and all(column.action is ColumnAction.EXCLUDE for column in profile.columns):
         raise ProfileValidationError(
             "O perfil precisa manter ao menos uma coluna no arquivo de saída."
         )

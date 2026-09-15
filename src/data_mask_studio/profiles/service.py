@@ -15,7 +15,9 @@ from data_mask_studio.profiles.models import (
     ConfigurationProfile,
     ProfileApplicationResult,
     ProfileColumn,
+    UnknownColumnPolicy,
 )
+from data_mask_studio.processing.models import CompositeColumnConfig
 from data_mask_studio.profiles.repository import ProfileRepository
 from data_mask_studio.profiles.validation import profile_name_key, validate_profile_name
 
@@ -28,12 +30,14 @@ class ProfileService:
         return sorted(self.repository.load(), key=lambda item: item.name.casefold())
 
     def create(
-        self, name: str, configurations: Sequence[ColumnConfig]
+        self, name: str, configurations: Sequence[ColumnConfig], *,
+        composites: Sequence[CompositeColumnConfig] = (),
+        unknown_column_policy: UnknownColumnPolicy = UnknownColumnPolicy.REQUIRE_EXPLICIT,
     ) -> ConfigurationProfile:
         profiles = self.repository.load()
         normalized_name = validate_profile_name(name)
         self._ensure_unique_name(profiles, normalized_name)
-        columns = _selected_profile_columns(configurations)
+        columns = _selected_profile_columns(configurations, has_composites=bool(composites))
         now = datetime.now(timezone.utc)
         profile = ConfigurationProfile(
             identifier=str(uuid4()),
@@ -42,6 +46,8 @@ class ProfileService:
             created_at=now,
             modified_at=now,
             columns=columns,
+            composites=tuple(composites),
+            unknown_column_policy=unknown_column_policy,
         )
         self.repository.save([*profiles, profile])
         return profile
@@ -50,14 +56,20 @@ class ProfileService:
         self,
         identifier: str,
         configurations: Sequence[ColumnConfig],
+        *,
+        composites: Sequence[CompositeColumnConfig] | None = None,
+        unknown_column_policy: UnknownColumnPolicy | None = None,
     ) -> ConfigurationProfile:
         profiles = self.repository.load()
         index = _profile_index(profiles, identifier)
         current = profiles[index]
+        selected_composites = current.composites if composites is None else tuple(composites)
         updated = replace(
             current,
             modified_at=datetime.now(timezone.utc),
-            columns=_selected_profile_columns(configurations),
+            columns=_selected_profile_columns(configurations, has_composites=bool(selected_composites)),
+            composites=selected_composites,
+            unknown_column_policy=(current.unknown_column_policy if unknown_column_policy is None else unknown_column_policy),
         )
         profiles[index] = updated
         self.repository.save(profiles)
@@ -106,7 +118,8 @@ class ProfileService:
             for header in headers
         )
         extra = tuple(header for header in headers if header not in profile_columns)
-        return ProfileApplicationResult(configurations, matched, missing, extra)
+        return ProfileApplicationResult(configurations, matched, missing, extra,
+                                        profile.composites, profile.unknown_column_policy)
 
     @staticmethod
     def _ensure_unique_name(
@@ -125,12 +138,14 @@ class ProfileService:
 
 def _selected_profile_columns(
     configurations: Sequence[ColumnConfig],
+    *, has_composites: bool = False,
 ) -> tuple[ProfileColumn, ...]:
-    validation = validate_configuration(configurations)
-    if not validation.is_valid:
-        raise ProfileValidationError(
-            validation.error_message or "A configuração atual é inválida."
-        )
+    if not (has_composites and configurations and all(c.action is ColumnAction.EXCLUDE for c in configurations)):
+        validation = validate_configuration(configurations)
+        if not validation.is_valid:
+            raise ProfileValidationError(
+                validation.error_message or "A configuração atual é inválida."
+            )
     return tuple(
         ProfileColumn(
             header=configuration.header,

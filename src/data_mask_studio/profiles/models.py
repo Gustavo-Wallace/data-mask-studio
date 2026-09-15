@@ -1,11 +1,20 @@
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.normalization import NormalizationRule
+if TYPE_CHECKING:
+    from data_mask_studio.processing.models import CompositeColumnConfig
 
-PROFILE_FORMAT_VERSION = 1
-PROFILES_SCHEMA_VERSION = 1
+PROFILE_FORMAT_VERSION = 2
+# O container também evolui para impedir leitura parcial por clientes v1.
+PROFILES_SCHEMA_VERSION = 2
+
+
+class UnknownColumnPolicy(StrEnum):
+    REQUIRE_EXPLICIT = "require_explicit"
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -51,6 +60,8 @@ class ConfigurationProfile:
     created_at: datetime
     modified_at: datetime
     columns: tuple[ProfileColumn, ...]
+    composites: tuple["CompositeColumnConfig", ...] = ()
+    unknown_column_policy: UnknownColumnPolicy = UnknownColumnPolicy.REQUIRE_EXPLICIT
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +70,8 @@ class ProfileApplicationResult:
     matched_headers: tuple[str, ...]
     missing_headers: tuple[str, ...]
     extra_headers: tuple[str, ...] = ()
+    composites: tuple["CompositeColumnConfig", ...] = ()
+    unknown_column_policy: UnknownColumnPolicy = UnknownColumnPolicy.REQUIRE_EXPLICIT
 
     @property
     def has_matches(self) -> bool:
@@ -66,11 +79,13 @@ class ProfileApplicationResult:
 
     @property
     def is_complete(self) -> bool:
-        return self.has_matches and not self.missing_headers and not self.extra_headers
+        return self.has_matches and not self.missing_headers and not self.extra_headers and not self.composites
 
     @property
     def compatibility_message(self) -> str:
         messages = []
+        if self.composites:
+            messages.append("Este perfil contém composites ainda não suportadas por este fluxo.")
         if self.missing_headers:
             messages.append(f"Cabeçalhos não encontrados: {', '.join(self.missing_headers)}.")
         if self.extra_headers:

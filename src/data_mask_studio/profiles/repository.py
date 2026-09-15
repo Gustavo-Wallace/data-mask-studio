@@ -15,9 +15,12 @@ from data_mask_studio.profiles.exceptions import (
 )
 from data_mask_studio.profiles.models import (
     PROFILES_SCHEMA_VERSION,
+    PROFILE_FORMAT_VERSION,
     ConfigurationProfile,
     ProfileColumn,
+    UnknownColumnPolicy,
 )
+from data_mask_studio.profiles.composite_format import parse_composite, serialize_composite, require_fields
 from data_mask_studio.profiles.validation import validate_unique_names
 
 PROFILES_FILE_NAME = "profiles.json"
@@ -109,7 +112,9 @@ def _serialize_document(profiles: list[ConfigurationProfile]) -> dict[str, Any]:
             {
                 "identifier": profile.identifier,
                 "name": profile.name,
-                "format_version": profile.format_version,
+                "format_version": PROFILE_FORMAT_VERSION,
+                "unknown_column_policy": profile.unknown_column_policy.value,
+                "composites": [serialize_composite(composite) for composite in profile.composites],
                 "created_at": profile.created_at.isoformat(),
                 "modified_at": profile.modified_at.isoformat(),
                 "columns": [
@@ -117,7 +122,6 @@ def _serialize_document(profiles: list[ConfigurationProfile]) -> dict[str, Any]:
                         "header": column.header,
                         "prefix": column.prefix,
                         "normalization_rule": column.normalization_rule.value,
-                        "anonymize": column.anonymize,
                         "action": column.action.value,
                         "output_name": column.output_name,
                     }
@@ -136,40 +140,65 @@ def _parse_document(document: object) -> list[ConfigurationProfile]:
     if (
         not isinstance(schema_version, int)
         or isinstance(schema_version, bool)
-        or schema_version != PROFILES_SCHEMA_VERSION
+        or schema_version not in (1, PROFILES_SCHEMA_VERSION)
     ):
         raise ProfileFormatError("A versão do arquivo de perfis não é suportada.")
     raw_profiles = document.get("profiles")
     if not isinstance(raw_profiles, list):
         raise ProfileFormatError("A lista de perfis é inválida.")
     try:
+        if schema_version == 2:
+            require_fields(document, {"schema_version", "profiles"})
+        elif any(isinstance(item, dict) and item.get("format_version") != 1 for item in raw_profiles):
+            raise ProfileFormatError("Versão de perfil incompatível com o container legado.")
         profiles = [_parse_profile(item) for item in raw_profiles]
         validate_unique_names(profiles)
         return profiles
     except (KeyError, TypeError, ValueError, ProfileValidationError) as error:
-        raise ProfileFormatError("O arquivo de perfis possui dados inválidos.") from error
+        raise ProfileFormatError("O arquivo de perfis possui dados inválidos.") from None
 
 
 def _parse_profile(value: object) -> ConfigurationProfile:
     if not isinstance(value, dict):
         raise TypeError
+    version = _required_int(value, "format_version")
+    if version not in (1, PROFILE_FORMAT_VERSION):
+        raise ProfileFormatError("A versão do perfil não é suportada.")
+    if version == 2:
+        require_fields(value, {"identifier", "name", "format_version", "created_at", "modified_at",
+                               "columns", "composites", "unknown_column_policy"})
+        if not isinstance(value["composites"], list):
+            raise TypeError
+        composites = tuple(parse_composite(item) for item in value["composites"])
+        policy = UnknownColumnPolicy(value["unknown_column_policy"])
+    else:
+        if "composites" in value or "unknown_column_policy" in value:
+            raise ProfileFormatError("Semântica v2 não permitida em perfil legado.")
+        composites = ()
+        policy = UnknownColumnPolicy.REQUIRE_EXPLICIT
     columns = value["columns"]
     if not isinstance(columns, list):
         raise TypeError
     return ConfigurationProfile(
         identifier=_required_string(value, "identifier"),
         name=_required_string(value, "name"),
-        format_version=_required_int(value, "format_version"),
+        format_version=PROFILE_FORMAT_VERSION,
         created_at=_required_datetime(value, "created_at"),
         modified_at=_required_datetime(value, "modified_at"),
-        columns=tuple(_parse_column(column) for column in columns),
+        columns=tuple(_parse_column(column, version) for column in columns),
+        composites=composites,
+        unknown_column_policy=policy,
     )
 
 
-def _parse_column(value: object) -> ProfileColumn:
+def _parse_column(value: object, version: int = 1) -> ProfileColumn:
     if not isinstance(value, dict):
         raise TypeError
-    anonymize = value["anonymize"]
+    if version == 2:
+        require_fields(value, {"header", "prefix", "normalization_rule", "action", "output_name"})
+        if not isinstance(value["action"], str):
+            raise TypeError
+    anonymize = value["anonymize"] if version == 1 else value["action"] == "mask"
     if not isinstance(anonymize, bool):
         raise TypeError
     raw_action = value.get("action")
