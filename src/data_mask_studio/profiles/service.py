@@ -38,7 +38,7 @@ class ProfileService:
         self, profile: ConfigurationProfile, inspection: "CSVInspectionResult",
     ) -> "ProcessingPlan":
         """Resolve políticas físicas e delega todo binding ao planner de domínio."""
-        from data_mask_studio.processing.planner import PlanningError, build_processing_plan
+        from data_mask_studio.processing.planner import PlanningError
 
         if profile.unknown_column_policy is not UnknownColumnPolicy.REQUIRE_EXPLICIT:
             raise PlanningError("Política de colunas desconhecidas não suportada.")
@@ -51,7 +51,17 @@ class ProfileService:
             column.header, prefix=column.prefix, action=column.action,
             normalization_rule=column.normalization_rule, output_name=column.output_name,
         ) for column in application.configurations]
-        return build_processing_plan(inspection, configurations, profile.composites)
+        return self.build_configuration_plan(inspection, configurations, profile.composites)
+
+    @staticmethod
+    def build_configuration_plan(
+        inspection: "CSVInspectionResult", configurations: Sequence[ColumnConfig],
+        composites: Sequence[CompositeColumnConfig] = (),
+    ) -> "ProcessingPlan":
+        """Mesmo planner para estado não salvo da GUI e perfis aplicados."""
+        from data_mask_studio.processing.planner import build_processing_plan
+
+        return build_processing_plan(inspection, configurations, composites)
 
     def create(
         self, name: str, configurations: Sequence[ColumnConfig], *,

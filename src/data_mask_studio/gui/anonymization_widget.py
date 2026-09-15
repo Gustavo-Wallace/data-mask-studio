@@ -46,6 +46,8 @@ from data_mask_studio.detection import (
     SuggestedType,
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
+from data_mask_studio.gui.composite_section import CompositeSection
+from data_mask_studio.processing.planner import PlanningError
 from data_mask_studio.gui.column_configuration_table import (
     PREFIX_PLACEHOLDER,
     ColumnConfigurationTable,
@@ -225,6 +227,13 @@ class AnonymizationWidget(QWidget):
             except ProfileError as error:
                 self._profile_initialization_error = str(error)
         self._profiles: list[ConfigurationProfile] = []
+        self._unreviewed_headers: set[str] = set()
+        self._profile_missing_headers: tuple[str, ...] = ()
+        self.composite_section = CompositeSection(
+            lambda: self._inspection_result, self._build_current_plan, self,
+        )
+        self.composite_section.changed.connect(self._configuration_changed)
+        self.composite_section.setEnabled(False)
         self._worker: AnonymizationWorker | None = None
         self._detection_worker: DetectionWorker | None = None
         self._detection_dialog: DetectionDialog | None = None
@@ -266,6 +275,7 @@ class AnonymizationWidget(QWidget):
         layout.addWidget(configuration_label)
         layout.addLayout(selection_layout)
         layout.addWidget(self.config_table, stretch=1)
+        layout.addWidget(self.composite_section)
         layout.addLayout(action_layout)
         layout.addLayout(progress_layout)
         layout.addWidget(self.output_path_label)
@@ -298,6 +308,10 @@ class AnonymizationWidget(QWidget):
         self._show_result(result)
 
     def _show_result(self, result: CSVInspectionResult) -> None:
+        self.composite_section.set_configurations(())
+        self.composite_section.setEnabled(True)
+        self._unreviewed_headers.clear()
+        self._profile_missing_headers = ()
         self._clear_detection_suggestions()
         self._inspection_result = result
         self._configuration_validated = False
@@ -338,6 +352,10 @@ class AnonymizationWidget(QWidget):
         self._set_status(status, is_error=is_error)
 
     def _reset_details(self) -> None:
+        self.composite_section.set_configurations(())
+        self.composite_section.setEnabled(False)
+        self._unreviewed_headers.clear()
+        self._profile_missing_headers = ()
         self._clear_detection_suggestions()
         self._inspection_result = None
         self._configuration_validated = False
@@ -465,28 +483,30 @@ class AnonymizationWidget(QWidget):
             prefix_field.setText(normalize_prefix(configuration.header))
         self._update_selected_count()
         self._refresh_validation_indicators()
-        self._configuration_changed()
+        self._configuration_changed(row)
 
     def _output_name_changed(self, row: int, text: str) -> None:
         self._column_configs[row].output_name = text
         self._refresh_validation_indicators()
-        self._configuration_changed()
+        self._configuration_changed(row)
 
     def _prefix_changed(self, row: int, text: str) -> None:
         if not self._applying_suggestion:
             self._manually_changed_rows.add(row)
         self._column_configs[row].prefix = text
         self._refresh_validation_indicators()
-        self._configuration_changed()
+        self._configuration_changed(row)
 
     def _normalization_changed(self, row: int) -> None:
         if not self._applying_suggestion:
             self._manually_changed_rows.add(row)
         value = self._normalization_fields[row].currentData()
         self._column_configs[row].normalization_rule = NormalizationRule(value)
-        self._configuration_changed()
+        self._configuration_changed(row)
 
-    def _configuration_changed(self) -> None:
+    def _configuration_changed(self, review_row: int | None = None) -> None:
+        if review_row is not None:
+            self._unreviewed_headers.discard(self._column_configs[review_row].header)
         self._configuration_validated = False
         self._configuration_dirty = True
         self.generate_button.setEnabled(False)
@@ -538,7 +558,13 @@ class AnonymizationWidget(QWidget):
     def validate_current_configuration(self) -> None:
         result = validate_configuration(self._column_configs)
         self._refresh_validation_indicators()
-        if result.is_valid:
+        try:
+            self._build_current_plan()
+        except PlanningError as error:
+            self._configuration_validated = False
+            self.generate_button.setEnabled(False)
+            self._set_status(str(error), is_error=True)
+        else:
             self._configuration_validated = True
             self.generate_button.setEnabled(True)
             preserved = sum(
@@ -553,10 +579,19 @@ class AnonymizationWidget(QWidget):
                 f"{preserved} para preservar e {excluded} para excluir.",
                 is_error=False,
             )
-        else:
-            self._configuration_validated = False
-            self.generate_button.setEnabled(False)
-            self._set_status(result.error_message or "Configuração inválida.", is_error=True)
+
+    def _build_current_plan(self, composites=None):
+        if self._inspection_result is None:
+            raise PlanningError("Selecione um CSV antes de configurar composites.")
+        if self._profile_missing_headers:
+            raise PlanningError("Cabeçalhos não encontrados: " + ", ".join(self._profile_missing_headers) + ".")
+        if self._unreviewed_headers:
+            raise PlanningError("Colunas adicionais não conhecidas pelo perfil: " +
+                                ", ".join(sorted(self._unreviewed_headers)) + ". Revise a configuração.")
+        return ProfileService.build_configuration_plan(
+            self._inspection_result, self._column_configs,
+            self.composite_section.configurations if composites is None else composites,
+        )
 
     def analyze_columns(self) -> None:
         if self._detection_worker is not None and self._detection_worker.isRunning():
@@ -623,6 +658,7 @@ class AnonymizationWidget(QWidget):
             worker.deleteLater()
 
     def _set_detection_state(self, analyzing: bool) -> None:
+        self.composite_section.setEnabled(not analyzing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
         self.select_button.setEnabled(not analyzing)
         self.clear_button.setEnabled(not analyzing and has_file)
@@ -842,7 +878,8 @@ class AnonymizationWidget(QWidget):
         if not accepted:
             return
         try:
-            profile = self._profile_service.create(name, self._column_configs)
+            profile = self._profile_service.create(name, self._column_configs,
+                                                   composites=self.composite_section.configurations)
         except ProfileError as error:
             self._set_status(str(error), is_error=True)
             return
@@ -873,7 +910,8 @@ class AnonymizationWidget(QWidget):
             return
         try:
             updated = self._profile_service.update(
-                profile.identifier, self._column_configs
+                profile.identifier, self._column_configs,
+                composites=self.composite_section.configurations,
             )
         except ProfileError as error:
             self._set_status(str(error), is_error=True)
@@ -904,32 +942,26 @@ class AnonymizationWidget(QWidget):
         application = self._profile_service.apply(
             profile, self._inspection_result.headers
         )
-        if not application.has_matches:
+        if not application.has_matches and not application.composites:
             self._set_status(
                 "O perfil não é compatível com o CSV selecionado.", is_error=True
             )
             return
 
         self._apply_profile_configurations(application.configurations)
+        self.composite_section.set_configurations(application.composites)
+        self._unreviewed_headers = set(application.extra_headers)
+        self._profile_missing_headers = application.missing_headers
         self._configuration_dirty = False
-        if application.is_complete:
-            self.validate_current_configuration()
-            self._configuration_dirty = False
-            if self._configuration_validated:
-                self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False)
-            return
-
-        self._configuration_validated = False
-        self.generate_button.setEnabled(False)
-        validation = validate_configuration(self._column_configs)
-        details = application.compatibility_message
-        if not validation.is_valid:
-            details += " " + (validation.error_message or "Configuração inválida.")
-        self._set_status(
-            "O perfil foi aplicado parcialmente. "
-            + details,
-            is_error=True,
-        )
+        self.validate_current_configuration()
+        if self._configuration_validated:
+            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False)
+        else:
+            details = self.status_label.text()
+            scalar_validation = validate_configuration(self._column_configs)
+            if scalar_validation.error_message and scalar_validation.error_message not in details:
+                details += " " + scalar_validation.error_message
+            self._set_status("O perfil foi aplicado parcialmente. " + details, is_error=True)
 
     def _apply_profile_configurations(
         self, configurations: tuple[ProfileColumn, ...]
@@ -1058,6 +1090,13 @@ class AnonymizationWidget(QWidget):
     def _start_processing(self, destination: Path, *, overwrite: bool) -> None:
         if self._inspection_result is None:
             return
+        try:
+            plan = self._build_current_plan()
+        except PlanningError as error:
+            self._configuration_validated = False
+            self.generate_button.setEnabled(False)
+            self._set_status(str(error), is_error=True)
+            return
         self._clear_output_result()
         self._set_processing_state(True)
         self.progress_bar.setRange(0, 0)
@@ -1074,6 +1113,7 @@ class AnonymizationWidget(QWidget):
             self._key_provider,
             self._vault_repository_factory,
             overwrite=overwrite,
+            processing_plan=plan,
         )
         self._worker = worker
         worker.progress.connect(self._processing_progress)
@@ -1159,6 +1199,7 @@ class AnonymizationWidget(QWidget):
             self._set_status("Cancelamento solicitado...", is_error=False)
 
     def _set_processing_state(self, processing: bool) -> None:
+        self.composite_section.setEnabled(not processing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
         self.select_button.setEnabled(not processing)
         self.clear_button.setEnabled(not processing and has_file)

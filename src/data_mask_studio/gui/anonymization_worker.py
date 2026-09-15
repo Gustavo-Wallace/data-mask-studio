@@ -13,6 +13,7 @@ from data_mask_studio.csv_tools.csv_anonymizer import (
 )
 from data_mask_studio.csv_tools.models import CSVInspectionResult
 from data_mask_studio.performance import BALANCED_SETTINGS, ProgressLimiter
+from data_mask_studio.processing.models import ProcessingPlan
 from data_mask_studio.security import KeyProvider
 from data_mask_studio.vault import VaultRepository, create_default_vault_repository
 
@@ -36,9 +37,11 @@ class AnonymizationWorker(QThread):
         vault_repository_factory: VaultRepositoryFactory = create_default_vault_repository,
         *,
         overwrite: bool,
+        processing_plan: ProcessingPlan | None = None,
     ) -> None:
         super().__init__()
         self._inspection = inspection
+        self._processing_plan = processing_plan
         self._output_path = output_path
         self._configurations = [
             ColumnConfig(
@@ -75,6 +78,7 @@ class AnonymizationWorker(QThread):
                 encoding=self._inspection.encoding,
                 delimiter=self._inspection.delimiter,
                 configurations=self._configurations,
+                processing_plan=self._processing_plan,
                 secret_key=secret_key,
                 overwrite=self._overwrite,
                 progress_callback=report,
