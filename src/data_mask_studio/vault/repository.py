@@ -6,6 +6,10 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from data_mask_studio.vault.composite_repository import CompositeVaultRepository
 
 from data_mask_studio.normalization import (
     NormalizationError,
@@ -56,6 +60,14 @@ class VaultRepository:
             return self
         return VaultRepository(self.database_path, self._cipher, read_only=True)
 
+    def composite_repository(self) -> "CompositeVaultRepository":
+        """Acesso tipado ao mesmo cofre e à mesma chave, antes da transação."""
+        from data_mask_studio.vault.composite_repository import CompositeVaultRepository
+
+        return CompositeVaultRepository(
+            self.database_path, self._cipher, read_only=self._read_only,
+        )
+
     def _validate_read_only_schema(self) -> None:
         connection = connect_read_only(self.database_path)
         try:
@@ -93,7 +105,7 @@ class VaultRepository:
         connection = connect(self.database_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            transaction = VaultTransaction(connection, self._cipher)
+            transaction = VaultTransaction(connection, self._cipher, self.database_path)
             yield transaction
             connection.commit()
         except sqlite3.Error as error:
@@ -179,9 +191,12 @@ class VaultRepository:
 
 
 class VaultTransaction:
-    def __init__(self, connection: sqlite3.Connection, cipher: VaultCipher) -> None:
+    def __init__(
+        self, connection: sqlite3.Connection, cipher: VaultCipher, database_path: Path,
+    ) -> None:
         self._connection = connection
         self._cipher = cipher
+        self._database_path = database_path.resolve()
         self._connection.execute(
             "CREATE TEMP TABLE processing_changes ("
             "code TEXT PRIMARY KEY, change_type TEXT NOT NULL)"

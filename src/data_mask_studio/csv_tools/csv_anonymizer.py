@@ -14,11 +14,14 @@ from data_mask_studio.anonymization.models import (
     ColumnAction,
     ColumnConfig,
     NormalizationFallback,
+    RuleFallbackCount,
 )
 from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
+from data_mask_studio.processing.models import BoundCompositeColumn, ProcessingPlan
+from data_mask_studio.processing.composite_executor import CompositeExecutionError, execute_composite_row
 from data_mask_studio.vault import MappingCandidate, VaultCollisionError, VaultError
 from data_mask_studio.vault.models import VaultUpdateSummary
 from data_mask_studio.vault.repository import VaultRepository, VaultTransaction
@@ -41,7 +44,7 @@ def anonymize_csv(
     *,
     encoding: str,
     delimiter: str,
-    configurations: Sequence[ColumnConfig],
+    configurations: Sequence[ColumnConfig] = (),
     secret_key: bytes,
     overwrite: bool = False,
     progress_callback: ProgressCallback | None = None,
@@ -49,10 +52,18 @@ def anonymize_csv(
     vault_repository: VaultRepository | None = None,
     mapping_batch_size: int | None = None,
     performance_settings: PerformanceSettings = BALANCED_SETTINGS,
+    processing_plan: ProcessingPlan | None = None,
 ) -> AnonymizationResult:
     """Processa um CSV linha a linha e publica o resultado de forma atômica."""
     source = Path(source_path).expanduser().absolute()
     destination = Path(destination_path).expanduser().absolute()
+    # O plano validado é a autoridade; configurações legadas não o sobrescrevem.
+    if processing_plan is not None:
+        configurations = tuple(ColumnConfig(
+            column.reference.header, prefix=column.prefix,
+            normalization_rule=column.normalization_rule, action=column.action,
+            output_name=column.output_name,
+        ) for column in processing_plan.physical_columns)
     effective_batch_size = mapping_batch_size or performance_settings.mapping_batch_size
     _validate_request(
         source,
@@ -61,6 +72,7 @@ def anonymize_csv(
         secret_key,
         overwrite,
         effective_batch_size,
+        processing_plan,
     )
 
     temporary_path: Path | None = None
@@ -70,6 +82,13 @@ def anonymize_csv(
     input_encoding = python_codec(encoding)
     pending_mappings: dict[str, MappingCandidate] = {}
     fallback_counts: dict[int, int] = {}
+    composite_fallbacks: dict[NormalizationRule, int] = {}
+    scalar_occurrences = composite_occurrences = composite_tokens = 0
+    has_composites = processing_plan is not None and any(
+        isinstance(output, BoundCompositeColumn) for output in processing_plan.outputs
+    )
+    if has_composites and vault_repository is None:
+        raise CSVAnonymizationError("Um cofre é necessário para processar composites.")
     transaction_context = (
         vault_repository.transaction()
         if vault_repository is not None
@@ -77,6 +96,9 @@ def anonymize_csv(
     )
 
     try:
+        composite_repository = (
+            vault_repository.composite_repository() if has_composites else None
+        )
         with transaction_context as vault_transaction:
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -106,6 +128,7 @@ def anonymize_csv(
                             "Os cabeçalhos do arquivo foram alterados desde a seleção."
                         )
                     writer.writerow(
+                        processing_plan.final_headers if processing_plan is not None else
                         [
                             configuration.effective_output_header
                             for header, configuration in zip(
@@ -137,6 +160,7 @@ def anonymize_csv(
                         )
                         for index in fallback_indexes:
                             fallback_counts[index] = fallback_counts.get(index, 0) + 1
+                        scalar_occurrences += len(canonical_values)
                         if vault_transaction is not None:
                             _collect_mappings(
                                 row,
@@ -151,6 +175,20 @@ def anonymize_csv(
                                 or (records_processed + 1) % effective_batch_size == 0
                             ):
                                 _flush_mappings(vault_transaction, pending_mappings)
+                        if has_composites:
+                            composite_result = execute_composite_row(row, processing_plan, secret_key)
+                            for fallback in composite_result.fallbacks:
+                                composite_fallbacks[fallback.rule] = (
+                                    composite_fallbacks.get(fallback.rule, 0) + fallback.count
+                                )
+                            for cell in composite_result.cells:
+                                anonymized_row.append(cell.value)
+                                if cell.candidate is not None:
+                                    composite_repository.upsert_composite_mapping(
+                                        cell.candidate, transaction=vault_transaction,
+                                    )
+                                    composite_occurrences += cell.candidate.occurrences
+                                    composite_tokens += 1
                         writer.writerow(anonymized_row)
                         records_processed += 1
                         if progress_callback is not None:
@@ -172,6 +210,8 @@ def anonymize_csv(
         raise
     except CSVAnonymizationError:
         raise
+    except CompositeExecutionError:
+        raise CSVAnonymizationError("Não foi possível executar as composites do CSV.") from None
     except VaultError as error:
         raise CSVAnonymizationError(str(error)) from error
     except OSError as error:
@@ -200,6 +240,12 @@ def anonymize_csv(
         normalization_fallbacks=tuple(
             NormalizationFallback(configurations[index].header, count)
             for index, count in sorted(fallback_counts.items())
+        ),
+        scalar_mapping_occurrences=scalar_occurrences,
+        composite_mapping_occurrences=composite_occurrences,
+        composite_tokens_generated=composite_tokens,
+        composite_normalization_fallbacks=tuple(
+            RuleFallbackCount(rule, count) for rule, count in composite_fallbacks.items()
         ),
     )
 
@@ -282,6 +328,7 @@ def _validate_request(
     secret_key: bytes,
     overwrite: bool,
     mapping_batch_size: int,
+    processing_plan: ProcessingPlan | None = None,
 ) -> None:
     if paths_refer_to_same_file(source, destination):
         raise CSVAnonymizationError(
@@ -295,11 +342,12 @@ def _validate_request(
         raise CSVAnonymizationError("O arquivo de destino já existe.")
     if not secret_key:
         raise CSVAnonymizationError("A chave secreta local é inválida.")
-    validation = validate_configuration(configurations)
-    if not validation.is_valid:
-        raise CSVAnonymizationError(
-            validation.error_message or "A configuração das colunas é inválida."
-        )
+    if processing_plan is None:
+        validation = validate_configuration(configurations)
+        if not validation.is_valid:
+            raise CSVAnonymizationError(
+                validation.error_message or "A configuração das colunas é inválida."
+            )
     if mapping_batch_size <= 0:
         raise CSVAnonymizationError("O tamanho do lote de mapeamentos é inválido.")
 

@@ -3,6 +3,7 @@ import hmac
 import json
 import re
 import sqlite3
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -13,7 +14,7 @@ from data_mask_studio.vault.composite_models import (
 )
 from data_mask_studio.vault.composite_payload import composite_aad, decode_payload, encode_tuple
 from data_mask_studio.vault.exceptions import VaultCollisionError, VaultError
-from data_mask_studio.vault.repository import VaultRepository
+from data_mask_studio.vault.repository import VaultRepository, VaultTransaction
 
 
 class CompositeVaultRepository(VaultRepository):
@@ -38,14 +39,26 @@ class CompositeVaultRepository(VaultRepository):
         mapping = self.get_composite_mapping(code)
         return mapping.variations if mapping else ()
 
-    def upsert_composite_mapping(self, candidate: CompositeMappingCandidate) -> None:
+    def upsert_composite_mapping(
+        self, candidate: CompositeMappingCandidate, *,
+        transaction: VaultTransaction | None = None,
+    ) -> None:
         """Conta a observação no mapping e na tuple; não aceita incrementos separados."""
         try:
-            self._upsert_composite(candidate)
+            if transaction is not None and (
+                self._read_only or transaction._cipher is not self._cipher
+                or transaction._database_path != self.database_path.resolve()
+                or not transaction._connection.in_transaction
+            ):
+                raise VaultError("Transação composta incompatível.")
+            self._upsert_composite(candidate, transaction)
         except (ValueError, TypeError, KeyError, NormalizationError):
             raise VaultError("Configuração composta inválida.") from None
 
-    def _upsert_composite(self, candidate: CompositeMappingCandidate) -> None:
+    def _upsert_composite(
+        self, candidate: CompositeMappingCandidate,
+        transaction: VaultTransaction | None = None,
+    ) -> None:
         if (candidate.identity_version != 1 or candidate.payload_version != 1
                 or type(candidate.occurrences) is not int or candidate.occurrences <= 0):
             raise VaultError("Versão ou contagem composta inválida.")
@@ -62,7 +75,7 @@ class CompositeVaultRepository(VaultRepository):
                         identity_version=1, payload_version=1, aad_version=1,
                         component_count=len(rules), rules=json.dumps([r.value for r in rules]))
         now = datetime.now(timezone.utc).isoformat()
-        with self.transaction() as transaction:
+        with (nullcontext(transaction) if transaction is not None else self.transaction()) as transaction:
             connection = transaction._connection
             if connection.execute("SELECT 1 FROM vault_mappings WHERE code = ?", (candidate.code,)).fetchone():
                 raise VaultCollisionError("Conflito de tipo de código no cofre local.")

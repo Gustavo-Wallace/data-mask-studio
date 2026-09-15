@@ -92,3 +92,15 @@ class AnonymizationResult:
     new_mappings: int = 0
     updated_mappings: int = 0
     normalization_fallbacks: tuple[NormalizationFallback, ...] = ()
+    scalar_mapping_occurrences: int = 0
+    composite_mapping_occurrences: int = 0
+    composite_tokens_generated: int = 0
+    composite_normalization_fallbacks: tuple["RuleFallbackCount", ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RuleFallbackCount:
+    """Contagem agregada por regra, sem conteúdo das células."""
+
+    rule: NormalizationRule
+    count: int
