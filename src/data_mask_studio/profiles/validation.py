@@ -104,7 +104,7 @@ def validate_profile_column(column: ProfileColumn) -> None:
     if not isinstance(column.prefix, str):
         raise ProfileValidationError("Um prefixo do perfil é inválido.")
     if not isinstance(column.output_name, str):
-        raise ProfileValidationError("Um nome de saída do perfil é inválido.")
+        raise ProfileValidationError("Um cabeçalho de saída do perfil é inválido.")
     if column.action is ColumnAction.MASK:
         prefix_error = validate_prefix(column.prefix)
         if prefix_error is not None:

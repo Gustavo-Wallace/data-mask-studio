@@ -66,7 +66,7 @@ def build_processing_plan(
             raise PlanningError("Identificador de composite repetido.")
         identifiers.add(composite.identifier)
         if not isinstance(composite.output_name, str) or not composite.output_name.strip():
-            raise PlanningError("Informe um nome de saída para a composite.")
+            raise PlanningError("Informe um cabeçalho de saída para a composite.")
         if not isinstance(composite.prefix, str):
             raise PlanningError("Prefixo de composite inválido.")
         prefix_error = composite_action_error(composite.action, composite.prefix)
@@ -99,6 +99,6 @@ def build_processing_plan(
     names: set[str] = set()
     for output in outputs:
         if output.output_name in names:
-            raise PlanningError(f"Nome de saída repetido: {output.output_name}.")
+            raise PlanningError(f"Cabeçalho de saída repetido: {output.output_name}.")
         names.add(output.output_name)
     return ProcessingPlan(tuple(physical), tuple(outputs))

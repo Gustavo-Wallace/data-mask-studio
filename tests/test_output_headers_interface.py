@@ -131,5 +131,5 @@ def test_profile_collision_remains_visible_in_gui(editor, tmp_path):
     widget.apply_profile_button.click()
     app.processEvents()
     assert not widget.generate_button.isEnabled()
-    assert "Nome de saída repetido" in widget.status_label.text()
+    assert "Cabeçalho de saída repetido" in widget.status_label.text()
     assert widget._output_name_fields[0].styleSheet()

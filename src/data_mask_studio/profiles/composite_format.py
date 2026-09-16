@@ -48,7 +48,7 @@ def validate_composite(composite: CompositeColumnConfig) -> None:
     if not isinstance(composite.identifier, UUID) or not composite.identifier.int:
         raise ValueError("Identificador composto inválido.")
     if not isinstance(composite.output_name, str) or not composite.output_name.strip():
-        raise ValueError("Nome de saída composto inválido.")
+        raise ValueError("Cabeçalho de saída composto inválido.")
     if composite_action_error(composite.action, composite.prefix):
         raise ValueError("Prefixo composto inválido.")
     if len(composite.components) < 2:

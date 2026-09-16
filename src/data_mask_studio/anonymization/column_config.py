@@ -94,6 +94,6 @@ def output_header_errors(configurations: Sequence[ColumnConfig]) -> dict[int, st
         if len(indexes) < 2:
             continue
         origins = ", ".join(configurations[index].header for index in indexes)
-        message = f"Nome de saída repetido “{name}” nas colunas: {origins}."
+        message = f"Cabeçalho de saída repetido “{name}” nas colunas: {origins}."
         errors.update((index, message) for index in indexes)
     return errors

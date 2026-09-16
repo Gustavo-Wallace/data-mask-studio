@@ -123,14 +123,14 @@ def test_scalar_composite_collision_after_trim():
     target = inspection("NOME", "CPF")
     configs = scalars(target)
     configs[0].output_name = " PESSOA "
-    with pytest.raises(PlanningError, match="Nome de saída repetido"):
+    with pytest.raises(PlanningError, match="Cabeçalho de saída repetido"):
         build_processing_plan(target, configs, [composite(target, "PESSOA ")])
 
 
 def test_composite_collision_order_and_literal_names():
     target = inspection("NOME", "CPF")
     first, second = composite(target), composite(target, " PESSOA ")
-    with pytest.raises(PlanningError, match="Nome de saída repetido"):
+    with pytest.raises(PlanningError, match="Cabeçalho de saída repetido"):
         build_processing_plan(target, scalars(target), [first, second])
     second = replace(second, output_name=" pessoa  completa ")
     plan = build_processing_plan(target, scalars(target), [second, first])
@@ -142,7 +142,7 @@ def test_composite_collision_order_and_literal_names():
 @pytest.mark.parametrize("name", ["", " \t ", None])
 def test_invalid_output_name(name):
     target = inspection("NOME", "CPF")
-    with pytest.raises(PlanningError, match="nome de saída"):
+    with pytest.raises(PlanningError, match="cabeçalho de saída"):
         build_processing_plan(target, scalars(target), [composite(target, name)])
 
 

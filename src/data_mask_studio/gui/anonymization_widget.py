@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
 from data_mask_studio.anonymization import (
     AnonymizationResult,
     ColumnAction,
@@ -92,17 +93,6 @@ ACTION_OPTIONS = (
     (ColumnAction.EXCLUDE, "Excluir"),
 )
 
-ACTION_INDICATOR_STYLES = {
-    ColumnAction.PRESERVE: (
-        "QComboBox { background-color: #18202a; border-color: #465569; }"
-    ),
-    ColumnAction.MASK: (
-        "QComboBox { background-color: #1d3449; border-color: #347db8; }"
-    ),
-    ColumnAction.EXCLUDE: (
-        "QComboBox { background-color: #352322; border-color: #854842; }"
-    ),
-}
 
 
 class AnonymizationWidget(QWidget):
@@ -399,7 +389,7 @@ class AnonymizationWidget(QWidget):
 
             output_name_field = QLineEdit()
             output_name_field.setPlaceholderText("Manter original")
-            output_name_field.setAccessibleName(f"Nome de saída da coluna {configuration.header}")
+            output_name_field.setAccessibleName(f"Cabeçalho de saída da coluna {configuration.header}")
             self.config_table.setCellWidget(row, 2, output_name_field)
 
             prefix_field = QLineEdit()

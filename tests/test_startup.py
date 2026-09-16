@@ -233,7 +233,7 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     assert [
         window.config_table.horizontalHeaderItem(index).text()
         for index in range(window.config_table.columnCount())
-    ] == ["Ação", "Cabeçalho", "Nome de saída", "Prefixo", "Normalização"]
+    ] == ["Ação", "Cabeçalho", "Cabeçalho de saída", "Prefixo", "Normalização"]
     header = window.config_table.horizontalHeader()
     assert [header.sectionResizeMode(index) for index in range(5)] == [
         QHeaderView.ResizeMode.ResizeToContents,

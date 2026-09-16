@@ -91,7 +91,7 @@ def test_output_collisions_rejected_before_output_or_vault_transaction(tmp_path,
     source = tmp_path / "source.csv"
     source.write_text("NOME,CPF\nAna,123\n", encoding="utf-8")
     output = tmp_path / "output.csv"
-    with pytest.raises(CSVAnonymizationError, match="Nome de saída repetido"):
+    with pytest.raises(CSVAnonymizationError, match="Cabeçalho de saída repetido"):
         anonymize_csv(source, output, encoding="utf-8", delimiter=",", configurations=configs, secret_key=KEY)
     assert not output.exists()
     assert not list(tmp_path.glob("*.tmp"))
@@ -104,7 +104,7 @@ def test_output_headers_use_literal_case_sensitive_comparison():
 def test_profile_rejects_conflicting_output_names(tmp_path):
     repository = ProfileRepository(tmp_path / "profiles.json")
     service = ProfileService(repository)
-    with pytest.raises(ProfileValidationError, match="Nome de saída repetido"):
+    with pytest.raises(ProfileValidationError, match="Cabeçalho de saída repetido"):
         service.create("Conflito", [ColumnConfig("A", output_name=" B "), ColumnConfig("B")])
     assert not repository.path.exists()
 
@@ -194,7 +194,7 @@ def test_batch_validation_catches_profile_rename_collision_with_extra_column(tmp
     validate_file(item, profile, service)
     assert item.status is BatchFileStatus.INCOMPATIBLE
     assert "Colunas adicionais não conhecidas pelo perfil: CPF" in item.result_message
-    assert "Nome de saída repetido" not in item.result_message
+    assert "Cabeçalho de saída repetido" not in item.result_message
 
 
 def test_batch_validation_catches_profile_rename_collision_with_known_columns(tmp_path):
@@ -210,6 +210,6 @@ def test_batch_validation_catches_profile_rename_collision_with_known_columns(tm
     item = BatchFile(source)
     validate_file(item, profile, service)
     assert item.status is BatchFileStatus.INCOMPATIBLE
-    assert "Nome de saída repetido" in item.result_message
+    assert "Cabeçalho de saída repetido" in item.result_message
     assert "NOME" in item.result_message and "CPF" in item.result_message
     assert "Colunas adicionais" not in item.result_message

@@ -18,7 +18,7 @@ class ColumnConfigurationTable(EmptyStateTable):
             parent,
         )
         self.setHorizontalHeaderLabels(
-            ["Ação", "Cabeçalho", "Nome de saída", "Prefixo", "Normalização"]
+            ["Ação", "Cabeçalho", "Cabeçalho de saída", "Prefixo", "Normalização"]
         )
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)

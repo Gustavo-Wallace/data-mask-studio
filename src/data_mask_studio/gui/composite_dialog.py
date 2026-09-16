@@ -5,7 +5,7 @@ from uuid import uuid4
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QLayout, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from data_mask_studio.csv_tools.models import CSVInspectionResult
@@ -73,19 +73,19 @@ class CompositeDialog(QDialog):
         self._inspection = inspection
         self._validate = validate
         self._identifier = composite.identifier if composite else uuid4()
-        self._action = composite.action if composite else ColumnAction.MASK
+        self._action = composite.action if composite else ColumnAction.PRESERVE
+        self._prefix = composite.prefix if composite else ""
         self.result_config: CompositeColumnConfig | None = None
         self.rows: list[ComponentRow] = []
         self.name_field = QLineEdit(composite.output_name if composite else "")
-        self.prefix_field = QLineEdit(composite.prefix if composite else "")
-        self.prefix_field.setToolTip("Use o prefixo sem hífen, por exemplo CORR.")
         form = QFormLayout()
-        form.addRow("Nome de saída:", self.name_field)
-        form.addRow("Prefixo:", self.prefix_field)
+        form.addRow("Cabeçalho de saída:", self.name_field)
+        self.name_field.setAccessibleName("Cabeçalho de saída")
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         body = QWidget()
         self.rows_layout = QVBoxLayout(body)
+        self.rows_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.rows_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(body)
         self.add_button = QPushButton("+ Adicionar componente")
@@ -119,7 +119,7 @@ class CompositeDialog(QDialog):
             if len(inspection.headers) > 1:
                 self.rows[1].source.setCurrentIndex(1)
         available = self.screen().availableGeometry()
-        self.resize(min(self.sizeHint().width(), available.width()), min(460, available.height()))
+        self.resize(min(self.sizeHint().width(), available.width()), min(self.sizeHint().height(), available.height()))
 
     def add_component(self, component=None):
         row = ComponentRow(self._inspection, component, self)
@@ -150,10 +150,17 @@ class CompositeDialog(QDialog):
         for index, row in enumerate(self.rows):
             row.up.setEnabled(index > 0)
             row.down.setEnabled(index < len(self.rows) - 1)
+        if self.rows:
+            margins = self.rows_layout.contentsMargins()
+            height = sum(row.sizeHint().height() for row in self.rows)
+            height += max(0, len(self.rows) - 1) * self.rows_layout.spacing()
+            height += margins.top() + margins.bottom() + 2 * self.scroll.frameWidth()
+            self.scroll.setFixedHeight(min(height, self.screen().availableGeometry().height() // 3))
+            self.adjustSize()
 
     def accept(self):
         candidate = CompositeColumnConfig(
-            self.name_field.text().strip(), self.prefix_field.text(),
+            self.name_field.text().strip(), self._prefix,
             tuple(row.component() for row in self.rows), self._identifier, self._action,
         )
         try:

@@ -41,19 +41,21 @@ def editor(widget, existing=None):
 
 def fill(dialog):
     dialog.name_field.setText('  PESSOA_CORRELACAO  ')
-    dialog.prefix_field.setText('CORR')
     dialog.rows[0].normalization.setCurrentIndex(dialog.rows[0].normalization.findData(Rule.PERSON_NAME))
     dialog.rows[1].normalization.setCurrentIndex(dialog.rows[1].normalization.findData(Rule.CPF))
 
 
-def create(widget):
+def create(widget, *, mask=True):
     dialog = editor(widget)
     fill(dialog)
     dialog.accept()
     assert dialog.result() == QDialog.DialogCode.Accepted
     config = dialog.result_config
     widget.composite_section.set_configurations((config,), notify=True)
-    return config
+    if mask:
+        widget.composite_section.table.cellWidget(0, 0).setCurrentIndex(1)
+        widget.composite_section.table.cellWidget(0, 3).setText('CORR')
+    return widget.composite_section.configurations[0]
 
 
 def test_empty_state_create_edit_cancel_delete_and_uuid(gui, monkeypatch):
@@ -71,14 +73,13 @@ def test_empty_state_create_edit_cancel_delete_and_uuid(gui, monkeypatch):
     section.add_button.click()
     original = section.configurations[0]
     assert original.identifier.int and original.output_name == 'PESSOA_CORRELACAO'
-    assert original.prefix == 'CORR'
+    assert original.prefix == '' and original.action is Action.PRESERVE
     assert [s.reference.header for s in original.components] == ['NOME', 'CPF']
     assert [s.normalization_rule for s in original.components] == [Rule.PERSON_NAME, Rule.CPF]
     assert section.empty_label.isHidden() and section.table.rowCount() == 1
 
     def edit_dialog(dialog):
         dialog.name_field.setText('OUTRO NOME')
-        dialog.prefix_field.setText('OTHER')
         dialog.rows[0].normalization.setCurrentIndex(0)
         dialog.accept()
         return dialog.result()
@@ -127,7 +128,7 @@ def test_component_order_excluded_sources_and_initial_layout(gui):
     dialog.close()
 
 
-@pytest.mark.parametrize('invalid', ['minimum', 'duplicate', 'name', 'prefix', 'collision'])
+@pytest.mark.parametrize('invalid', ['minimum', 'duplicate', 'name', 'collision'])
 def test_dialog_validation_reuses_planner(gui, invalid):
     _, widget, _ = gui
     dialog = editor(widget)
@@ -135,7 +136,6 @@ def test_dialog_validation_reuses_planner(gui, invalid):
     if invalid == 'minimum': dialog.remove_component(dialog.rows[0])
     elif invalid == 'duplicate': dialog.rows[1].source.setCurrentIndex(0)
     elif invalid == 'name': dialog.name_field.setText('  ')
-    elif invalid == 'prefix': dialog.prefix_field.setText('invalid prefix')
     elif invalid == 'collision': dialog.name_field.setText('IDADE')
     dialog.accept()
     assert dialog.result_config is None and dialog.error_label.text()
@@ -304,7 +304,131 @@ def test_section_preserves_creation_order_and_deletes_only_selected(gui, monkeyp
     section.add_button.click()
     first, second = section.configurations
     assert first.identifier != second.identifier
-    assert [section.table.item(i, 0).text() for i in range(2)] == ['ZETA', 'ALFA']
+    assert [section.table.item(i, 1).text() for i in range(2)] == ['ZETA', 'ALFA']
     assert widget._build_current_plan().final_headers[-2:] == ('ZETA', 'ALFA')
     section.remove(0)
     assert section.configurations == (second,)
+
+
+def test_action_transitions_validation_and_profile_round_trip(gui, monkeypatch):
+    app, widget, service = gui
+    original = create(widget, mask=False)
+    section = widget.composite_section
+    combo = section.table.cellWidget(0, 0)
+    prefix = section.table.cellWidget(0, 3)
+    assert [combo.itemText(i) for i in range(combo.count())] == ['Preservar', 'Mascarar']
+    assert not prefix.isEnabled() and prefix.text() == ''
+    assert combo.property('columnAction') == 'preserve'
+    combo.setCurrentIndex(1)
+    assert prefix.isEnabled() and prefix.text() == ''
+    widget.validate_current_configuration()
+    assert not widget.generate_button.isEnabled() and prefix.styleSheet()
+    monkeypatch.setattr(AnonymizationWorker, 'start', lambda self: pytest.fail('Worker inválido'))
+    blocked_output = widget._inspection_result.path.parent / 'blocked.csv'
+    widget._start_processing(blocked_output, overwrite=False)
+    assert not blocked_output.exists()
+    prefix.setText('invalid prefix')
+    widget.validate_current_configuration()
+    assert not widget.generate_button.isEnabled()
+    prefix.setText('CORR')
+    widget.validate_current_configuration()
+    assert widget.generate_button.isEnabled() and not prefix.styleSheet()
+    masked = section.configurations[0]
+    assert masked == replace(original, action=Action.MASK, prefix='CORR')
+    dialog = editor(widget, masked)
+    assert not hasattr(dialog, 'prefix_field')
+    dialog.name_field.setText('EDITADA')
+    dialog.accept()
+    assert dialog.result_config == replace(masked, output_name='EDITADA')
+    monkeypatch.setattr(QInputDialog, 'getText', lambda *a, **k: ('Ações', True))
+    monkeypatch.setattr(QMessageBox, 'question', lambda *a, **k: QMessageBox.StandardButton.Yes)
+    widget.save_as_profile()
+    section.set_configurations(())
+    widget.apply_selected_profile()
+    assert section.configurations == (masked,)
+    assert section.table.cellWidget(0, 3).isEnabled()
+    combo = section.table.cellWidget(0, 0)
+    event = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(), QPoint(0, -120),
+                        Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+                        Qt.ScrollPhase.NoScrollPhase, False)
+    app.sendEvent(combo, event)
+    assert Action(combo.currentData()) is Action.MASK
+    combo.setCurrentIndex(0)
+    assert section.configurations == (original,)
+    assert not section.table.cellWidget(0, 3).isEnabled()
+    assert section.table.cellWidget(0, 3).text() == ''
+    widget.validate_current_configuration()
+    widget.update_selected_profile()
+    assert service.list_profiles()[0].composites == (original,)
+    section.set_configurations(())
+    widget.apply_selected_profile()
+    assert section.configurations == (original,)
+    assert not section.table.cellWidget(0, 3).isEnabled()
+
+
+@pytest.mark.parametrize('mixed', [False, True])
+def test_gui_preserve_and_mixed_real_output(gui, tmp_path, monkeypatch, mixed):
+    _, widget, _ = gui
+    for field in widget._action_fields:
+        field.setCurrentIndex(field.findData(Action.EXCLUDE))
+    clear = create(widget, mask=False)
+    composites = [clear]
+    if mixed:
+        from uuid import uuid4
+        composites.append(replace(clear, identifier=uuid4(), output_name='TOKEN', action=Action.MASK, prefix='CORR'))
+    widget.composite_section.set_configurations(composites, notify=True)
+    widget.validate_current_configuration()
+    assert widget.generate_button.isEnabled()
+    calls = []
+    class Key:
+        def get_key(self):
+            calls.append('key')
+            assert mixed
+            return b'G' * 32
+    def vault():
+        calls.append('vault')
+        assert mixed
+        return VaultRepository(tmp_path / 'vault.db', VaultCipher(b'V' * 32))
+    widget._key_provider = Key()
+    widget._vault_repository_factory = vault
+    monkeypatch.setattr(AnonymizationWorker, 'start', lambda self: self.run())
+    output = tmp_path / 'clear.csv'
+    widget._start_processing(output, overwrite=False)
+    with output.open(encoding='utf-8-sig', newline='') as stream:
+        headers, row = list(csv.reader(stream))
+    assert headers == [c.output_name for c in composites]
+    assert row[0] == '["gustavo wallace","99999999999"]'
+    if mixed:
+        assert calls == ['key', 'vault']
+        assert row[1].startswith('CORR-')
+        repo = VaultRepository(tmp_path / 'vault.db', VaultCipher(b'V' * 32))
+        assert repo.composite_repository().get_composite_mapping(row[1]).occurrence_count == 1
+    else:
+        assert not calls and not (tmp_path / 'vault.db').exists()
+
+
+def test_refined_dialog_and_table_layout(gui):
+    app, widget, _ = gui
+    section = widget.composite_section
+    create(widget, mask=False)
+    widget.resize(900, 600)
+    widget.show()
+    app.processEvents()
+    assert [section.table.horizontalHeaderItem(i).text() for i in range(5)] == [
+        'Ação', 'Cabeçalho de saída', 'Componentes', 'Prefixo', 'Ações']
+    assert widget.config_table.horizontalHeaderItem(2).text() == 'Cabeçalho de saída'
+    for column in (0, 3, 4):
+        assert section.table.cellWidget(0, column).width() <= section.table.columnWidth(column)
+    dialog = editor(widget)
+    dialog.show()
+    app.processEvents()
+    assert dialog.name_field.accessibleName() == 'Cabeçalho de saída'
+    initial = dialog.height()
+    assert not hasattr(dialog, 'prefix_field')
+    for _ in range(12):
+        dialog.add_component()
+    app.processEvents()
+    assert dialog.height() >= initial
+    assert dialog.scroll.verticalScrollBar().maximum() > 0
+    assert dialog.height() <= dialog.screen().availableGeometry().height()
+    dialog.close()
