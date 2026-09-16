@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.csv_tools.models import CSVInspectionResult
+from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.csv_tools.source_binding import SourceBindingError, bind_source, source_ref_at
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.normalization import NORMALIZATION_OPTIONS, NormalizationRule
@@ -72,6 +73,7 @@ class CompositeDialog(QDialog):
         self._inspection = inspection
         self._validate = validate
         self._identifier = composite.identifier if composite else uuid4()
+        self._action = composite.action if composite else ColumnAction.MASK
         self.result_config: CompositeColumnConfig | None = None
         self.rows: list[ComponentRow] = []
         self.name_field = QLineEdit(composite.output_name if composite else "")
@@ -152,7 +154,7 @@ class CompositeDialog(QDialog):
     def accept(self):
         candidate = CompositeColumnConfig(
             self.name_field.text().strip(), self.prefix_field.text(),
-            tuple(row.component() for row in self.rows), self._identifier,
+            tuple(row.component() for row in self.rows), self._identifier, self._action,
         )
         try:
             self._validate(candidate)

@@ -3,8 +3,11 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from uuid import UUID
+import json
 
 from data_mask_studio.anonymization.anonymizer import _normalize_with_fallback
+from data_mask_studio.anonymization.models import ColumnAction
+from data_mask_studio.processing.composite_actions import composite_action_error
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.processing.composite_identity import generate_composite_token
 from data_mask_studio.processing.models import BoundCompositeColumn, ProcessingPlan
@@ -22,6 +25,7 @@ class CompositeCellResult:
     output_name: str
     value: str = field(repr=False)
     candidate: CompositeMappingCandidate | None = field(repr=False)
+    action: ColumnAction
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +41,7 @@ class CompositeExecutionResult:
 
 
 def execute_composite_row(
-    original_row: Sequence[str], plan: ProcessingPlan, key: bytes,
+    original_row: Sequence[str], plan: ProcessingPlan, key: bytes | None = None,
 ) -> CompositeExecutionResult:
     """Retorna a linha composta inteira ou falha; caller persiste os candidatos.
 
@@ -55,10 +59,14 @@ def execute_composite_row(
         for output_index, composite in enumerate(plan.outputs):
             if not isinstance(composite, BoundCompositeColumn):
                 continue
+            if composite_action_error(composite.action, composite.prefix):
+                raise CompositeExecutionError("Configuração composta inválida.")
+            if composite.action is ColumnAction.MASK and not key:
+                raise CompositeExecutionError("Chave necessária para mascarar a composite.")
             original = tuple(original_row[part.input_index] for part in composite.components)
             if all(value == "" or value.isspace() for value in original):
                 cells.append(CompositeCellResult(composite.identifier, output_index,
-                                                 composite.output_name, "", None))
+                                                 composite.output_name, "", None, composite.action))
                 continue
             canonical: list[str] = []
             effective_rules: list[NormalizationRule] = []
@@ -72,13 +80,19 @@ def execute_composite_row(
                 if fallback:
                     counts[part.normalization_rule] += 1
             values = tuple(canonical)
+            if composite.action is ColumnAction.PRESERVE:
+                cells.append(CompositeCellResult(
+                    composite.identifier, output_index, composite.output_name,
+                    json.dumps(values, ensure_ascii=False, separators=(",", ":")), None, composite.action,
+                ))
+                continue
             token = generate_composite_token(key, composite.prefix, values)
             candidate = CompositeMappingCandidate(
                 code=token, prefix=composite.prefix, canonical_values=values,
                 original_values=original, normalization_rules=tuple(effective_rules),
             )
             cells.append(CompositeCellResult(composite.identifier, output_index,
-                                             composite.output_name, token, candidate))
+                                             composite.output_name, token, candidate, composite.action))
     except Exception:
         # Erros inesperados não viram fallback e não expõem a linha via traceback.
         raise CompositeExecutionError("Não foi possível executar as composites da linha.") from None

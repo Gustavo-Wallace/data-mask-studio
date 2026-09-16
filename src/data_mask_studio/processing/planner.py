@@ -3,7 +3,7 @@ from uuid import UUID
 
 from data_mask_studio.anonymization.column_config import validate_configuration
 from data_mask_studio.anonymization.models import ColumnAction, ColumnConfig
-from data_mask_studio.anonymization.prefix_rules import validate_prefix
+from data_mask_studio.processing.composite_actions import composite_action_error
 from data_mask_studio.csv_tools.models import CSVInspectionResult
 from data_mask_studio.csv_tools.source_binding import (
     SourceBindingError, SourceColumnRef, bind_source, source_ref_at,
@@ -69,7 +69,7 @@ def build_processing_plan(
             raise PlanningError("Informe um nome de saída para a composite.")
         if not isinstance(composite.prefix, str):
             raise PlanningError("Prefixo de composite inválido.")
-        prefix_error = validate_prefix(composite.prefix)
+        prefix_error = composite_action_error(composite.action, composite.prefix)
         if prefix_error:
             raise PlanningError(prefix_error)
         if len(composite.components) < 2:
@@ -91,7 +91,7 @@ def build_processing_plan(
             seen_indexes.add(index)
             sources.append(BoundCompositeSource(index, component.reference, component.normalization_rule))
         outputs.append(BoundCompositeColumn(
-            composite.identifier, composite.output_name.strip(), composite.prefix, tuple(sources),
+            composite.identifier, composite.output_name.strip(), composite.prefix, tuple(sources), composite.action,
         ))
 
     if not outputs:

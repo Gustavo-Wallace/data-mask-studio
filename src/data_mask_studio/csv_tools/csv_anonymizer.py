@@ -45,7 +45,7 @@ def anonymize_csv(
     encoding: str,
     delimiter: str,
     configurations: Sequence[ColumnConfig] = (),
-    secret_key: bytes,
+    secret_key: bytes | None = None,
     overwrite: bool = False,
     progress_callback: ProgressCallback | None = None,
     should_cancel: CancellationCheck | None = None,
@@ -87,7 +87,13 @@ def anonymize_csv(
     has_composites = processing_plan is not None and any(
         isinstance(output, BoundCompositeColumn) for output in processing_plan.outputs
     )
-    if has_composites and vault_repository is None:
+    has_masked_composites = processing_plan is not None and any(
+        isinstance(output, BoundCompositeColumn) and output.action is ColumnAction.MASK
+        for output in processing_plan.outputs
+    )
+    if processing_plan is not None and not processing_plan.requires_masking:
+        vault_repository = None
+    if has_masked_composites and vault_repository is None:
         raise CSVAnonymizationError("Um cofre é necessário para processar composites.")
     transaction_context = (
         vault_repository.transaction()
@@ -97,7 +103,7 @@ def anonymize_csv(
 
     try:
         composite_repository = (
-            vault_repository.composite_repository() if has_composites else None
+            vault_repository.composite_repository() if has_masked_composites else None
         )
         with transaction_context as vault_transaction:
             with tempfile.NamedTemporaryFile(
@@ -325,7 +331,7 @@ def _validate_request(
     source: Path,
     destination: Path,
     configurations: Sequence[ColumnConfig],
-    secret_key: bytes,
+    secret_key: bytes | None,
     overwrite: bool,
     mapping_batch_size: int,
     processing_plan: ProcessingPlan | None = None,
@@ -340,7 +346,9 @@ def _validate_request(
         raise CSVAnonymizationError("A pasta escolhida para o arquivo não existe.")
     if destination.exists() and not overwrite:
         raise CSVAnonymizationError("O arquivo de destino já existe.")
-    if not secret_key:
+    needs_key = (processing_plan.requires_masking if processing_plan is not None else
+                 any(column.action is ColumnAction.MASK for column in configurations))
+    if needs_key and not secret_key:
         raise CSVAnonymizationError("A chave secreta local é inválida.")
     if processing_plan is None:
         validation = validate_configuration(configurations)

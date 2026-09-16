@@ -61,8 +61,8 @@ class BatchService:
         files: list[BatchFile],
         profile: ConfigurationProfile,
         output_directory: str | Path,
-        key_provider: KeyProvider,
-        vault_repository_factory: Callable[[], VaultRepository],
+        key_provider: KeyProvider | None = None,
+        vault_repository_factory: Callable[[], VaultRepository] | None = None,
         *,
         cancellation: CancellationRequest | None = None,
         file_callback: FileCallback | None = None,
@@ -110,8 +110,9 @@ class BatchService:
             raise BatchStructuralError(str(error)) from error
 
         try:
-            secret_key = key_provider.get_key()
-            vault_repository = vault_repository_factory()
+            needs_masking = any(plan.requires_masking for plan in plans.values())
+            secret_key = key_provider.get_key() if needs_masking else None
+            vault_repository = vault_repository_factory() if needs_masking else None
         except (KeyProviderError, VaultError) as error:
             _mark_remaining_skipped(compatible, file_callback)
             raise BatchStructuralError(str(error)) from error
@@ -120,7 +121,7 @@ class BatchService:
             raise BatchStructuralError(
                 "Não foi possível preparar os recursos seguros do lote."
             ) from error
-        if not secret_key:
+        if needs_masking and not secret_key:
             _mark_remaining_skipped(compatible, file_callback)
             raise BatchStructuralError("A chave HMAC local não está disponível.")
 

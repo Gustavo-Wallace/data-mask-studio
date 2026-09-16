@@ -21,7 +21,7 @@ def plan_for(rules=(Rule.PERSON_NAME, Rule.CPF), headers=("NOME", "CPF")):
     inspection = CSVInspectionResult(Path("not-read.csv"), "utf-8", ",", list(headers))
     definition = CompositeColumnConfig("PESSOA", "CORR", tuple(
         CompositeSource(source_ref_at(inspection, index), rule) for index, rule in enumerate(rules)
-    ))
+    ), action=ColumnAction.MASK)
     return build_processing_plan(inspection, [ColumnConfig(h, action=ColumnAction.EXCLUDE) for h in headers], [definition])
 
 
@@ -181,7 +181,7 @@ def test_physical_indexes_are_not_scalar_projection_indexes():
     definition = CompositeColumnConfig("PESSOA", "CORR", (
         CompositeSource(source_ref_at(inspection, 0), Rule.PERSON_NAME),
         CompositeSource(source_ref_at(inspection, 1), Rule.CPF),
-    ))
+    ), action=ColumnAction.MASK)
     plan = build_processing_plan(inspection, [
         ColumnConfig("NOME", action=ColumnAction.EXCLUDE),
         ColumnConfig("CPF", action=ColumnAction.EXCLUDE), ColumnConfig("IDADE"),

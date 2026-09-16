@@ -1,8 +1,9 @@
 """Formato lógico de composites: não faz binding nem persiste estado de execução."""
 from uuid import UUID
 
-from data_mask_studio.anonymization.prefix_rules import validate_prefix
+from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.csv_tools.source_binding import SourceColumnRef
+from data_mask_studio.processing.composite_actions import composite_action_error
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.processing.models import CompositeColumnConfig, CompositeSource
 
@@ -48,7 +49,7 @@ def validate_composite(composite: CompositeColumnConfig) -> None:
         raise ValueError("Identificador composto inválido.")
     if not isinstance(composite.output_name, str) or not composite.output_name.strip():
         raise ValueError("Nome de saída composto inválido.")
-    if not isinstance(composite.prefix, str) or validate_prefix(composite.prefix):
+    if composite_action_error(composite.action, composite.prefix):
         raise ValueError("Prefixo composto inválido.")
     if len(composite.components) < 2:
         raise ValueError("Uma composite precisa de ao menos duas fontes.")
@@ -60,7 +61,7 @@ def validate_composite(composite: CompositeColumnConfig) -> None:
 
 def serialize_composite(composite: CompositeColumnConfig) -> dict:
     validate_composite(composite)
-    return dict(identifier=str(composite.identifier), output_name=composite.output_name,
+    return dict(identifier=str(composite.identifier), action=composite.action.value, output_name=composite.output_name,
                 prefix=composite.prefix, components=[
                     dict(reference=dict(
                         header=source.reference.header,
@@ -74,7 +75,7 @@ def serialize_composite(composite: CompositeColumnConfig) -> dict:
 
 
 def parse_composite(value: object) -> CompositeColumnConfig:
-    value = require_fields(value, {"identifier", "output_name", "prefix", "components"})
+    value = require_fields(value, {"identifier", "action", "output_name", "prefix", "components"})
     if not isinstance(value["identifier"], str) or not isinstance(value["components"], list):
         raise ValueError("Formato composto inválido.")
     sources = []
@@ -89,6 +90,6 @@ def parse_composite(value: object) -> CompositeColumnConfig:
                 raise ValueError("Estrutura de origem inválida.")
             reference["structure"] = tuple(tuple(entry) for entry in structure)
         sources.append(CompositeSource(SourceColumnRef(**reference), NormalizationRule(source["normalization_rule"])))
-    composite = CompositeColumnConfig(value["output_name"], value["prefix"], tuple(sources), UUID(value["identifier"]))
+    composite = CompositeColumnConfig(value["output_name"], value["prefix"], tuple(sources), UUID(value["identifier"]), ColumnAction(value["action"]))
     validate_composite(composite)
     return composite

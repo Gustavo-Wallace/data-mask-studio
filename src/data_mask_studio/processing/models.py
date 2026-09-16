@@ -15,9 +15,10 @@ class CompositeSource:
 @dataclass(frozen=True, slots=True)
 class CompositeColumnConfig:
     output_name: str
-    prefix: str
-    components: tuple[CompositeSource, ...]
+    prefix: str = ""
+    components: tuple[CompositeSource, ...] = ()
     identifier: UUID = field(default_factory=uuid4)
+    action: ColumnAction = ColumnAction.PRESERVE
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "components", tuple(self.components))
@@ -50,6 +51,7 @@ class BoundCompositeColumn:
     output_name: str
     prefix: str
     components: tuple[BoundCompositeSource, ...]
+    action: ColumnAction = ColumnAction.PRESERVE
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,3 +67,7 @@ class ProcessingPlan:
     @property
     def final_headers(self) -> tuple[str, ...]:
         return tuple(column.output_name for column in self.outputs)
+
+    @property
+    def requires_masking(self) -> bool:
+        return any(column.action is ColumnAction.MASK for column in self.outputs)

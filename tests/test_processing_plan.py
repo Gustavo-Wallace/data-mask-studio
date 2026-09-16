@@ -29,7 +29,7 @@ def composite(target, name="PESSOA"):
     return CompositeColumnConfig(name, "CORR", (
         CompositeSource(source_ref_at(target, 0), NormalizationRule.PERSON_NAME),
         CompositeSource(source_ref_at(target, 1), NormalizationRule.CPF),
-    ))
+    ), action=ColumnAction.MASK)
 
 
 def test_basic_plan_and_component_order():
@@ -94,7 +94,7 @@ def test_repeated_physical_source_rejected_even_with_different_refs(alternate):
     target = inspection("NOME", "CPF")
     first = CompositeSource(source_ref_at(target, 0))
     second = CompositeSource(SourceColumnRef("NOME")) if alternate else first
-    definition = CompositeColumnConfig("PESSOA", "CORR", (first, second))
+    definition = CompositeColumnConfig("PESSOA", "CORR", (first, second), action=ColumnAction.MASK)
     with pytest.raises(PlanningError, match="Fonte física repetida"):
         build_processing_plan(target, scalars(target), [definition])
 

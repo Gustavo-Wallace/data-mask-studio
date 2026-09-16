@@ -31,12 +31,12 @@ def setup_case(tmp_path, rows, configs=None, *, encoding='utf-8', delimiter=',',
     definitions = [CompositeColumnConfig('PESSOA', 'CORR', (
         CompositeSource(source_ref_at(inspection, 0), Rule.PERSON_NAME),
         CompositeSource(source_ref_at(inspection, 1), Rule.CPF),
-    ))]
+    ), action=Action.MASK)]
     if second:
         definitions.append(CompositeColumnConfig('OUTRA', 'OTHER', (
             CompositeSource(source_ref_at(inspection, 1)),
             CompositeSource(source_ref_at(inspection, 0)),
-        )))
+        ), action=Action.MASK))
     plan = build_processing_plan(inspection, configs, definitions)
     repo = VaultRepository(tmp_path / 'vault.db', VaultCipher(b'V' * 32))
     destination = tmp_path / 'output.csv'
@@ -249,7 +249,7 @@ def test_empty_header_resolver_and_entirely_blank_composite(tmp_path):
     configs = [ColumnConfig(header) for header in inspection.headers]
     definition = CompositeColumnConfig('PESSOA', 'CORR', tuple(
         CompositeSource(source_ref_at(inspection, index)) for index in (0, 1)
-    ))
+    ), action=Action.MASK)
     plan = build_processing_plan(inspection, configs, [definition])
     repo = VaultRepository(tmp_path / 'vault.db', VaultCipher(b'V' * 32))
     destination = tmp_path / 'output.csv'

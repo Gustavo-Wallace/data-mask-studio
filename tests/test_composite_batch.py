@@ -49,10 +49,10 @@ def setup_profile(tmp_path, headers=('NOME', 'CPF', 'IDADE'), configs=None, inde
     first = CompositeColumnConfig('PESSOA', 'CORR', (
         CompositeSource(source_ref_at(inspection, indexes[0]), Rule.PERSON_NAME),
         CompositeSource(source_ref_at(inspection, indexes[1]), Rule.CPF),
-    ))
+    ), action=Action.MASK)
     definitions = [first]
     if multiple:
-        definitions.append(CompositeColumnConfig('OUTRA', 'OTHER', first.components[::-1]))
+        definitions.append(CompositeColumnConfig('OUTRA', 'OTHER', first.components[::-1], action=Action.MASK))
     service = ProfileService(ProfileRepository(tmp_path / 'profiles.json'))
     service.create('Perfil composto batch', configs, composites=definitions)
     return service, service.list_profiles()[0]

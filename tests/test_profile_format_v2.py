@@ -21,7 +21,7 @@ def case(tmp_path, header='NOME,CPF', configs=None):
     definition = CompositeColumnConfig('PESSOA', 'CORR', (
         CompositeSource(source_ref_at(inspection, 0), Rule.PERSON_NAME),
         CompositeSource(source_ref_at(inspection, 1), Rule.CPF),
-    ))
+    ), action=Action.MASK)
     configs = configs or [ColumnConfig(inspection.headers[-1])]
     repository = ProfileRepository(tmp_path / 'profiles.json')
     service = ProfileService(repository)
@@ -68,7 +68,7 @@ def test_v2_complete_round_trip_and_explicit_contract(tmp_path):
 def test_service_update_rename_preserve_order_and_uuids(tmp_path):
     service, repo, profile, _ = case(tmp_path)
     first = profile.composites[0]
-    second = CompositeColumnConfig('OUTRA', 'SECOND', first.components[::-1])
+    second = CompositeColumnConfig('OUTRA', 'SECOND', first.components[::-1], action=Action.MASK)
     updated = service.update(profile.identifier, [ColumnConfig('CPF')], composites=[first, second])
     assert repo.load()[0] == updated
     renamed = replace(first, output_name='PESSOA_CORRELACAO')

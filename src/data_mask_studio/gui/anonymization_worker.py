@@ -70,8 +70,9 @@ class AnonymizationWorker(QThread):
                 if limiter.should_emit(records):
                     self.progress.emit(records)
 
-            secret_key = self._key_provider.get_key()
-            vault_repository = self._vault_repository_factory()
+            needs_masking = self._processing_plan is None or self._processing_plan.requires_masking
+            secret_key = self._key_provider.get_key() if needs_masking else None
+            vault_repository = self._vault_repository_factory() if needs_masking else None
             result = anonymize_csv(
                 self._inspection.path,
                 self._output_path,
