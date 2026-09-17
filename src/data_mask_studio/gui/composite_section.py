@@ -2,11 +2,12 @@ from dataclasses import replace
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QDialog, QGroupBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QDialog, QGroupBox, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from data_mask_studio.gui.composite_dialog import CompositeDialog, source_label
+from data_mask_studio.gui.composite_table import CompositeTable
 from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.gui.column_configuration_table import PREFIX_PLACEHOLDER
@@ -27,17 +28,7 @@ class CompositeSection(QGroupBox):
         self.add_button.setToolTip("Combine duas ou mais colunas para preservar ou mascarar.")
         self.add_button.clicked.connect(lambda: self.edit())
         self.empty_label = QLabel("Nenhuma coluna composta configurada.")
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Ação", "Cabeçalho de saída", "Componentes", "Prefixo", "Ações"])
-        self.table.setAlternatingRowColors(True)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.verticalHeader().hide()
-        header = self.table.horizontalHeader()
-        header.setStretchLastSection(False)
-        for index in (2,):
-            header.setSectionResizeMode(index, QHeaderView.ResizeMode.Stretch)
-        for index in (0, 1, 3, 4):
-            header.setSectionResizeMode(index, QHeaderView.ResizeMode.ResizeToContents)
+        self.table = CompositeTable()
         bar = QHBoxLayout()
         bar.addWidget(self.empty_label, 1)
         bar.addStretch()
@@ -52,6 +43,7 @@ class CompositeSection(QGroupBox):
         self.table.setRowCount(len(self.configurations))
         for index, composite in enumerate(self.configurations):
             action = ScrollSafeComboBox()
+            action.setSizeAdjustPolicy(ScrollSafeComboBox.SizeAdjustPolicy.AdjustToContents)
             action.setAccessibleName(f"Ação da coluna composta {composite.output_name}")
             action.addItem("Preservar", ColumnAction.PRESERVE)
             action.addItem("Mascarar", ColumnAction.MASK)
@@ -60,7 +52,10 @@ class CompositeSection(QGroupBox):
             self.table.setCellWidget(index, 0, action)
             values = [composite.output_name, " + ".join(source_label(s.reference) for s in composite.components)]
             for column, text in enumerate(values, 1):
-                self.table.setItem(index, column, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                item.setToolTip(text)
+                self.table.setItem(index, column, item)
             self.table.item(index, 2).setToolTip(" + ".join(
                 f"{source_label(s.reference)} [{normalization_label(s.normalization_rule)}]" for s in composite.components
             ))
@@ -75,6 +70,8 @@ class CompositeSection(QGroupBox):
             actions = QWidget()
             buttons = QHBoxLayout(actions)
             buttons.setContentsMargins(0, 0, 0, 0)
+            buttons.setSpacing(self.fontMetrics().horizontalAdvance(" "))
+            buttons.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             edit = QPushButton("Editar")
             remove = QPushButton("Excluir")
             edit.clicked.connect(lambda checked=False, row=index: self.edit(row))
@@ -82,9 +79,7 @@ class CompositeSection(QGroupBox):
             buttons.addWidget(edit)
             buttons.addWidget(remove)
             self.table.setCellWidget(index, 4, actions)
-        self.table.resizeRowsToContents()
-        self.table.setMaximumHeight(self.table.horizontalHeader().sizeHint().height() +
-                                    max(1, min(3, len(self.configurations))) * (self.fontMetrics().height() + 24) + 8)
+        self.table.refresh_layout()
         self.table.setVisible(bool(self.configurations))
         self.empty_label.setVisible(not self.configurations)
         if notify:

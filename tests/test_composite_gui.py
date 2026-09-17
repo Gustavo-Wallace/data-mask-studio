@@ -432,3 +432,63 @@ def test_refined_dialog_and_table_layout(gui):
     assert dialog.scroll.verticalScrollBar().maximum() > 0
     assert dialog.height() <= dialog.screen().availableGeometry().height()
     dialog.close()
+
+
+@pytest.mark.parametrize('initial_width', [900, 1200])
+def test_composite_table_visual_consistency_and_resize(gui, tmp_path, initial_width):
+    from uuid import uuid4
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QPushButton, QLineEdit
+    from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+    app, widget, _ = gui
+    original = create(widget, mask=False)
+    configs = [original, replace(original, identifier=uuid4(), output_name='CABECALHO_' * 12,
+                                 action=Action.MASK, prefix='CORR')]
+    configs += [replace(original, identifier=uuid4(), output_name=f'OUT_{i}') for i in range(4)]
+    section = widget.composite_section
+    section.set_configurations(configs)
+    widget.resize(initial_width, 700)
+    widget.show()
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    QTest.qWait(20)
+    table = section.table
+    assert section.configurations == tuple(configs)
+    assert table.rowCount() == 6 and section.empty_label.isHidden()
+    assert not table.wordWrap()
+    assert table.horizontalHeader().height() == widget.config_table.horizontalHeader().height()
+    assert table.columnWidth(1) == widget.config_table.columnWidth(2)
+    assert table.columnWidth(3) == widget.config_table.columnWidth(3)
+    assert table.columnWidth(1) < table.fontMetrics().horizontalAdvance(configs[1].output_name)
+    for row, config in enumerate(configs):
+        action, prefix = table.cellWidget(row, 0), table.cellWidget(row, 3)
+        assert isinstance(action, ScrollSafeComboBox) and isinstance(prefix, QLineEdit)
+        assert action.sizeHint().height() == widget._action_fields[0].sizeHint().height()
+        assert action.sizeHint().width() == widget._action_fields[0].sizeHint().width()
+        assert prefix.sizeHint().height() == widget._prefix_fields[0].sizeHint().height()
+        assert prefix.placeholderText() == widget._prefix_fields[0].placeholderText()
+        assert prefix.isEnabled() == (config.action is Action.MASK)
+        assert prefix.text() == config.prefix
+        assert table.rowHeight(row) >= action.minimumSizeHint().height()
+        assert table.rowHeight(row) <= widget.config_table.rowHeight(0) + table.fontMetrics().height()
+        buttons = table.cellWidget(row, 4).findChildren(QPushButton)
+        assert [b.text() for b in buttons] == ['Editar', 'Excluir']
+        assert all(b.height() <= table.rowHeight(row) for b in buttons)
+        assert table.item(row, 1).toolTip() == config.output_name
+        assert 'NOME' in table.item(row, 2).toolTip() and 'CPF' in table.item(row, 2).toolTip()
+    before = table.columnWidth(2)
+    # Primeiro elimina eventual overflow horizontal; só o espaço extra é stretch.
+    overflow = max(0, table.horizontalHeader().length() - table.viewport().width())
+    widget.resize(widget.width() + overflow + 300, widget.height())
+    app.processEvents()
+    QTest.qWait(20)
+    assert table.columnWidth(2) > before
+    assert table.columnWidth(1) == widget.config_table.columnWidth(2)
+    assert table.columnWidth(3) == widget.config_table.columnWidth(3)
+    assert section.configurations == tuple(configs)
+    assert table.verticalScrollBar().maximum() > 0
+    section.grab().save(str(tmp_path / 'composite-table.png'))
+    section.set_configurations(())
+    app.processEvents()
+    assert table.isHidden() and not section.empty_label.isHidden()

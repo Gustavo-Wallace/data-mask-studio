@@ -223,6 +223,7 @@ class AnonymizationWidget(QWidget):
             lambda: self._inspection_result, self._build_current_plan, self,
         )
         self.composite_section.changed.connect(self._configuration_changed)
+        self.composite_section.table.set_width_reference(self.config_table)
         self.composite_section.setEnabled(False)
         self._worker: AnonymizationWorker | None = None
         self._detection_worker: DetectionWorker | None = None
