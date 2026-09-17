@@ -3,7 +3,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from uuid import UUID
-import json
+from data_mask_studio.composite_text import composite_text
 
 from data_mask_studio.anonymization.anonymizer import _normalize_with_fallback
 from data_mask_studio.anonymization.models import ColumnAction
@@ -83,7 +83,7 @@ def execute_composite_row(
             if composite.action is ColumnAction.PRESERVE:
                 cells.append(CompositeCellResult(
                     composite.identifier, output_index, composite.output_name,
-                    json.dumps(values, ensure_ascii=False, separators=(",", ":")), None, composite.action,
+                    composite_text(values), None, composite.action,
                 ))
                 continue
             token = generate_composite_token(key, composite.prefix, values)

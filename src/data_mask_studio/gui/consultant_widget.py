@@ -19,6 +19,8 @@ from data_mask_studio.consultant import (
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
 from data_mask_studio.normalization import normalization_label
 from data_mask_studio.vault import VaultRepository
+from data_mask_studio.vault.composite_models import CompositeMapping
+from data_mask_studio.composite_text import composite_text
 
 
 class ConsultantWidget(QWidget):
@@ -120,9 +122,28 @@ def _render_result(result: ConsultationResult) -> str:
         return f"Código: {result.code}\n{result.message or 'Consulta indisponível.'}"
 
     mapping = result.mapping
+    if isinstance(mapping, CompositeMapping):
+        lines = [f"Código: {mapping.code}", "Tipo: Composite", f"Prefixo: {mapping.prefix}",
+                 f"Quantidade de componentes: {mapping.component_count}",
+                 f"Valor canônico: {composite_text(mapping.canonical_values)}",
+                 f"Primeira aparição do código: {mapping.first_seen}",
+                 f"Última aparição do código: {mapping.last_seen}",
+                 f"Ocorrências totais: {mapping.occurrence_count}"]
+        for index, rule in enumerate(mapping.normalization_rules, 1):
+            lines.append(f"Componente {index} — {normalization_label(rule)}")
+        lines.append(f"Variações originais observadas: {len(mapping.variations)}")
+        lines.append("Restauração: tuple original única." if len(mapping.variations) == 1 else
+                     "Restauração: tuple canônica devido à ambiguidade; não é possível identificar a variação de cada ocorrência.")
+        for index, variation in enumerate(mapping.variations, 1):
+            lines.extend((f"Variação original {index}: {composite_text(variation.original_values)}",
+                          f"Ocorrências da variação: {variation.occurrence_count}",
+                          f"Primeira aparição da variação: {variation.first_seen}",
+                          f"Última aparição da variação: {variation.last_seen}"))
+        return "\n".join(lines)
     primary = mapping.variations[0]
     lines = [
         f"Código: {mapping.code}",
+        "Tipo: Scalar",
         f"Prefixo: {mapping.prefix}",
         f"Cabeçalho de origem: {mapping.source_header}",
         f"Regra de normalização: {normalization_label(mapping.normalization_rule)}",

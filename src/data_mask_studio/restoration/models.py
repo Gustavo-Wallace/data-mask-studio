@@ -86,6 +86,8 @@ class RestorationResult:
     duration_seconds: float
     missing_code_policy: MissingCodePolicy
     representation_policy: RepresentationPolicy
+    composite_restored_exact: int = 0
+    composite_restored_canonical: int = 0
 
 
 @dataclass(frozen=True, slots=True)

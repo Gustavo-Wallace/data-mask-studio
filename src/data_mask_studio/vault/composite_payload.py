@@ -7,7 +7,6 @@ count, regras ordenadas, parent_code, variation_id.
 """
 import json
 
-from data_mask_studio.processing.composite_identity import serialize_composite_identity
 from data_mask_studio.vault.exceptions import VaultError
 
 COMPOSITE_AAD_VERSION = 1
@@ -15,6 +14,7 @@ COMPOSITE_PAYLOAD_VERSION = 1
 
 
 def encode_tuple(values: tuple[str, ...]) -> bytes:
+    from data_mask_studio.processing.composite_identity import serialize_composite_identity
     return b"DMSOT" + serialize_composite_identity(values)[5:]
 
 

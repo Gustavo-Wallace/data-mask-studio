@@ -98,7 +98,7 @@ def analyze_csv(
                                     missing_codes += 1
                                 else:
                                     found_codes += 1
-                                    if mapping.source_header != column.header:
+                                    if hasattr(mapping, "source_header") and mapping.source_header != column.header:
                                         issue = (
                                             f"Coluna '{column.header}': codigo associado "
                                             f"originalmente ao cabecalho '{mapping.source_header}'."
@@ -149,7 +149,7 @@ def _bulk_lookup(session, codes, cache, metrics):
             if metrics is not None:
                 metrics.cache_misses += 1
     try:
-        fetched = session.get_many(missing)
+        fetched = session.get_many_with_composites(missing)
     except Exception as error:
         raise RestorationSecurityError(
             "Não foi possível recuperar um ou mais mapeamentos com segurança."

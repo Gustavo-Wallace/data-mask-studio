@@ -46,7 +46,7 @@ class ConsultantService:
                 continue
 
             try:
-                mapping = repository.get_decrypted_mapping(code)
+                mapping = repository.get_mapping_for_inspection(code)
             except Exception as error:
                 self.last_error = error
                 results.append(_recovery_failure(code))

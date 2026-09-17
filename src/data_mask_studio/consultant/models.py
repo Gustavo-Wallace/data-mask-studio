@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from data_mask_studio.vault.models import DecryptedVaultMapping
+from data_mask_studio.vault.composite_models import CompositeMapping
 
 
 class ConsultationStatus(StrEnum):
@@ -15,6 +16,5 @@ class ConsultationStatus(StrEnum):
 class ConsultationResult:
     code: str
     status: ConsultationStatus
-    mapping: DecryptedVaultMapping | None = field(default=None, repr=False)
+    mapping: DecryptedVaultMapping | CompositeMapping | None = field(default=None, repr=False)
     message: str | None = None
-

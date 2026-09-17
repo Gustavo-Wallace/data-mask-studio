@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from data_mask_studio.normalization import NormalizationError, NormalizationRule, normalize_value
-from data_mask_studio.processing.composite_identity import serialize_composite_identity
 from data_mask_studio.vault.composite_models import (
     CompositeMapping, CompositeMappingCandidate, CompositeVariation,
 )
@@ -59,6 +58,7 @@ class CompositeVaultRepository(VaultRepository):
         self, candidate: CompositeMappingCandidate,
         transaction: VaultTransaction | None = None,
     ) -> None:
+        from data_mask_studio.processing.composite_identity import serialize_composite_identity
         if (candidate.identity_version != 1 or candidate.payload_version != 1
                 or type(candidate.occurrences) is not int or candidate.occurrences <= 0):
             raise VaultError("Versão ou contagem composta inválida.")
@@ -115,31 +115,41 @@ class CompositeVaultRepository(VaultRepository):
         row = connection.execute("SELECT * FROM composite_mappings WHERE code = ?", (code,)).fetchone()
         if row is None:
             return None
-        payload = self._cipher.decrypt_payload(row["encrypted_value"], row["nonce"], composite_aad(row))
-        if (row["identity_version"], row["payload_version"], row["aad_version"]) != (1, 1, 1):
-            raise VaultError("Versão composta não suportada.")
-        canonical = decode_payload(payload)
-        encoded_rules = json.loads(row["rules"])
-        if not isinstance(encoded_rules, list) or not all(isinstance(value, str) for value in encoded_rules):
-            raise VaultError("Formato de regras compostas inválido.")
-        rules = tuple(NormalizationRule(value) for value in encoded_rules)
-        _check_rules(rules, row["component_count"])
-        if len(canonical) != row["component_count"]:
+        variations = connection.execute("SELECT * FROM composite_variations WHERE code = ? ORDER BY rowid", (code,))
+        return decode_composite_mapping(self._cipher, row, variations)
+
+
+def decode_composite_mapping(cipher, row, variation_rows, *, verify_normalization=True) -> CompositeMapping:
+    """Autentica payloads e estrutura; restoration usa canonical armazenada sem renormalizar."""
+    code = row["code"]
+    payload = cipher.decrypt_payload(row["encrypted_value"], row["nonce"], composite_aad(row))
+    if (row["identity_version"], row["payload_version"], row["aad_version"]) != (1, 1, 1):
+        raise VaultError("Versão composta não suportada.")
+    canonical = decode_payload(payload)
+    encoded_rules = json.loads(row["rules"])
+    if not isinstance(encoded_rules, list) or not all(isinstance(value, str) for value in encoded_rules):
+        raise VaultError("Formato de regras compostas inválido.")
+    rules = tuple(NormalizationRule(value) for value in encoded_rules)
+    _check_rules(rules, row["component_count"])
+    if len(canonical) != row["component_count"]:
+        raise VaultError("Quantidade de componentes inconsistente.")
+    variations = []
+    for item in variation_rows:
+        original = decode_payload(cipher.decrypt_payload(
+            item["encrypted_value"], item["nonce"], composite_aad(row, item["identifier"]),
+        ), original=True)
+        if len(original) != len(canonical):
             raise VaultError("Quantidade de componentes inconsistente.")
-        variations = []
-        for item in connection.execute("SELECT * FROM composite_variations WHERE code = ? ORDER BY rowid", (code,)):
-            original = decode_payload(self._cipher.decrypt_payload(
-                item["encrypted_value"], item["nonce"], composite_aad(row, item["identifier"]),
-            ), original=True)
+        if verify_normalization:
             _check_tuple(original, rules, canonical)
-            if item["occurrence_count"] <= 0:
-                raise VaultError("Contagem composta inconsistente.")
-            variations.append(CompositeVariation(item["identifier"], code, original,
-                                                 item["first_seen"], item["last_seen"], item["occurrence_count"]))
-        if not variations or sum(v.occurrence_count for v in variations) != row["total_occurrences"]:
-            raise VaultError("Contagens compostas inconsistentes.")
-        return CompositeMapping(code, row["prefix"], 1, 1, len(canonical), rules, canonical,
-                                tuple(variations), row["first_seen"], row["last_seen"], row["total_occurrences"])
+        if item["occurrence_count"] <= 0:
+            raise VaultError("Contagem composta inconsistente.")
+        variations.append(CompositeVariation(item["identifier"], code, original,
+                                             item["first_seen"], item["last_seen"], item["occurrence_count"]))
+    if not variations or sum(v.occurrence_count for v in variations) != row["total_occurrences"]:
+        raise VaultError("Contagens compostas inconsistentes.")
+    return CompositeMapping(code, row["prefix"], 1, 1, len(canonical), rules, canonical,
+                            tuple(variations), row["first_seen"], row["last_seen"], row["total_occurrences"])
 
 
 def _check_rules(rules, count):

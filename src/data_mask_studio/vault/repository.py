@@ -25,6 +25,7 @@ from data_mask_studio.vault.database import (
 )
 from data_mask_studio.vault.encryption import VaultCipher
 from data_mask_studio.vault.exceptions import VaultCollisionError, VaultError
+from data_mask_studio.vault.composite_models import CompositeMapping
 from data_mask_studio.vault.models import (
     DecryptedVariation,
     DecryptedVaultMapping,
@@ -116,6 +117,10 @@ class VaultRepository:
             raise
         finally:
             connection.close()
+
+    def get_mapping_for_inspection(self, code: str) -> DecryptedVaultMapping | CompositeMapping | None:
+        with self.as_read_only().read_session() as session:
+            return session.get_many_with_composites((code,)).get(code)
 
     def get_record(self, code: str) -> VaultRecord | None:
         connection = self._connect_for_read()
@@ -445,6 +450,52 @@ class VaultReadSession:
         self._connection = connection
         self._cipher = cipher
         self._metrics = metrics
+
+    def get_many_with_composites(self, codes: Sequence[str]) -> dict[str, DecryptedVaultMapping | CompositeMapping]:
+        from data_mask_studio.vault.composite_repository import decode_composite_mapping
+
+        # Um snapshot coerente para scalar, canonical e variations, inclusive sob WAL.
+        if not self._connection.in_transaction:
+            self._connection.execute("BEGIN")
+        result = self.get_many(codes)
+        try:
+            for chunk in _chunks(tuple(dict.fromkeys(codes)), BALANCED_SETTINGS.sqlite_lookup_batch_size):
+                started = time.perf_counter()
+                placeholders = ",".join("?" for _ in chunk)
+                rows = self._connection.execute(
+                    f"SELECT * FROM composite_mappings WHERE code IN ({placeholders})", chunk,
+                ).fetchall()
+                self._record_query(len(rows))
+                if self._metrics is not None:
+                    self._metrics.query_seconds += time.perf_counter() - started
+                if not rows:
+                    continue
+                found = tuple(row["code"] for row in rows)
+                started = time.perf_counter()
+                variations = self._connection.execute(
+                    "SELECT * FROM composite_variations WHERE code IN (" + ",".join("?" for _ in found) + ")", found,
+                ).fetchall()
+                self._record_query(len(set(v["code"] for v in variations)))
+                grouped = {}
+                for variation in variations:
+                    grouped.setdefault(variation["code"], []).append(variation)
+                if self._metrics is not None:
+                    self._metrics.query_seconds += time.perf_counter() - started
+                    self._metrics.codes_returned += len(rows)
+                started = time.perf_counter()
+                for row in rows:
+                    code = row["code"]
+                    if code in result:
+                        raise VaultCollisionError("Conflito de tipo de código no cofre local.")
+                    items = grouped.get(code, ())
+                    result[code] = decode_composite_mapping(self._cipher, row, items, verify_normalization=False)
+                    if self._metrics is not None:
+                        self._metrics.decryptions += 1 + len(items)
+                if self._metrics is not None:
+                    self._metrics.decryption_seconds += time.perf_counter() - started
+        except (sqlite3.Error, ValueError, TypeError, KeyError):
+            raise VaultError("Registro composto inválido.") from None
+        return result
 
     def get_many(self, codes: Sequence[str]) -> dict[str, DecryptedVaultMapping]:
         unique = tuple(dict.fromkeys(codes))

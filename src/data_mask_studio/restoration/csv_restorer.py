@@ -34,6 +34,8 @@ from data_mask_studio.restoration.models import (
     RestorationStage,
 )
 from data_mask_studio.vault import VaultRepository
+from data_mask_studio.vault.composite_models import CompositeMapping
+from data_mask_studio.composite_text import composite_text
 
 ProgressCallback = Callable[[RestorationProgress], None]
 CancellationCheck = Callable[[], bool]
@@ -59,6 +61,7 @@ def restore_csv(
     started_at = time.perf_counter()
     rows_processed = restored_codes = missing_codes = 0
     preserved_common_values = empty_cells = 0
+    composite_restored_exact = composite_restored_canonical = 0
     cache: MutableMapping[str, object | None] = BoundedCache(
         BALANCED_SETTINGS.restoration_cache_limit
     )
@@ -129,11 +132,20 @@ def restore_csv(
                                             f"nao foi encontrado (coluna '{column.header}', linha {line_number})."
                                         )
                                     continue
-                                restored_row[column.index] = (
-                                    mapping.canonical_value
-                                    if configuration.representation_policy is RepresentationPolicy.CANONICAL
-                                    else mapping.original_value
-                                )
+                                if isinstance(mapping, CompositeMapping):
+                                    if len(mapping.variations) == 1:
+                                        values = mapping.variations[0].original_values
+                                        composite_restored_exact += 1
+                                    else:
+                                        values = mapping.canonical_values
+                                        composite_restored_canonical += 1
+                                    restored_row[column.index] = composite_text(values)
+                                else:
+                                    restored_row[column.index] = (
+                                        mapping.canonical_value
+                                        if configuration.representation_policy is RepresentationPolicy.CANONICAL
+                                        else mapping.original_value
+                                    )
                                 restored_codes += 1
                             write_started = time.perf_counter()
                             writer.writerow(restored_row)
@@ -184,6 +196,8 @@ def restore_csv(
         duration_seconds=time.perf_counter() - started_at,
         missing_code_policy=configuration.missing_code_policy,
         representation_policy=configuration.representation_policy,
+        composite_restored_exact=composite_restored_exact,
+        composite_restored_canonical=composite_restored_canonical,
     )
 
 
