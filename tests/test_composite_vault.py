@@ -307,8 +307,8 @@ def test_snapshot_backup_and_audit_recognize_composites(repository, tmp_path):
     paths = EnvironmentPaths(tmp_path, tmp_path / "secret.key", tmp_path / "vault_key.dpapi", repository.database_path, tmp_path / "profiles.json")
     report = IntegrityAuditor(paths, Provider(HMAC), Provider(AES)).run()
     assert report.schema_version == 4
-    assert report.status is IntegrityStatus.FAILURE
-    assert any("compostos" in check.message for check in report.checks)
+    assert report.status is IntegrityStatus.INTACT
+    assert any("compostos" in check.check_type and check.examined == 1 for check in report.checks)
     assert "Gustavo" not in report.to_safe_text()
     backup = tmp_path / "composite.dmsbackup"
     password = "senha longa de teste seguro"

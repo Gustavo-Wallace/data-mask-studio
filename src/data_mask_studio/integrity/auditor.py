@@ -15,6 +15,7 @@ from data_mask_studio.backup import (
 )
 from data_mask_studio.integrity.exceptions import IntegrityCancelled, IntegrityError
 from data_mask_studio.integrity.models import AuditReport, CheckResult, IntegrityStatus
+from data_mask_studio.integrity.composite_audit import audit_composites
 from data_mask_studio.normalization import NormalizationError, NormalizationRule, normalize_value
 from data_mask_studio.profiles import ProfileError, ProfileRepository
 from data_mask_studio.security import KeyProvider
@@ -213,16 +214,6 @@ class IntegrityAuditor:
             progress(4)
             self._raise_if_cancelled(should_cancel)
 
-            if not schema_failures and (
-                connection.execute("SELECT 1 FROM composite_mappings LIMIT 1").fetchone()
-                or connection.execute("SELECT 1 FROM composite_variations LIMIT 1").fetchone()
-            ):
-                checks.append(_failed(
-                    "Auditoria de registros compostos",
-                    "A verificação integral de registros compostos ainda não é suportada. "
-                    "Não é possível atestar a integridade completa deste cofre.",
-                ))
-
             rows = connection.execute(
                 "SELECT code, prefix, canonical_encrypted_value, canonical_nonce, "
                 "source_header, normalization_rule, total_occurrences "
@@ -246,6 +237,8 @@ class IntegrityAuditor:
                 foreign_key_failures,
             )
             checks.extend(data_checks)
+            if not schema_failures:
+                checks.extend(audit_composites(connection, hmac_key, vault_key, should_cancel))
             for completed in range(5, 11):
                 progress(completed)
             return checks, schema_version
@@ -253,7 +246,7 @@ class IntegrityAuditor:
             if should_cancel() or "interrupted" in str(error).casefold():
                 raise IntegrityCancelled("A verificação de integridade foi cancelada.") from error
             return self._database_failure_checks(), None
-        except (BackupError, sqlite3.Error, OSError, ValueError):
+        except (BackupError, sqlite3.Error, OSError, ValueError, TypeError, KeyError):
             return self._database_failure_checks(), None
         finally:
             if connection is not None:
