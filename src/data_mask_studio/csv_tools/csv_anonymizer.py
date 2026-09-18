@@ -18,6 +18,7 @@ from data_mask_studio.anonymization.models import (
 )
 from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
+from data_mask_studio.publication import Publication, PublicationError, publish
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
 from data_mask_studio.processing.models import BoundCompositeColumn, ProcessingPlan
@@ -76,6 +77,9 @@ def anonymize_csv(
     )
 
     temporary_path: Path | None = None
+    publication = None
+    if vault_repository is not None and secret_key is not None:
+        publication = Publication(vault_repository.database_path, source, destination, secret_key, overwrite)
     started_at = time.perf_counter()
     records_processed = 0
     vault_summary = VaultUpdateSummary()
@@ -93,6 +97,7 @@ def anonymize_csv(
     )
     if processing_plan is not None and not processing_plan.requires_masking:
         vault_repository = None
+        publication = None
     if has_masked_composites and vault_repository is None:
         raise CSVAnonymizationError("Um cofre é necessário para processar composites.")
     transaction_context = (
@@ -101,6 +106,7 @@ def anonymize_csv(
         else nullcontext(None)
     )
 
+    vault_transaction = None
     try:
         composite_repository = (
             vault_repository.composite_repository() if has_masked_composites else None
@@ -110,7 +116,7 @@ def anonymize_csv(
                 mode="w",
                 encoding="utf-8-sig",
                 newline="",
-                prefix=f".{destination.name}.",
+                prefix=publication.temp_prefix if publication else f".{destination.name}.",
                 suffix=".tmp",
                 dir=destination.parent,
                 delete=False,
@@ -208,19 +214,33 @@ def anonymize_csv(
                 if should_cancel is not None and should_cancel():
                     raise ProcessingCancelled("A geração do CSV foi cancelada.")
 
-        if destination.exists() and not overwrite:
-            raise CSVAnonymizationError("O arquivo de destino já existe.")
-        os.replace(temporary_path, destination)
+            # The file is closed and fsync'ed before the transaction commits.
+            if publication is not None:
+                publication.prepare(temporary_path)
+                if should_cancel is not None and should_cancel():
+                    raise ProcessingCancelled("A geração do CSV foi cancelada.")
+
+        if publication is not None:
+            publication.committed()
+        publish(temporary_path, destination, overwrite)
         temporary_path = None
+        if publication is not None:
+            publication.complete()
     except ProcessingCancelled:
         raise
     except CSVAnonymizationError:
         raise
+    except PublicationError as error:
+        raise CSVAnonymizationError(str(error)) from error
     except CompositeExecutionError:
         raise CSVAnonymizationError("Não foi possível executar as composites do CSV.") from None
     except VaultError as error:
         raise CSVAnonymizationError(str(error)) from error
     except OSError as error:
+        if publication is not None and publication.retained:
+            raise CSVAnonymizationError(
+                "A publicação não foi concluída. Operação pendente preservada para recuperação."
+            ) from error
         raise CSVAnonymizationError(_safe_io_message(error)) from error
     except (UnicodeError, csv.Error, StopIteration) as error:
         raise CSVAnonymizationError(
@@ -231,7 +251,14 @@ def anonymize_csv(
             "O processamento foi interrompido por um erro inesperado."
         ) from error
     finally:
-        if temporary_path is not None and temporary_path.exists():
+        if publication is not None and vault_transaction is not None and vault_transaction.publication_outcome == "rolled_back":
+            # Only a proven rollback permits discarding a READY journal.
+            try:
+                publication.path.unlink(missing_ok=True)
+                publication.retained = False
+            except OSError:
+                pass
+        if temporary_path is not None and temporary_path.exists() and not (publication and publication.retained):
             try:
                 temporary_path.unlink()
             except OSError:

@@ -5,10 +5,11 @@ from collections.abc import Sequence
 from typing import cast
 
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.gui.styles import apply_application_theme
+from data_mask_studio.publication import PublicationError
 
 APP_USER_MODEL_ID = "com.gustavowallace.datamaskstudio"
 
@@ -61,6 +62,10 @@ def _application_icon_path() -> Path | None:
 def run() -> int:
     """Inicia a aplicação e executa o loop de eventos."""
     application = create_application()
-    window = MainWindow()
+    try:
+        window = MainWindow()
+    except PublicationError as error:
+        QMessageBox.warning(None, "Publicação pendente", str(error))
+        return 1
     window.show()
     return application.exec()

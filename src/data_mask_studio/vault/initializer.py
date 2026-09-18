@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from data_mask_studio.security import KeyProvider
+from data_mask_studio.publication import recover_publications
 from data_mask_studio.vault.database import initialize_schema
 from data_mask_studio.vault.encryption import VaultCipher
 
@@ -14,7 +15,9 @@ def initialize_existing_vault(
     path = Path(database_path)
     if not path.is_file():
         return False
-    if hmac_key_provider is not None:
-        hmac_key_provider.get_key()
-    initialize_schema(path, VaultCipher(key_provider.get_key()))
+    hmac_key = hmac_key_provider.get_key() if hmac_key_provider is not None else None
+    cipher = VaultCipher(key_provider.get_key())
+    if hmac_key is not None:
+        recover_publications(path, hmac_key)
+    initialize_schema(path, cipher)
     return True

@@ -104,16 +104,24 @@ class VaultRepository:
         if self._read_only:
             raise VaultError("O cofre esta aberto somente para leitura.")
         connection = connect(self.database_path)
+        transaction = None
         try:
             connection.execute("BEGIN IMMEDIATE")
             transaction = VaultTransaction(connection, self._cipher, self.database_path)
             yield transaction
             connection.commit()
+            transaction.publication_outcome = "committed"
         except sqlite3.Error as error:
+            rollback_proven = connection.in_transaction
             connection.rollback()
+            if rollback_proven and transaction is not None:
+                transaction.publication_outcome = "rolled_back"
             raise VaultError("Não foi possível atualizar o cofre local.") from error
         except Exception:
+            rollback_proven = connection.in_transaction
             connection.rollback()
+            if rollback_proven and transaction is not None:
+                transaction.publication_outcome = "rolled_back"
             raise
         finally:
             connection.close()
@@ -202,6 +210,7 @@ class VaultTransaction:
         self._connection = connection
         self._cipher = cipher
         self._database_path = database_path.resolve()
+        self.publication_outcome = "unknown"
         self._connection.execute(
             "CREATE TEMP TABLE processing_changes ("
             "code TEXT PRIMARY KEY, change_type TEXT NOT NULL)"

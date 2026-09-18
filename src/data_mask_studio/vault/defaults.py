@@ -4,12 +4,14 @@ from data_mask_studio.vault.key_provider import VaultKeyProvider
 from data_mask_studio.vault.repository import VaultRepository
 from data_mask_studio.vault.exceptions import VaultError
 from data_mask_studio.security.key_provider import LocalKeyProvider
+from data_mask_studio.publication import recover_publications
 
 
 def create_default_vault_repository() -> VaultRepository:
     """Cria o repositório usando a chave exclusiva protegida pelo DPAPI."""
-    LocalKeyProvider(default_vault_directory()).get_key()
+    hmac_key = LocalKeyProvider(default_vault_directory()).get_key()
     key = VaultKeyProvider(default_vault_directory()).get_key()
+    recover_publications(default_database_path(), hmac_key)
     return VaultRepository(default_database_path(), VaultCipher(key))
 
 
