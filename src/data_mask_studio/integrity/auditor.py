@@ -6,6 +6,7 @@ import tempfile
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from data_mask_studio.environment import guarded
 
 from data_mask_studio.anonymization import TokenGenerator
 from data_mask_studio.backup import (
@@ -76,6 +77,7 @@ class IntegrityAuditor:
         self._hmac_key_provider = hmac_key_provider
         self._vault_key_provider = vault_key_provider
 
+    @guarded(lambda self, **kwargs: self._paths.directory)
     def run(
         self,
         *,

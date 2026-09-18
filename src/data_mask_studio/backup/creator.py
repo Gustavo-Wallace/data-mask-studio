@@ -4,6 +4,7 @@ import os
 import secrets
 import struct
 import tempfile
+from data_mask_studio.environment import guarded
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,7 @@ def suggested_backup_name(now: datetime | None = None) -> str:
     return f"data-mask-studio-backup-{moment:%Y-%m-%d-%H%M%S}.dmsbackup"
 
 
+@guarded(lambda *args, **kwargs: kwargs["paths"].directory)
 def create_backup(
     destination_path: str | Path,
     password: str,

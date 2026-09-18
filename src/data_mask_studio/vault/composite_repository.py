@@ -6,6 +6,7 @@ import sqlite3
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from uuid import uuid4
+from data_mask_studio.environment import guarded
 
 from data_mask_studio.normalization import NormalizationError, NormalizationRule, normalize_value
 from data_mask_studio.vault.composite_models import (
@@ -19,7 +20,9 @@ from data_mask_studio.vault.repository import VaultRepository, VaultTransaction
 class CompositeVaultRepository(VaultRepository):
     """Usa inicialização, chave AES e transações do repository escalar existente."""
 
+    @guarded(lambda self: self.database_path.parent)
     def as_read_only(self) -> "CompositeVaultRepository":
+        self.check_generation()
         return self if self._read_only else CompositeVaultRepository(
             self.database_path, self._cipher, read_only=True,
         )

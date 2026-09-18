@@ -1,4 +1,5 @@
 import time
+from data_mask_studio.environment import guarded, provider_directory
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -56,6 +57,7 @@ class BatchService:
             if file_callback is not None:
                 file_callback(item)
 
+    @guarded(lambda self, files, profile, output_directory, key_provider=None, vault_repository_factory=None, **kwargs: provider_directory(key_provider))
     def process(
         self,
         files: list[BatchFile],

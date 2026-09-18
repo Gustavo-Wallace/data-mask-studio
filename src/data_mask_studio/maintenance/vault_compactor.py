@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from data_mask_studio.environment import guarded
 
 from data_mask_studio.backup import EnvironmentPaths, create_sqlite_snapshot
 from data_mask_studio.integrity import IntegrityAuditor, IntegrityStatus
@@ -31,6 +32,7 @@ class VaultCompactor:
             paths, hmac_key_provider, vault_key_provider
         )
 
+    @guarded(lambda self, **kwargs: self._paths.directory, exclusive=True)
     def compact(
         self,
         *,

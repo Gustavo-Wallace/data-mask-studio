@@ -8,6 +8,7 @@ import re
 import tempfile
 import uuid
 from pathlib import Path
+from data_mask_studio.environment import guarded
 
 
 class PublicationError(RuntimeError):
@@ -137,6 +138,7 @@ def _load(path: Path, database: Path, key: bytes) -> dict:
         raise PublicationError("Journal de publicação inválido; evidências preservadas.") from None
 
 
+@guarded(lambda database, key: database.parent)
 def recover_publications(database: Path, key: bytes) -> int:
     """Filesystem-only recovery; no vault mutation or repeated processing."""
     directory = database.resolve().parent / "publication-operations"

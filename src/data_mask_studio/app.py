@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.gui.styles import apply_application_theme
 from data_mask_studio.publication import PublicationError
+from data_mask_studio.environment import EnvironmentError
 
 APP_USER_MODEL_ID = "com.gustavowallace.datamaskstudio"
 
@@ -64,8 +65,9 @@ def run() -> int:
     application = create_application()
     try:
         window = MainWindow()
-    except PublicationError as error:
-        QMessageBox.warning(None, "Publicação pendente", str(error))
+    except (PublicationError, EnvironmentError) as error:
+        title = "Ambiente indisponível" if isinstance(error, EnvironmentError) else "Publicação pendente"
+        QMessageBox.warning(None, title, str(error))
         return 1
     window.show()
     return application.exec()

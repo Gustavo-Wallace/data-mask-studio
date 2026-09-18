@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+from data_mask_studio.environment_restore import recover_restore
 
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QScreen, QShowEvent
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
             self._backup_paths.directory
         )
         self._data_protector = data_protector or WindowsDPAPIProtector()
+        recover_restore(self._backup_paths.directory, self._data_protector)
 
         # Uma migração pendente precisa terminar antes de qualquer aba obter
         # uma visão somente leitura do cofre ou iniciar outra operação.

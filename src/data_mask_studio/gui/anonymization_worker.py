@@ -1,4 +1,5 @@
 from threading import Event
+from data_mask_studio.environment import guarded, provider_directory
 from collections.abc import Callable
 
 from PySide6.QtCore import QThread, Signal
@@ -63,6 +64,13 @@ class AnonymizationWorker(QThread):
         self._cancel_requested.set()
 
     def run(self) -> None:
+        try:
+            self._run_leased()
+        except Exception as error:
+            self.failed.emit(error)
+
+    @guarded(lambda self: provider_directory(self._key_provider))
+    def _run_leased(self) -> None:
         try:
             limiter = ProgressLimiter(BALANCED_SETTINGS)
 

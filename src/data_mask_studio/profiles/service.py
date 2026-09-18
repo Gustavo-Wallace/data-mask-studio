@@ -14,7 +14,7 @@ from data_mask_studio.anonymization import (
     validate_configuration,
 )
 from data_mask_studio.normalization import NormalizationRule
-from data_mask_studio.profiles.exceptions import ProfileValidationError
+from data_mask_studio.profiles.exceptions import ProfileValidationError, ProfileStorageError
 from data_mask_studio.profiles.models import (
     PROFILE_FORMAT_VERSION,
     ConfigurationProfile,
@@ -24,6 +24,7 @@ from data_mask_studio.profiles.models import (
 )
 from data_mask_studio.processing.models import CompositeColumnConfig
 from data_mask_studio.profiles.repository import ProfileRepository
+from data_mask_studio.environment import guarded
 from data_mask_studio.profiles.validation import profile_name_key, validate_profile_name
 
 
@@ -63,6 +64,7 @@ class ProfileService:
 
         return build_processing_plan(inspection, configurations, composites)
 
+    @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
     def create(
         self, name: str, configurations: Sequence[ColumnConfig], *,
         composites: Sequence[CompositeColumnConfig] = (),
@@ -86,6 +88,7 @@ class ProfileService:
         self.repository.save([*profiles, profile])
         return profile
 
+    @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
     def update(
         self,
         identifier: str,
@@ -109,6 +112,7 @@ class ProfileService:
         self.repository.save(profiles)
         return updated
 
+    @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
     def rename(self, identifier: str, name: str) -> ConfigurationProfile:
         profiles = self.repository.load()
         index = _profile_index(profiles, identifier)
@@ -123,6 +127,7 @@ class ProfileService:
         self.repository.save(profiles)
         return renamed
 
+    @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
     def delete(self, identifier: str) -> None:
         profiles = self.repository.load()
         index = _profile_index(profiles, identifier)

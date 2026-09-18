@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from data_mask_studio.environment import environment_lease
 
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.vault.encryption import VaultCipher
@@ -12,6 +13,31 @@ RESTORABLE_SCHEMA_VERSIONS = frozenset({1, 2, 3, SCHEMA_VERSION})
 DATABASE_FILE_NAME = "vault.db"
 SQLITE_TIMEOUT_SECONDS = 30.0
 MIGRATION_BATCH_SIZE = 1_000
+
+
+class _EnvironmentConnection(sqlite3.Connection):
+    _lease = None
+
+    def close(self):
+        super().close()
+        if self._lease is not None:
+            lease, self._lease = self._lease, None
+            lease.__exit__(None, None, None)
+
+    def __del__(self):
+        self.close()
+
+
+def _leased_connect(root, *args, **kwargs):
+    lease = environment_lease(root)
+    lease.__enter__()
+    try:
+        connection = sqlite3.connect(*args, **kwargs, factory=_EnvironmentConnection)
+        connection._lease = lease
+        return connection
+    except BaseException:
+        lease.__exit__(None, None, None)
+        raise
 
 CREATE_MAPPINGS_SQL = """
 CREATE TABLE vault_mappings (
@@ -55,7 +81,7 @@ def default_database_path() -> Path:
 def connect(database_path: Path) -> sqlite3.Connection:
     try:
         database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(
+        connection = _leased_connect(database_path.parent,
             database_path,
             timeout=SQLITE_TIMEOUT_SECONDS,
             isolation_level=None,
@@ -78,7 +104,7 @@ def connect_read_only(
         if not database_path.is_file():
             raise VaultError("O cofre local nao foi encontrado.")
         immutable_option = "&immutable=1" if immutable else ""
-        connection = sqlite3.connect(
+        connection = _leased_connect(database_path.parent,
             f"{database_path.resolve().as_uri()}?mode=ro{immutable_option}",
             uri=True,
             timeout=SQLITE_TIMEOUT_SECONDS,

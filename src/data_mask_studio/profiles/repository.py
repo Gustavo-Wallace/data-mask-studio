@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import tempfile
+from data_mask_studio.environment import guarded
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,7 @@ class ProfileRepository:
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path) if path is not None else default_profiles_path()
 
+    @guarded(lambda self: self.path.parent, error_type=ProfileStorageError)
     def load(self) -> list[ConfigurationProfile]:
         if not self.path.exists():
             return []
@@ -69,6 +71,7 @@ class ProfileRepository:
         except (UnicodeError, json.JSONDecodeError) as error:
             raise ProfileFormatError("O arquivo de perfis possui formato inválido.") from error
 
+    @guarded(lambda self, *args, **kwargs: self.path.parent, error_type=ProfileStorageError)
     def save(self, profiles: list[ConfigurationProfile]) -> None:
         try:
             validate_unique_names(profiles)

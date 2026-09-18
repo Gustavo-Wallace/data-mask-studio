@@ -3,6 +3,7 @@ import hmac
 import os
 import tempfile
 import time
+from data_mask_studio.environment import guarded
 from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from pathlib import Path
@@ -39,6 +40,7 @@ class ProcessingCancelled(CSVAnonymizationError):
     """Processamento interrompido a pedido do usuário."""
 
 
+@guarded(lambda *args, **kwargs: kwargs["vault_repository"].database_path.parent if kwargs.get("vault_repository") is not None else None)
 def anonymize_csv(
     source_path: str | Path,
     destination_path: str | Path,

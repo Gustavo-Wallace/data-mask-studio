@@ -1,10 +1,12 @@
 import sqlite3
 from pathlib import Path
+from data_mask_studio.environment import guarded
 
 from data_mask_studio.backup.exceptions import BackupError
 from data_mask_studio.backup.models import CancellationRequest
 
 
+@guarded(lambda source_path, destination_path, cancellation=None: Path(source_path).parent)
 def create_sqlite_snapshot(
     source_path: str | Path,
     destination_path: str | Path,

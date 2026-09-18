@@ -21,10 +21,12 @@ from data_mask_studio.html_restoration.scanner import (
 )
 from data_mask_studio.performance import BALANCED_SETTINGS, HTMLProcessingMetrics
 from data_mask_studio.vault import VaultRepository
+from data_mask_studio.environment import guarded
 
 ProgressCallback = Callable[[HTMLRestorationProgress], None]
 
 
+@guarded(lambda inspection, repository, **kwargs: repository.database_path.parent)
 def analyze_html(
     inspection: HTMLInspectionResult,
     repository: VaultRepository,

@@ -5,8 +5,10 @@ from data_mask_studio.vault.repository import VaultRepository
 from data_mask_studio.vault.exceptions import VaultError
 from data_mask_studio.security.key_provider import LocalKeyProvider
 from data_mask_studio.publication import recover_publications
+from data_mask_studio.environment import guarded
 
 
+@guarded(lambda: default_vault_directory())
 def create_default_vault_repository() -> VaultRepository:
     """Cria o repositório usando a chave exclusiva protegida pelo DPAPI."""
     hmac_key = LocalKeyProvider(default_vault_directory()).get_key()
@@ -15,6 +17,7 @@ def create_default_vault_repository() -> VaultRepository:
     return VaultRepository(default_database_path(), VaultCipher(key))
 
 
+@guarded(lambda: default_vault_directory())
 def create_default_read_only_vault_repository() -> VaultRepository:
     """Abre o cofre existente com protecao de leitura do SQLite."""
     key_provider = VaultKeyProvider(default_vault_directory())

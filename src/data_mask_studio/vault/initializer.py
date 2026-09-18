@@ -2,10 +2,12 @@ from pathlib import Path
 
 from data_mask_studio.security import KeyProvider
 from data_mask_studio.publication import recover_publications
+from data_mask_studio.environment import guarded
 from data_mask_studio.vault.database import initialize_schema
 from data_mask_studio.vault.encryption import VaultCipher
 
 
+@guarded(lambda database_path, *args, **kwargs: Path(database_path).parent)
 def initialize_existing_vault(
     database_path: str | Path,
     key_provider: KeyProvider,

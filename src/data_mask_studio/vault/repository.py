@@ -6,6 +6,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from data_mask_studio.environment import guarded, generation, EnvironmentError
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ from data_mask_studio.vault.models import (
 class VaultRepository:
     """Persiste valores canônicos e suas variações originais criptografadas."""
 
+    @guarded(lambda self, database_path, *args, **kwargs: Path(database_path).parent)
     def __init__(
         self,
         database_path: str | Path,
@@ -48,6 +50,7 @@ class VaultRepository:
         read_only: bool = False,
     ) -> None:
         self.database_path = Path(database_path)
+        self._generation = generation(self.database_path.parent)
         self._cipher = cipher
         self._read_only = read_only
         if read_only:
@@ -55,14 +58,18 @@ class VaultRepository:
         else:
             initialize_schema(self.database_path, cipher)
 
+    @guarded(lambda self: self.database_path.parent)
     def as_read_only(self) -> "VaultRepository":
         """Cria uma visao que o SQLite impede de alterar."""
+        self.check_generation()
         if self._read_only:
             return self
         return VaultRepository(self.database_path, self._cipher, read_only=True)
 
+    @guarded(lambda self: self.database_path.parent)
     def composite_repository(self) -> "CompositeVaultRepository":
         """Acesso tipado ao mesmo cofre e à mesma chave, antes da transação."""
+        self.check_generation()
         from data_mask_studio.vault.composite_repository import CompositeVaultRepository
 
         return CompositeVaultRepository(
@@ -81,11 +88,21 @@ class VaultRepository:
             connection.close()
 
     def _connect_for_read(self) -> sqlite3.Connection:
-        return (
+        connection = (
             connect_read_only(self.database_path)
             if self._read_only
             else connect(self.database_path)
         )
+        try:
+            self.check_generation()
+            return connection
+        except BaseException:
+            connection.close()
+            raise
+
+    def check_generation(self) -> None:
+        if generation(self.database_path.parent) != self._generation:
+            raise EnvironmentError("O ambiente foi restaurado por outra instância. Reabra a operação.")
 
     @contextmanager
     def read_session(
@@ -106,6 +123,7 @@ class VaultRepository:
         connection = connect(self.database_path)
         transaction = None
         try:
+            self.check_generation()
             connection.execute("BEGIN IMMEDIATE")
             transaction = VaultTransaction(connection, self._cipher, self.database_path)
             yield transaction

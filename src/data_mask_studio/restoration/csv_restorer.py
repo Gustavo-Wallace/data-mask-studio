@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable, MutableMapping
 from itertools import islice
 from pathlib import Path
+from data_mask_studio.environment import guarded
 
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
@@ -41,6 +42,7 @@ ProgressCallback = Callable[[RestorationProgress], None]
 CancellationCheck = Callable[[], bool]
 
 
+@guarded(lambda configuration, destination_path, repository, **kwargs: repository.database_path.parent)
 def restore_csv(
     configuration: RestorationConfiguration,
     destination_path: str | Path,

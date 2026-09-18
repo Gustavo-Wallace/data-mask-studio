@@ -1,7 +1,7 @@
 import hmac
 import os
 import sqlite3
-import tempfile
+import shutil
 from pathlib import Path
 
 from data_mask_studio.backup.exceptions import (
@@ -19,10 +19,15 @@ from data_mask_studio.metadata import application_version
 from data_mask_studio.profiles import ProfileRepository
 from data_mask_studio.security import DataProtector, LocalKeyProvider
 from data_mask_studio.vault import VaultCipher, VaultRepository
+from data_mask_studio.environment import guarded, GENERATION_FILE, RESTORE_JOURNAL
+from data_mask_studio.environment_restore import RestoreOperation, recover_restore, validate_paths, durable_replace
+from data_mask_studio.publication import recover_publications
+from data_mask_studio.backup.snapshot import create_sqlite_snapshot
 
 AUXILIARY_DATABASE_SUFFIXES = ("-wal", "-shm", "-journal")
 
 
+@guarded(lambda *args, **kwargs: kwargs["paths"].directory, exclusive=True, recovery=True)
 def restore_backup(
     backup_path: str | Path,
     password: str,
@@ -36,6 +41,11 @@ def restore_backup(
     current_version = current_app_version or application_version()
     paths.directory.mkdir(parents=True, exist_ok=True)
     try:
+        validate_paths(paths)
+        recover_restore(paths.directory, protector)
+        if list((paths.directory / "publication-operations").glob(".dms-operation-*.json")):
+            current_key = LocalKeyProvider(paths.directory, protector).load_existing_key()
+            recover_publications(paths.vault_database_path, current_key)
         with extracted_backup(
             backup_path, password, cancellation=cancellation
         ) as extracted:
@@ -49,14 +59,9 @@ def restore_backup(
             protected_vault = protector.protect(extracted.vault_key)
             cancellation.raise_if_requested()
 
-            with tempfile.TemporaryDirectory(
-                prefix=".dms-restore-", dir=paths.directory
-            ) as temporary_directory:
-                work = Path(temporary_directory)
-                staged = work / "staged"
-                rollback = work / "rollback"
-                staged.mkdir()
-                rollback.mkdir()
+            operation = RestoreOperation(paths.directory, protector)
+            try:
+                staged = operation.work / "B"
                 staged_hmac = staged / paths.hmac_key_path.name
                 staged_vault_key = staged / paths.vault_key_path.name
                 _write_bytes(staged_hmac, protected_hmac)
@@ -73,21 +78,23 @@ def restore_backup(
                     staged_profiles = staged / paths.profiles_path.name
                     _write_bytes(staged_profiles, extracted.profiles_data)
 
-                targets = _all_targets(paths)
-                existed = {target: target.exists() for target in targets}
-                for index, target in enumerate(targets):
-                    if target.exists():
-                        _copy_file(target, rollback / f"{index}.bak", cancellation)
+                staged_paths = EnvironmentPaths(staged, staged_hmac, staged_vault_key,
+                                                staged / "vault.db", staged / "profiles.json")
+                _verify_restored_environment(staged_paths, protector, extracted.hmac_key,
+                    extracted.vault_key, validation.mapping_count, validation.profile_count)
+                # Collapse any migration/WAL effects into a self-contained B.
+                snapshot = operation.work / "vault.snapshot"
+                create_sqlite_snapshot(staged_paths.vault_database_path, snapshot, cancellation)
+                durable_replace(snapshot, staged_paths.vault_database_path)
+                for sidecar in _auxiliary_paths(staged_paths.vault_database_path):
+                    sidecar.unlink(missing_ok=True)
+                _write_bytes(staged / GENERATION_FILE, operation.identifier.encode("ascii"))
                 cancellation.raise_if_requested()
-
-                replacements = {
-                    paths.hmac_key_path: staged_hmac,
-                    paths.vault_key_path: staged_vault_key,
-                    paths.vault_database_path: staged_database,
-                    paths.profiles_path: staged_profiles,
-                }
+                operation.prepare()
+                cancellation.raise_if_requested()
                 try:
-                    _replace_environment(replacements, paths)
+                    operation.record("SWAPPING")
+                    operation.install("B", _replace_file)
                     _verify_restored_environment(
                         paths,
                         protector,
@@ -96,9 +103,10 @@ def restore_backup(
                         validation.mapping_count,
                         validation.profile_count,
                     )
+                    operation.record("COMMITTED")
                 except Exception as error:
                     try:
-                        _rollback_environment(targets, existed, rollback)
+                        recover_restore(paths.directory, protector)
                     except Exception as rollback_error:
                         raise BackupError(
                             "A restauração falhou e o ambiente local exige revisão."
@@ -108,6 +116,15 @@ def restore_backup(
                     raise BackupError(
                         "A restauração falhou e o ambiente anterior foi recuperado."
                     ) from error
+                operation.cleanup()
+            except Exception:
+                if (paths.directory / RESTORE_JOURNAL).exists() and operation.data["state"] in {"STAGED", "SWAPPING"}:
+                    recover_restore(paths.directory, protector)
+                raise
+            finally:
+                # Never discard A/B evidence while a durable decision remains.
+                if not (paths.directory / RESTORE_JOURNAL).exists() and operation.work.exists():
+                    shutil.rmtree(operation.work)
 
             return RestoreResult(
                 mapping_count=validation.mapping_count,
@@ -120,38 +137,8 @@ def restore_backup(
         raise BackupError("Não foi possível restaurar o backup.") from error
 
 
-def _replace_environment(
-    replacements: dict[Path, Path | None], paths: EnvironmentPaths
-) -> None:
-    for auxiliary in _auxiliary_paths(paths.vault_database_path):
-        auxiliary.unlink(missing_ok=True)
-    for target, staged in replacements.items():
-        if staged is None:
-            target.unlink(missing_ok=True)
-        else:
-            _replace_file(staged, target)
-
-
 def _replace_file(source: Path, destination: Path) -> None:
-    os.replace(source, destination)
-
-
-def _rollback_environment(
-    targets: list[Path], existed: dict[Path, bool], rollback: Path
-) -> None:
-    failures: list[OSError] = []
-    for index, target in enumerate(targets):
-        try:
-            if existed[target]:
-                restore_staging = rollback / f"{index}.restore"
-                _copy_file(rollback / f"{index}.bak", restore_staging)
-                os.replace(restore_staging, target)
-            else:
-                target.unlink(missing_ok=True)
-        except OSError as error:
-            failures.append(error)
-    if failures:
-        raise BackupError("Não foi possível concluir o rollback local.") from failures[0]
+    durable_replace(source, destination)
 
 
 def _verify_restored_environment(
@@ -195,16 +182,14 @@ def _verify_restored_environment(
     profiles = ProfileRepository(paths.profiles_path).load()
     if len(profiles) != expected_profiles:
         raise BackupError("Os perfis restaurados não puderam ser validados.")
-
-
-def _all_targets(paths: EnvironmentPaths) -> list[Path]:
-    return [
-        paths.hmac_key_path,
-        paths.vault_key_path,
-        paths.vault_database_path,
-        paths.profiles_path,
-        *_auxiliary_paths(paths.vault_database_path),
-    ]
+    composite = repository.composite_repository()
+    connection = sqlite3.connect(paths.vault_database_path)
+    try:
+        for (code,) in connection.execute("SELECT code FROM composite_mappings"):
+            if composite.get_composite_mapping(code) is None:
+                raise BackupError("O cofre composto restaurado não pôde ser validado.")
+    finally:
+        connection.close()
 
 
 def _auxiliary_paths(database_path: Path) -> list[Path]:

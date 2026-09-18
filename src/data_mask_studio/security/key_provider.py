@@ -3,6 +3,7 @@ import secrets
 import tempfile
 from pathlib import Path
 from typing import Protocol
+from data_mask_studio.environment import guarded, GENERATION_FILE
 
 from data_mask_studio.security.windows_dpapi import WindowsDPAPIProtector
 
@@ -46,6 +47,7 @@ class LocalKeyProvider:
     def key_path(self) -> Path:
         return self._storage_directory / self._key_file_name
 
+    @guarded(lambda self: self._storage_directory)
     def get_key(self) -> bytes:
         try:
             try:
@@ -60,6 +62,7 @@ class LocalKeyProvider:
                 "Não foi possível acessar a chave secreta local."
             ) from error
 
+    @guarded(lambda self: self._storage_directory)
     def load_existing_key(self) -> bytes:
         """Carrega sem criar; ausência é distinta de falha de formato/DPAPI."""
         try:
@@ -87,7 +90,7 @@ class LocalKeyProvider:
         # Mesmo um banco vazio ou apenas seus sidecars é estado persistente.
         # Perfis e a outra chave não dependem da chave ausente: uma criação
         # interrompida antes do banco pode ser concluída sem substituí-los.
-        for name in ("vault.db", "vault.db-wal", "vault.db-shm", "vault.db-journal"):
+        for name in ("vault.db", "vault.db-wal", "vault.db-shm", "vault.db-journal", GENERATION_FILE):
             try:
                 (self._storage_directory / name).lstat()
             except FileNotFoundError:

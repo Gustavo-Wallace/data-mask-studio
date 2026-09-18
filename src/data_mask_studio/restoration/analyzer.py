@@ -23,11 +23,13 @@ from data_mask_studio.performance import (
     RestorationMetrics,
 )
 from data_mask_studio.vault import VaultRepository
+from data_mask_studio.environment import guarded
 
 ProgressCallback = Callable[[RestorationProgress], None]
 CancellationCheck = Callable[[], bool]
 
 
+@guarded(lambda configuration, repository, **kwargs: repository.database_path.parent)
 def analyze_csv(
     configuration: RestorationConfiguration,
     repository: VaultRepository,

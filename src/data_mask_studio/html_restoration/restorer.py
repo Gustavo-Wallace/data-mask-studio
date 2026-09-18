@@ -3,6 +3,7 @@ import tempfile
 import time
 from collections.abc import Callable, MutableMapping
 from pathlib import Path
+from data_mask_studio.environment import guarded
 
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
 from data_mask_studio.html_restoration.exceptions import (
@@ -41,6 +42,7 @@ from data_mask_studio.vault.models import DecryptedVaultMapping
 ProgressCallback = Callable[[HTMLRestorationProgress], None]
 
 
+@guarded(lambda inspection, destination_path, repository, **kwargs: repository.database_path.parent)
 def restore_html(
     inspection: HTMLInspectionResult,
     destination_path: str | Path,
