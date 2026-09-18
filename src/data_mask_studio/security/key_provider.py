@@ -24,6 +24,10 @@ class KeyProviderError(RuntimeError):
     """Falha ao criar ou recuperar a chave local protegida."""
 
 
+class MissingKeyError(KeyProviderError):
+    """Chave ausente; somente um ambiente novo pode criá-la."""
+
+
 class LocalKeyProvider:
     """Mantém uma chave aleatória protegida pelo DPAPI fora do projeto."""
 
@@ -44,19 +48,54 @@ class LocalKeyProvider:
 
     def get_key(self) -> bytes:
         try:
-            if self.key_path.exists():
-                protected_key = self.key_path.read_bytes()
-                key = self._protector.unprotect(protected_key)
-                if len(key) != KEY_SIZE:
-                    raise KeyProviderError("A chave local protegida possui formato inválido.")
-                return key
+            try:
+                return self.load_existing_key()
+            except MissingKeyError:
+                self._require_new_environment()
             return self._create_key()
         except KeyProviderError:
             raise
-        except (OSError, RuntimeError) as error:
+        except (OSError, RuntimeError, ValueError) as error:
             raise KeyProviderError(
                 "Não foi possível acessar a chave secreta local."
             ) from error
+
+    def load_existing_key(self) -> bytes:
+        """Carrega sem criar; ausência é distinta de falha de formato/DPAPI."""
+        try:
+            protected_key = self.key_path.read_bytes()
+        except FileNotFoundError as error:
+            if self.key_path.is_symlink():
+                raise KeyProviderError("A chave local protegida está indisponível.") from error
+            raise MissingKeyError(
+                "A chave do ambiente está ausente ou indisponível. "
+                "Restaure um backup válido do ambiente."
+            ) from error
+        except OSError as error:
+            raise KeyProviderError("Não foi possível acessar a chave local protegida.") from error
+        try:
+            key = self._protector.unprotect(protected_key)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise KeyProviderError(
+                "Não foi possível recuperar a chave local protegida."
+            ) from error
+        if not isinstance(key, bytes) or len(key) != KEY_SIZE:
+            raise KeyProviderError("A chave local protegida possui formato inválido.")
+        return key
+
+    def _require_new_environment(self) -> None:
+        # Mesmo um banco vazio ou apenas seus sidecars é estado persistente.
+        # Perfis e a outra chave não dependem da chave ausente: uma criação
+        # interrompida antes do banco pode ser concluída sem substituí-los.
+        for name in ("vault.db", "vault.db-wal", "vault.db-shm", "vault.db-journal"):
+            try:
+                (self._storage_directory / name).lstat()
+            except FileNotFoundError:
+                continue
+            # O vencedor pode ter publicado chave + banco desde nossa leitura.
+            # Nesse caso não confundir concorrência legítima com chave perdida.
+            self.load_existing_key()
+            return
 
     def _create_key(self) -> bytes:
         self._storage_directory.mkdir(parents=True, exist_ok=True)
@@ -75,7 +114,19 @@ class LocalKeyProvider:
                 temporary_file.write(protected_key)
                 temporary_file.flush()
                 os.fsync(temporary_file.fileno())
-            os.replace(temporary_path, self.key_path)
+            # Outro inicializador pode ter concluído enquanto protegíamos os
+            # bytes. Nunca publicar sobre uma identidade já persistida.
+            try:
+                return self.load_existing_key()
+            except MissingKeyError:
+                self._require_new_environment()
+            try:
+                # Hard link no mesmo volume: publicação atômica sem replace,
+                # suportada pelo Windows/NTFS. Não há fallback inseguro em FS
+                # sem esse recurso. O conteúdo já foi fechado e fsync'ed.
+                os.link(temporary_path, self.key_path)
+            except FileExistsError:
+                return self.load_existing_key()
         finally:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()

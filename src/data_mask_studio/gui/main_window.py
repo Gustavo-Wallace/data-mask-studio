@@ -90,6 +90,7 @@ class MainWindow(QMainWindow):
         initialize_existing_vault(
             self._backup_paths.vault_database_path,
             self._vault_key_provider,
+            self._key_provider,
         )
 
         resolved_profile_service = profile_service
