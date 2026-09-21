@@ -4,6 +4,7 @@ from data_mask_studio.html_restoration.exceptions import (
     HTMLRestorationCancelled,
     HTMLRestorationError,
     HTMLRestorationSecurityError,
+    HTMLUnsupportedContextError,
 )
 from data_mask_studio.html_restoration.inspector import inspect_html
 from data_mask_studio.html_restoration.models import (
@@ -30,6 +31,7 @@ __all__ = [
     "HTMLRestorationProgress",
     "HTMLRestorationResult",
     "HTMLRestorationSecurityError",
+    "HTMLUnsupportedContextError",
     "HTMLRestorationService",
     "HTMLRestorationStage",
     "analyze_html",

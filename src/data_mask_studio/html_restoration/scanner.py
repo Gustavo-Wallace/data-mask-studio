@@ -122,32 +122,6 @@ def iter_candidates(segment: HTMLSegment) -> Iterator[tuple[re.Match[str], str]]
         yield match, normalized
 
 
-def replace_candidates(
-    segment: HTMLSegment,
-    replacement: Callable[[str, str], str],
-    candidates: list[tuple[re.Match[str], str]] | None = None,
-) -> str:
-    if candidates is not None:
-        pieces: list[str] = []
-        cursor = 0
-        for match, normalized in candidates:
-            start = match.start() - 1
-            end = match.end() - 1
-            pieces.append(segment.text[cursor:start])
-            pieces.append(replacement(match.group(0), normalized))
-            cursor = end
-        pieces.append(segment.text[cursor:])
-        return "".join(pieces)
-
-    guarded = segment.guarded_text()
-
-    def replace(match: re.Match[str]) -> str:
-        original = match.group(0)
-        return replacement(original, original.upper())
-
-    return CODE_CANDIDATE_PATTERN.sub(replace, guarded)[1:-1]
-
-
 def is_valid_candidate(normalized_code: str) -> bool:
     return is_valid_code(normalized_code)
 

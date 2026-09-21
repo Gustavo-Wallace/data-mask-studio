@@ -13,6 +13,11 @@ from data_mask_studio.html_restoration.exceptions import (
     HTMLRestorationSecurityError,
 )
 from data_mask_studio.html_restoration.inspector import python_encoding
+from data_mask_studio.html_restoration.context import (
+    ContextSegment,
+    contextual_segments as iter_html_segments,
+    replace_candidates,
+)
 from data_mask_studio.html_restoration.models import (
     HTMLInspectionResult,
     HTMLMissingCodePolicy,
@@ -22,12 +27,9 @@ from data_mask_studio.html_restoration.models import (
 )
 from data_mask_studio.html_restoration.scanner import (
     CancellationCheck,
-    HTMLSegment,
     is_valid_candidate,
     iter_candidates,
-    iter_html_segments,
     iter_timed_html_segments,
-    replace_candidates,
 )
 from data_mask_studio.performance import (
     BALANCED_SETTINGS,
@@ -311,7 +313,7 @@ def _bulk_lookup(
 
 
 def _replace_from_cache(
-    segment: HTMLSegment,
+    segment: ContextSegment,
     available: dict[str, DecryptedVaultMapping | None],
     missing_code_policy: HTMLMissingCodePolicy,
     representation_policy: RepresentationPolicy,

@@ -169,11 +169,11 @@ def test_unselected_csv_column_is_preserved(tmp_path: Path) -> None:
     assert row == f"{ORIGINAL},{CODE}"
 
 
-def test_html_restoration_preserves_markup_and_replaces_all_contexts(tmp_path: Path) -> None:
+def test_html_restoration_preserves_markup_and_replaces_safe_contexts(tmp_path: Path) -> None:
     restoration, _ = service(tmp_path)
     source = tmp_path / "dashboard.html"
     source.write_text(
-        f'<div data-code="{CODE}">{CODE}</div><script>const x="{CODE}";</script>',
+        f'<div data-code="{CODE}">{CODE}</div><script>const x="unchanged";</script>',
         encoding="utf-8",
     )
     files: list[BatchRestorationFile] = []
@@ -187,8 +187,23 @@ def test_html_restoration_preserves_markup_and_replaces_all_contexts(tmp_path: P
     content = files[0].output_path.read_text(encoding="utf-8")
     assert content == (
         f'<div data-code="{ORIGINAL}">{ORIGINAL}</div>'
-        f'<script>const x="{ORIGINAL}";</script>'
+        '<script>const x="unchanged";</script>'
     )
+
+
+def test_html_script_token_is_incompatible_not_vault_corruption(tmp_path: Path) -> None:
+    restoration, vault = service(tmp_path)
+    source = tmp_path / "script.html"
+    source.write_text(f'<script>const x="{CODE}";</script>', encoding="utf-8")
+    files: list[BatchRestorationFile] = []
+    add_files(files, [source])
+    before = vault.database_path.read_bytes()
+    restoration.analyze_files(files)
+    assert files[0].status is BatchRestorationStatus.INCOMPATIBLE
+    assert "contexto HTML" in files[0].result_message
+    assert CODE not in files[0].result_message
+    assert files[0].output_path is None
+    assert vault.database_path.read_bytes() == before
 
 
 def _two_csv_batch(tmp_path: Path) -> tuple[BatchRestorationService, list[BatchRestorationFile], Path]:

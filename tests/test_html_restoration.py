@@ -1,6 +1,7 @@
 import codecs
 import importlib
 import sqlite3
+from html import escape
 from dataclasses import replace
 from pathlib import Path
 
@@ -84,8 +85,9 @@ def dashboard_html() -> str:
         "<html><head><style>.card { color: #123; }</style></head>\n"
         f'<body data-cpf="{CPF_CODE}">\n'
         f"<p>{CPF_CODE}</p>\n"
+        f'<div title="{CPF_CODE}">{NAME_CODE}</div>\n'
         "<script>\n"
-        f'const payload = {{"cpf":"{CPF_CODE}","name":"{NAME_CODE}"}};\n'
+        'const payload = {};\n'
         'const escaped = "\\u00e3 &amp;";\n'
         "drawChart(payload);\n"
         "</script>\n"
@@ -206,7 +208,7 @@ def test_html_without_tokens_is_copied_identically(tmp_path: Path) -> None:
     assert metrics.vault.sqlite_queries == 0
 
 
-def test_restoration_replaces_visible_text_javascript_json_and_attributes(
+def test_restoration_replaces_text_and_attributes_preserving_unrelated_script(
     tmp_path: Path,
 ) -> None:
     repository = make_repository(tmp_path)
@@ -225,8 +227,7 @@ def test_restoration_replaces_visible_text_javascript_json_and_attributes(
     )
     assert restored == expected
     assert '<body data-cpf="123.456.789-00">' in restored
-    assert f'"cpf":"{CPF_ORIGINAL}"' in restored
-    assert f'"name":"{NAME_ORIGINAL}"' in restored
+    assert f'<div title="{CPF_ORIGINAL}">{NAME_ORIGINAL}</div>' in restored
     assert ".card { color: #123; }" in restored
     assert "drawChart(payload);" in restored
     assert 'const escaped = "\\u00e3 &amp;";' in restored
@@ -255,7 +256,6 @@ def test_restoration_preserves_special_characters_exactly(tmp_path: Path) -> Non
         )
     original = (
         f'<p data-value="{SPECIAL_CODE}">{SPECIAL_CODE}</p>'
-        f'<script>const value = "{SPECIAL_CODE}";</script>'
     )
     source = tmp_path / "special.html"
     source.write_text(original, encoding="utf-8", newline="")
@@ -263,8 +263,9 @@ def test_restoration_preserves_special_characters_exactly(tmp_path: Path) -> Non
 
     restore_html(inspect_html(source), destination, repository)
 
-    assert destination.read_text(encoding="utf-8") == original.replace(
-        SPECIAL_CODE, special_value
+    assert destination.read_text(encoding="utf-8") == (
+        '<p data-value="' + escape(special_value, quote=False).replace('"', '&quot;')
+        + '">' + escape(special_value, quote=False) + '</p>'
     )
 
 

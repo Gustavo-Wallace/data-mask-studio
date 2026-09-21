@@ -6,6 +6,10 @@ class HTMLRestorationSecurityError(HTMLRestorationError):
     """Falha de integridade ou descriptografia do cofre."""
 
 
+class HTMLUnsupportedContextError(HTMLRestorationError):
+    """Contexto HTML não suportado; não indica corrupção do cofre."""
+
+
 class HTMLRestorationCancelled(HTMLRestorationError):
     """Operação interrompida cooperativamente."""
 

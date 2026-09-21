@@ -1,6 +1,10 @@
 import time
 from collections.abc import Callable, Iterator
 
+from data_mask_studio.html_restoration.context import (
+    contextual_segments as iter_html_segments,
+)
+
 from data_mask_studio.html_restoration.exceptions import (
     HTMLRestorationCancelled,
     HTMLRestorationError,
@@ -16,7 +20,6 @@ from data_mask_studio.html_restoration.scanner import (
     CancellationCheck,
     is_valid_candidate,
     iter_candidates,
-    iter_html_segments,
     iter_timed_html_segments,
 )
 from data_mask_studio.performance import BALANCED_SETTINGS, HTMLProcessingMetrics
