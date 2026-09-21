@@ -24,8 +24,9 @@ class _EnvironmentConnection(sqlite3.Connection):
             lease, self._lease = self._lease, None
             lease.__exit__(None, None, None)
 
-    def __del__(self):
-        self.close()
+    # Callers close explicitly in their owner thread (repository finally blocks).
+    # Do not close again from __del__: GC may run on a different Qt thread,
+    # and SQLite's thread check also applies to an already-closed connection.
 
 
 def _leased_connect(root, *args, **kwargs):
@@ -79,6 +80,7 @@ def default_database_path() -> Path:
 
 
 def connect(database_path: Path) -> sqlite3.Connection:
+    connection = None
     try:
         database_path.parent.mkdir(parents=True, exist_ok=True)
         connection = _leased_connect(database_path.parent,
@@ -93,13 +95,20 @@ def connect(database_path: Path) -> sqlite3.Connection:
         connection.execute("PRAGMA synchronous = FULL")
         return connection
     except sqlite3.Error as error:
+        if connection is not None:
+            connection.close()
         raise VaultError("Não foi possível abrir o cofre local.") from error
+    except BaseException:
+        if connection is not None:
+            connection.close()
+        raise
 
 
 def connect_read_only(
     database_path: Path, *, immutable: bool = False
 ) -> sqlite3.Connection:
     """Abre um cofre existente sem permitir qualquer alteracao."""
+    connection = None
     try:
         if not database_path.is_file():
             raise VaultError("O cofre local nao foi encontrado.")
@@ -115,9 +124,17 @@ def connect_read_only(
         connection.execute("PRAGMA busy_timeout = 30000")
         return connection
     except VaultError:
+        if connection is not None:
+            connection.close()
         raise
     except (OSError, sqlite3.Error) as error:
+        if connection is not None:
+            connection.close()
         raise VaultError("Nao foi possivel abrir o cofre local.") from error
+    except BaseException:
+        if connection is not None:
+            connection.close()
+        raise
 
 
 def initialize_schema(database_path: Path, cipher: VaultCipher) -> None:

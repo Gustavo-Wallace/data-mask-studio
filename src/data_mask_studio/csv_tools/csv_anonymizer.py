@@ -40,7 +40,20 @@ class ProcessingCancelled(CSVAnonymizationError):
     """Processamento interrompido a pedido do usuário."""
 
 
-@guarded(lambda *args, **kwargs: kwargs["vault_repository"].database_path.parent if kwargs.get("vault_repository") is not None else None)
+def resolve_anonymization_environment(
+    *args,
+    processing_plan: ProcessingPlan | None = None,
+    vault_repository: VaultRepository | None = None,
+    **kwargs,
+) -> Path | None:
+    """Decide environment dependency before inspecting a supplied repository."""
+    if processing_plan is not None and not processing_plan.requires_masking:
+        return None
+    # Legacy processing can mask without a ProcessingPlan: retain its guard.
+    return vault_repository.database_path.parent if vault_repository is not None else None
+
+
+@guarded(resolve_anonymization_environment)
 def anonymize_csv(
     source_path: str | Path,
     destination_path: str | Path,
@@ -62,6 +75,8 @@ def anonymize_csv(
     destination = Path(destination_path).expanduser().absolute()
     # O plano validado é a autoridade; configurações legadas não o sobrescrevem.
     if processing_plan is not None:
+        if not processing_plan.requires_masking:
+            vault_repository = None
         configurations = tuple(ColumnConfig(
             column.reference.header, prefix=column.prefix,
             normalization_rule=column.normalization_rule, action=column.action,
@@ -97,9 +112,6 @@ def anonymize_csv(
         isinstance(output, BoundCompositeColumn) and output.action is ColumnAction.MASK
         for output in processing_plan.outputs
     )
-    if processing_plan is not None and not processing_plan.requires_masking:
-        vault_repository = None
-        publication = None
     if has_masked_composites and vault_repository is None:
         raise CSVAnonymizationError("Um cofre é necessário para processar composites.")
     transaction_context = (
