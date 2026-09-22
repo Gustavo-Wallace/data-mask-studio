@@ -7,7 +7,7 @@ from data_mask_studio.vault.database import initialize_schema
 from data_mask_studio.vault.encryption import VaultCipher
 
 
-@guarded(lambda database_path, *args, **kwargs: Path(database_path).parent)
+@guarded(lambda database_path, *args, **kwargs: Path(database_path).parent, exclusive=True)
 def initialize_existing_vault(
     database_path: str | Path,
     key_provider: KeyProvider,

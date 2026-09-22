@@ -138,7 +138,7 @@ def _load(path: Path, database: Path, key: bytes) -> dict:
         raise PublicationError("Journal de publicação inválido; evidências preservadas.") from None
 
 
-@guarded(lambda database, key: database.parent)
+@guarded(lambda database, key: database.parent, exclusive=True)
 def recover_publications(database: Path, key: bytes) -> int:
     """Filesystem-only recovery; no vault mutation or repeated processing."""
     directory = database.resolve().parent / "publication-operations"

@@ -20,7 +20,8 @@ from data_mask_studio.batch.models import (
     BatchSummary,
     CancellationRequest,
 )
-from data_mask_studio.batch.output_naming import reserve_output_path
+from data_mask_studio.batch.output_naming import reserve_output_file
+from data_mask_studio.batch.reservation import OutputReservation
 from data_mask_studio.batch.validation import validate_file, validate_output_directory
 from data_mask_studio.csv_tools import CSVInspectionError, ProcessingCancelled, anonymize_csv, inspect_csv
 from data_mask_studio.csv_tools.csv_anonymizer import CSVAnonymizationError
@@ -134,9 +135,9 @@ class BatchService:
             item.status = BatchFileStatus.PROCESSING
             item.result_message = "Processando arquivo."
             _notify_file(item, file_callback)
-            reservation: Path | None = None
+            reservation: OutputReservation | None = None
             try:
-                reservation = reserve_output_path(output, item.path)
+                reservation = reserve_output_file(output, item.path)
 
                 def report_records(records: int) -> None:
                     item.records_processed = records
@@ -147,12 +148,12 @@ class BatchService:
 
                 result = anonymize_csv(
                     item.path,
-                    reservation,
+                    reservation.path,
                     encoding=item.encoding or "utf-8",
                     delimiter=item.delimiter or ",",
                     processing_plan=plans[id(item)],
                     secret_key=secret_key,
-                    overwrite=True,
+                    overwrite=False,
                     progress_callback=report_records,
                     should_cancel=cancellation.is_requested,
                     vault_repository=vault_repository,
@@ -178,6 +179,9 @@ class BatchService:
                     _mark_remaining_skipped(compatible[current_index:], file_callback)
                     break
                 continue
+            finally:
+                if reservation is not None:
+                    reservation.close()
             item.status = BatchFileStatus.COMPLETED
             item.output_path = result.output_path
             item.records_processed = result.records_processed
@@ -216,11 +220,11 @@ def _safe_error_message(error: Exception) -> str:
     return "Não foi possível processar este arquivo."
 
 
-def _remove_reservation(path: Path | None) -> None:
-    if path is None:
+def _remove_reservation(reservation: OutputReservation | None) -> None:
+    if reservation is None:
         return
     try:
-        path.unlink(missing_ok=True)
+        reservation.remove()
     except OSError:
         pass
 
