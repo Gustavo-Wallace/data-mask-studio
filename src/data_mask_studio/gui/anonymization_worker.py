@@ -69,7 +69,8 @@ class AnonymizationWorker(QThread):
         except Exception as error:
             self.failed.emit(error)
 
-    @guarded(lambda self: provider_directory(self._key_provider))
+    @guarded(lambda self: provider_directory(self._key_provider)
+             if self._processing_plan is None or self._processing_plan.requires_masking else None)
     def _run_leased(self) -> None:
         try:
             limiter = ProgressLimiter(BALANCED_SETTINGS)

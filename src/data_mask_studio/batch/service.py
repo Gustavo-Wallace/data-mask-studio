@@ -1,5 +1,7 @@
 import time
-from data_mask_studio.environment import guarded, provider_directory
+from contextlib import nullcontext
+from data_mask_studio import environment
+from data_mask_studio.environment import provider_directory
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -58,7 +60,6 @@ class BatchService:
             if file_callback is not None:
                 file_callback(item)
 
-    @guarded(lambda self, files, profile, output_directory, key_provider=None, vault_repository_factory=None, **kwargs: provider_directory(key_provider))
     def process(
         self,
         files: list[BatchFile],
@@ -112,89 +113,92 @@ class BatchService:
             _mark_remaining_skipped(compatible, file_callback)
             raise BatchStructuralError(str(error)) from error
 
-        try:
-            needs_masking = any(plan.requires_masking for plan in plans.values())
-            secret_key = key_provider.get_key() if needs_masking else None
-            vault_repository = vault_repository_factory() if needs_masking else None
-        except (KeyProviderError, VaultError) as error:
-            _mark_remaining_skipped(compatible, file_callback)
-            raise BatchStructuralError(str(error)) from error
-        except Exception as error:
-            _mark_remaining_skipped(compatible, file_callback)
-            raise BatchStructuralError(
-                "Não foi possível preparar os recursos seguros do lote."
-            ) from error
-        if needs_masking and not secret_key:
-            _mark_remaining_skipped(compatible, file_callback)
-            raise BatchStructuralError("A chave HMAC local não está disponível.")
-
-        for current_index, item in enumerate(compatible, start=1):
-            if cancellation.is_requested():
-                _mark_remaining_cancelled(compatible[current_index - 1 :], file_callback)
-                break
-            item.status = BatchFileStatus.PROCESSING
-            item.result_message = "Processando arquivo."
-            _notify_file(item, file_callback)
-            reservation: OutputReservation | None = None
+        needs_masking = any(plan.requires_masking for plan in plans.values())
+        directory = provider_directory(key_provider) if needs_masking else None
+        lease = environment.environment_lease(directory) if directory is not None else nullcontext()
+        with lease:
             try:
-                reservation = reserve_output_file(output, item.path)
-
-                def report_records(records: int) -> None:
-                    item.records_processed = records
-                    if progress_callback is not None:
-                        progress_callback(
-                            _progress(files, item, current_index, len(compatible))
-                        )
-
-                result = anonymize_csv(
-                    item.path,
-                    reservation.path,
-                    encoding=item.encoding or "utf-8",
-                    delimiter=item.delimiter or ",",
-                    processing_plan=plans[id(item)],
-                    secret_key=secret_key,
-                    overwrite=False,
-                    progress_callback=report_records,
-                    should_cancel=cancellation.is_requested,
-                    vault_repository=vault_repository,
-                )
-            except ProcessingCancelled:
-                _remove_reservation(reservation)
-                item.status = BatchFileStatus.CANCELLED
-                item.error_type = BatchErrorType.CANCELLATION
-                item.result_message = "Processamento cancelado."
-                _notify_file(item, file_callback)
-                _mark_remaining_cancelled(compatible[current_index:], file_callback)
-                break
+                secret_key = key_provider.get_key() if needs_masking else None
+                vault_repository = vault_repository_factory() if needs_masking else None
+            except (KeyProviderError, VaultError) as error:
+                _mark_remaining_skipped(compatible, file_callback)
+                raise BatchStructuralError(str(error)) from error
             except Exception as error:
-                _remove_reservation(reservation)
-                structural = _is_structural_error(error)
-                item.status = BatchFileStatus.ERROR
-                item.error_type = (
-                    BatchErrorType.STRUCTURAL if structural else BatchErrorType.FILE
-                )
-                item.result_message = _safe_error_message(error)
-                _notify_file(item, file_callback)
-                if structural:
-                    _mark_remaining_skipped(compatible[current_index:], file_callback)
-                    break
-                continue
-            finally:
-                if reservation is not None:
-                    reservation.close()
-            item.status = BatchFileStatus.COMPLETED
-            item.output_path = result.output_path
-            item.records_processed = result.records_processed
-            item.new_mappings = result.new_mappings
-            item.updated_mappings = result.updated_mappings
-            item.normalization_fallbacks = result.normalization_fallbacks
-            item.processing_result = result
-            item.result_message = _completed_message(result.normalization_fallbacks)
-            _notify_file(item, file_callback)
-            if progress_callback is not None:
-                progress_callback(_progress(files, item, current_index, len(compatible)))
+                _mark_remaining_skipped(compatible, file_callback)
+                raise BatchStructuralError(
+                    "Não foi possível preparar os recursos seguros do lote."
+                ) from error
+            if needs_masking and not secret_key:
+                _mark_remaining_skipped(compatible, file_callback)
+                raise BatchStructuralError("A chave HMAC local não está disponível.")
 
-        return _summary(files, len(compatible), output, started_at)
+            for current_index, item in enumerate(compatible, start=1):
+                if cancellation.is_requested():
+                    _mark_remaining_cancelled(compatible[current_index - 1 :], file_callback)
+                    break
+                item.status = BatchFileStatus.PROCESSING
+                item.result_message = "Processando arquivo."
+                _notify_file(item, file_callback)
+                reservation: OutputReservation | None = None
+                try:
+                    reservation = reserve_output_file(output, item.path)
+
+                    def report_records(records: int) -> None:
+                        item.records_processed = records
+                        if progress_callback is not None:
+                            progress_callback(
+                                _progress(files, item, current_index, len(compatible))
+                            )
+
+                    result = anonymize_csv(
+                        item.path,
+                        reservation.path,
+                        encoding=item.encoding or "utf-8",
+                        delimiter=item.delimiter or ",",
+                        processing_plan=plans[id(item)],
+                        secret_key=secret_key,
+                        overwrite=False,
+                        progress_callback=report_records,
+                        should_cancel=cancellation.is_requested,
+                        vault_repository=vault_repository,
+                    )
+                except ProcessingCancelled:
+                    _remove_reservation(reservation)
+                    item.status = BatchFileStatus.CANCELLED
+                    item.error_type = BatchErrorType.CANCELLATION
+                    item.result_message = "Processamento cancelado."
+                    _notify_file(item, file_callback)
+                    _mark_remaining_cancelled(compatible[current_index:], file_callback)
+                    break
+                except Exception as error:
+                    _remove_reservation(reservation)
+                    structural = _is_structural_error(error)
+                    item.status = BatchFileStatus.ERROR
+                    item.error_type = (
+                        BatchErrorType.STRUCTURAL if structural else BatchErrorType.FILE
+                    )
+                    item.result_message = _safe_error_message(error)
+                    _notify_file(item, file_callback)
+                    if structural:
+                        _mark_remaining_skipped(compatible[current_index:], file_callback)
+                        break
+                    continue
+                finally:
+                    if reservation is not None:
+                        reservation.close()
+                item.status = BatchFileStatus.COMPLETED
+                item.output_path = result.output_path
+                item.records_processed = result.records_processed
+                item.new_mappings = result.new_mappings
+                item.updated_mappings = result.updated_mappings
+                item.normalization_fallbacks = result.normalization_fallbacks
+                item.processing_result = result
+                item.result_message = _completed_message(result.normalization_fallbacks)
+                _notify_file(item, file_callback)
+                if progress_callback is not None:
+                    progress_callback(_progress(files, item, current_index, len(compatible)))
+
+            return _summary(files, len(compatible), output, started_at)
 
 
 def _is_structural_error(error: Exception) -> bool:
