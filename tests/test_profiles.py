@@ -97,15 +97,16 @@ def test_resolved_empty_headers_are_stable_in_profiles(tmp_path: Path) -> None:
 
     created = service.create(
         "Layout com coluna sintética",
-        [ColumnConfig("column_1", True, "COLUNA_1")],
+        [ColumnConfig("column_1", True, "COLUNA_1"), ColumnConfig("CPF")],
+        inspection=inspection,
     )
     loaded = ProfileRepository(repository.path).load()[0]
-    application = service.apply(loaded, inspection.headers)
+    application = service.apply(loaded, inspection)
 
     assert created.columns[0].header == "column_1"
-    assert application.matched_headers == ("column_1",)
-    assert application.extra_headers == ("CPF",)
-    assert not application.is_complete
+    assert application.matched_headers == ("column_1", "CPF")
+    assert application.extra_headers == ()
+    assert application.is_complete
 
 
 def test_multiple_profiles_and_case_insensitive_duplicate_names(

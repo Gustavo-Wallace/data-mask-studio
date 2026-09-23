@@ -88,7 +88,7 @@ def validate_file(
         item.status = BatchFileStatus.INCOMPATIBLE
         item.result_message = str(error)
         return
-    application = profile_service.apply(profile, inspection.headers)
+    application = profile_service.apply(profile, inspection)
     item.column_count = len(inspection.headers)
     item.encoding = inspection.encoding
     item.delimiter = inspection.delimiter

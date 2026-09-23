@@ -6,12 +6,18 @@ de ocorrência, não uma identidade semântica inferida a partir dos dados.
 """
 
 from dataclasses import dataclass
+import re
 
 from data_mask_studio.csv_tools.models import CSVInspectionResult
 
 
 class SourceBindingError(ValueError):
     """Referência não pode ser associada inequivocamente à estrutura atual."""
+
+
+def may_be_synthetic_name(header: str) -> bool:
+    """Legacy names in the generated namespace do not prove real provenance."""
+    return re.fullmatch(r"column_[0-9]+(?:_[0-9]+)?", header) is not None
 
 
 @dataclass(frozen=True, slots=True)

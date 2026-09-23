@@ -19,6 +19,8 @@ from data_mask_studio.anonymization.models import (
 )
 from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
+from data_mask_studio.csv_tools.models import CSVInspectionResult
+from data_mask_studio.processing.planner import bind_execution_sources, PlanningError
 from data_mask_studio.publication import Publication, PublicationError, publish
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
@@ -114,16 +116,30 @@ def anonymize_csv(
     )
     if has_masked_composites and vault_repository is None:
         raise CSVAnonymizationError("Um cofre é necessário para processar composites.")
-    transaction_context = (
-        vault_repository.transaction()
-        if vault_repository is not None
-        else nullcontext(None)
-    )
 
     vault_transaction = None
+    source_file = None
     try:
+        source_file = source.open("r", encoding=input_encoding, newline="",
+                                  buffering=performance_settings.io_buffer_size)
+        reader = csv.reader(source_file, delimiter=delimiter, strict=True)
+        headers, replacements = resolve_empty_headers(next(reader))
+        indices = None
+        if processing_plan is not None:
+            opened = CSVInspectionResult(source, encoding, delimiter, headers, replacements)
+            try:
+                indices = bind_execution_sources(processing_plan, opened)
+            except PlanningError as error:
+                raise CSVAnonymizationError(str(error)) from error
+        elif headers != [configuration.header for configuration in configurations]:
+            raise CSVAnonymizationError("Os cabeçalhos do arquivo foram alterados desde a seleção.")
         composite_repository = (
             vault_repository.composite_repository() if has_masked_composites else None
+        )
+        transaction_context = (
+            vault_repository.transaction()
+            if vault_repository is not None
+            else nullcontext(None)
         )
         with transaction_context as vault_transaction:
             with tempfile.NamedTemporaryFile(
@@ -138,87 +154,74 @@ def anonymize_csv(
             ) as temporary_file:
                 temporary_path = Path(temporary_file.name)
                 writer = csv.writer(temporary_file, delimiter=delimiter)
-                with source.open(
-                    "r",
-                    encoding=input_encoding,
-                    newline="",
-                    buffering=performance_settings.io_buffer_size,
-                ) as source_file:
-                    reader = csv.reader(source_file, delimiter=delimiter, strict=True)
-                    headers, _replacements = resolve_empty_headers(next(reader))
-                    expected_headers = [
-                        configuration.header for configuration in configurations
-                    ]
-                    if headers != expected_headers:
-                        raise CSVAnonymizationError(
-                            "Os cabeçalhos do arquivo foram alterados desde a seleção."
+                writer.writerow(
+                    processing_plan.final_headers if processing_plan is not None else
+                    [
+                        configuration.effective_output_header
+                        for header, configuration in zip(
+                            headers, configurations, strict=True
                         )
-                    writer.writerow(
-                        processing_plan.final_headers if processing_plan is not None else
-                        [
-                            configuration.effective_output_header
-                            for header, configuration in zip(
-                                headers, configurations, strict=True
-                            )
-                            if configuration.action is not ColumnAction.EXCLUDE
-                        ]
-                    )
+                        if configuration.action is not ColumnAction.EXCLUDE
+                    ]
+                )
 
-                    for row in reader:
-                        if len(configurations) == 1 and not row:
-                            row = [""]
-                        if len(row) != len(configurations):
-                            raise CSVAnonymizationError(
-                                "A linha "
-                                f"{reader.line_num} possui estrutura CSV irregular. "
-                                "Colunas esperadas conforme o cabeçalho: "
-                                f"{len(configurations)}; colunas encontradas: {len(row)}."
-                            )
-                        if should_cancel is not None and should_cancel():
-                            raise ProcessingCancelled("A geração do CSV foi cancelada.")
-                        (
+                for row in reader:
+                    if len(configurations) == 1 and not row:
+                        row = [""]
+                    if len(row) != len(configurations):
+                        raise CSVAnonymizationError(
+                            "A linha "
+                            f"{reader.line_num} possui estrutura CSV irregular. "
+                            "Colunas esperadas conforme o cabeçalho: "
+                            f"{len(configurations)}; colunas encontradas: {len(row)}."
+                        )
+                    if indices is not None:
+                        row = [row[index] for index in indices]
+                    if should_cancel is not None and should_cancel():
+                        raise ProcessingCancelled("A geração do CSV foi cancelada.")
+                    (
+                        anonymized_row,
+                        canonical_values,
+                        effective_rules,
+                        fallback_indexes,
+                    ) = anonymize_row_with_metadata(
+                        row, configurations, secret_key
+                    )
+                    for index in fallback_indexes:
+                        fallback_counts[index] = fallback_counts.get(index, 0) + 1
+                    scalar_occurrences += len(canonical_values)
+                    if vault_transaction is not None:
+                        _collect_mappings(
+                            row,
                             anonymized_row,
                             canonical_values,
                             effective_rules,
-                            fallback_indexes,
-                        ) = anonymize_row_with_metadata(
-                            row, configurations, secret_key
+                            configurations,
+                            pending_mappings,
                         )
-                        for index in fallback_indexes:
-                            fallback_counts[index] = fallback_counts.get(index, 0) + 1
-                        scalar_occurrences += len(canonical_values)
-                        if vault_transaction is not None:
-                            _collect_mappings(
-                                row,
-                                anonymized_row,
-                                canonical_values,
-                                effective_rules,
-                                configurations,
-                                pending_mappings,
+                        if (
+                            len(pending_mappings) >= effective_batch_size
+                            or (records_processed + 1) % effective_batch_size == 0
+                        ):
+                            _flush_mappings(vault_transaction, pending_mappings)
+                    if has_composites:
+                        composite_result = execute_composite_row(row, processing_plan, secret_key)
+                        for fallback in composite_result.fallbacks:
+                            composite_fallbacks[fallback.rule] = (
+                                composite_fallbacks.get(fallback.rule, 0) + fallback.count
                             )
-                            if (
-                                len(pending_mappings) >= effective_batch_size
-                                or (records_processed + 1) % effective_batch_size == 0
-                            ):
-                                _flush_mappings(vault_transaction, pending_mappings)
-                        if has_composites:
-                            composite_result = execute_composite_row(row, processing_plan, secret_key)
-                            for fallback in composite_result.fallbacks:
-                                composite_fallbacks[fallback.rule] = (
-                                    composite_fallbacks.get(fallback.rule, 0) + fallback.count
+                        for cell in composite_result.cells:
+                            anonymized_row.append(cell.value)
+                            if cell.candidate is not None:
+                                composite_repository.upsert_composite_mapping(
+                                    cell.candidate, transaction=vault_transaction,
                                 )
-                            for cell in composite_result.cells:
-                                anonymized_row.append(cell.value)
-                                if cell.candidate is not None:
-                                    composite_repository.upsert_composite_mapping(
-                                        cell.candidate, transaction=vault_transaction,
-                                    )
-                                    composite_occurrences += cell.candidate.occurrences
-                                    composite_tokens += 1
-                        writer.writerow(anonymized_row)
-                        records_processed += 1
-                        if progress_callback is not None:
-                            progress_callback(records_processed)
+                                composite_occurrences += cell.candidate.occurrences
+                                composite_tokens += 1
+                    writer.writerow(anonymized_row)
+                    records_processed += 1
+                    if progress_callback is not None:
+                        progress_callback(records_processed)
 
                 if vault_transaction is not None:
                     _flush_mappings(vault_transaction, pending_mappings)
@@ -265,6 +268,8 @@ def anonymize_csv(
             "O processamento foi interrompido por um erro inesperado."
         ) from error
     finally:
+        if source_file is not None:
+            source_file.close()
         if publication is not None and vault_transaction is not None and vault_transaction.publication_outcome == "rolled_back":
             # Only a proven rollback permits discarding a READY journal.
             try:

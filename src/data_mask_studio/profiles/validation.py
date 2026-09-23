@@ -14,7 +14,7 @@ from data_mask_studio.profiles.models import (
     ProfileColumn,
     UnknownColumnPolicy,
 )
-from data_mask_studio.profiles.composite_format import validate_composite
+from data_mask_studio.profiles.composite_format import validate_composite, validate_reference
 
 
 def validate_profile_name(name: str) -> str:
@@ -73,15 +73,16 @@ def validate_profile(profile: ConfigurationProfile) -> None:
             "O perfil precisa manter ao menos uma coluna no arquivo de saída."
         )
 
-    seen_headers: set[str] = set()
+    seen_headers: set[tuple] = set()
     selected_prefixes: set[str] = set()
     for column in profile.columns:
         validate_profile_column(column)
-        if column.header in seen_headers:
+        identity = (column.header, column.reference.is_synthetic, column.reference.occurrence) if column.reference is not None else (column.header, False, None)
+        if identity in seen_headers:
             raise ProfileValidationError(
                 "O perfil possui cabeçalhos duplicados."
             )
-        seen_headers.add(column.header)
+        seen_headers.add(identity)
         if (
             column.action is ColumnAction.MASK
             and column.prefix in selected_prefixes
@@ -99,6 +100,13 @@ def validate_profile(profile: ConfigurationProfile) -> None:
 
 
 def validate_profile_column(column: ProfileColumn) -> None:
+    if column.reference is not None:
+        try:
+            validate_reference(column.reference)
+            if column.reference.header != column.header:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ProfileValidationError("Identidade de origem inválida no perfil.") from None
     if not isinstance(column.header, str) or not column.header:
         raise ProfileValidationError("Um cabeçalho do perfil é inválido.")
     if not isinstance(column.prefix, str):

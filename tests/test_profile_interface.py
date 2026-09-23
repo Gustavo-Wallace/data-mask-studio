@@ -16,6 +16,32 @@ def make_service(tmp_path: Path) -> ProfileService:
     return ProfileService(ProfileRepository(tmp_path / "profiles.json"))
 
 
+def test_synthetic_profile_requires_review_for_literal_source(tmp_path, monkeypatch):
+    from data_mask_studio.csv_tools import inspect_csv
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    source = tmp_path / "source.csv"
+    source.write_text(",CPF\noriginal,123\n", encoding="utf-8")
+    service = make_service(tmp_path)
+    service.create("Synthetic identity", [ColumnConfig("column_1"),
+                   ColumnConfig("CPF", action=ColumnAction.EXCLUDE)], inspection=inspect_csv(source))
+    application = create_application([])
+    window = MainWindow(profile_service=service)
+    try:
+        window.load_csv(str(source))
+        window.apply_profile_button.click()
+        assert window.generate_button.isEnabled()
+        source.write_text("CPF,column_1\n123,PRIVATE_SENTINEL\n", encoding="utf-8")
+        window.load_csv(str(source))
+        window.apply_profile_button.click()
+        assert not window.generate_button.isEnabled()
+        assert "PRIVATE_SENTINEL" not in window.status_label.text()
+        assert "column_1" in window.status_label.text()
+    finally:
+        window.close()
+        application.quit()
+
+
 def test_profile_controls_start_without_accessing_real_storage(tmp_path: Path) -> None:
     application = create_application([])
     window = MainWindow(profile_service=make_service(tmp_path))

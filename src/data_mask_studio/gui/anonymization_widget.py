@@ -870,6 +870,7 @@ class AnonymizationWidget(QWidget):
             return
         try:
             profile = self._profile_service.create(name, self._column_configs,
+                                                   inspection=self._inspection_result,
                                                    composites=self.composite_section.configurations)
         except ProfileError as error:
             self._set_status(str(error), is_error=True)
@@ -902,6 +903,7 @@ class AnonymizationWidget(QWidget):
         try:
             updated = self._profile_service.update(
                 profile.identifier, self._column_configs,
+                inspection=self._inspection_result,
                 composites=self.composite_section.configurations,
             )
         except ProfileError as error:
@@ -931,7 +933,7 @@ class AnonymizationWidget(QWidget):
                 return
 
         application = self._profile_service.apply(
-            profile, self._inspection_result.headers
+            profile, self._inspection_result
         )
         if not application.has_matches and not application.composites:
             self._set_status(

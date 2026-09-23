@@ -63,13 +63,7 @@ def serialize_composite(composite: CompositeColumnConfig) -> dict:
     validate_composite(composite)
     return dict(identifier=str(composite.identifier), action=composite.action.value, output_name=composite.output_name,
                 prefix=composite.prefix, components=[
-                    dict(reference=dict(
-                        header=source.reference.header,
-                        original_index=source.reference.original_index,
-                        is_synthetic=source.reference.is_synthetic,
-                        occurrence=source.reference.occurrence,
-                        structure=source.reference.structure,
-                    ), normalization_rule=source.normalization_rule.value)
+                    dict(reference=serialize_reference(source.reference), normalization_rule=source.normalization_rule.value)
                     for source in composite.components
                 ])
 
@@ -81,15 +75,28 @@ def parse_composite(value: object) -> CompositeColumnConfig:
     sources = []
     for source in value["components"]:
         source = require_fields(source, {"reference", "normalization_rule"})
-        reference = require_fields(source["reference"], {
-            "header", "original_index", "is_synthetic", "occurrence", "structure",
-        }).copy()
-        structure = reference["structure"]
-        if structure is not None:
-            if not isinstance(structure, list) or not all(isinstance(entry, list) for entry in structure):
-                raise ValueError("Estrutura de origem inválida.")
-            reference["structure"] = tuple(tuple(entry) for entry in structure)
-        sources.append(CompositeSource(SourceColumnRef(**reference), NormalizationRule(source["normalization_rule"])))
+        sources.append(CompositeSource(parse_reference(source["reference"]), NormalizationRule(source["normalization_rule"])))
     composite = CompositeColumnConfig(value["output_name"], value["prefix"], tuple(sources), UUID(value["identifier"]), ColumnAction(value["action"]))
     validate_composite(composite)
     return composite
+
+
+def serialize_reference(reference: SourceColumnRef) -> dict:
+    validate_reference(reference)
+    return dict(header=reference.header, original_index=reference.original_index,
+                is_synthetic=reference.is_synthetic, occurrence=reference.occurrence,
+                structure=reference.structure)
+
+
+def parse_reference(value: object) -> SourceColumnRef:
+    reference = require_fields(value, {
+        "header", "original_index", "is_synthetic", "occurrence", "structure",
+    }).copy()
+    structure = reference["structure"]
+    if structure is not None:
+        if not isinstance(structure, list) or not all(isinstance(entry, list) for entry in structure):
+            raise ValueError("Estrutura de origem inválida.")
+        reference["structure"] = tuple(tuple(entry) for entry in structure)
+    result = SourceColumnRef(**reference)
+    validate_reference(result)
+    return result

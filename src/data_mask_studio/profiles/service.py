@@ -3,9 +3,13 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import TYPE_CHECKING
+from pathlib import Path
+from data_mask_studio.csv_tools.models import CSVInspectionResult
+from data_mask_studio.csv_tools.source_binding import (
+    SourceColumnRef, SourceBindingError, bind_source, source_ref_at, may_be_synthetic_name,
+)
 
 if TYPE_CHECKING:
-    from data_mask_studio.csv_tools.models import CSVInspectionResult
     from data_mask_studio.processing.models import ProcessingPlan
 
 from data_mask_studio.anonymization import (
@@ -43,7 +47,7 @@ class ProfileService:
 
         if profile.unknown_column_policy is not UnknownColumnPolicy.REQUIRE_EXPLICIT:
             raise PlanningError("Política de colunas desconhecidas não suportada.")
-        application = self.apply(profile, inspection.headers)
+        application = self.apply(profile, inspection)
         # A capacidade do consumidor não faz parte da compatibilidade estrutural.
         structural = replace(application, composites=())
         if not structural.is_complete:
@@ -69,11 +73,12 @@ class ProfileService:
         self, name: str, configurations: Sequence[ColumnConfig], *,
         composites: Sequence[CompositeColumnConfig] = (),
         unknown_column_policy: UnknownColumnPolicy = UnknownColumnPolicy.REQUIRE_EXPLICIT,
+        inspection: CSVInspectionResult | None = None,
     ) -> ConfigurationProfile:
         profiles = self.repository.load()
         normalized_name = validate_profile_name(name)
         self._ensure_unique_name(profiles, normalized_name)
-        columns = _selected_profile_columns(configurations, has_composites=bool(composites))
+        columns = _selected_profile_columns(configurations, has_composites=bool(composites), inspection=inspection)
         now = datetime.now(timezone.utc)
         profile = ConfigurationProfile(
             identifier=str(uuid4()),
@@ -96,6 +101,7 @@ class ProfileService:
         *,
         composites: Sequence[CompositeColumnConfig] | None = None,
         unknown_column_policy: UnknownColumnPolicy | None = None,
+        inspection: CSVInspectionResult | None = None,
     ) -> ConfigurationProfile:
         profiles = self.repository.load()
         index = _profile_index(profiles, identifier)
@@ -104,7 +110,7 @@ class ProfileService:
         updated = replace(
             current,
             modified_at=datetime.now(timezone.utc),
-            columns=_selected_profile_columns(configurations, has_composites=bool(selected_composites)),
+            columns=_selected_profile_columns(configurations, has_composites=bool(selected_composites), inspection=inspection),
             composites=selected_composites,
             unknown_column_policy=(current.unknown_column_policy if unknown_column_policy is None else unknown_column_policy),
         )
@@ -137,16 +143,34 @@ class ProfileService:
     def apply(
         self,
         profile: ConfigurationProfile,
-        headers: Sequence[str],
+        headers: Sequence[str] | CSVInspectionResult,
     ) -> ProfileApplicationResult:
-        profile_columns = {column.header: column for column in profile.columns}
-        matched = tuple(header for header in headers if header in profile_columns)
-        missing = tuple(
-            column.header for column in profile.columns if column.header not in headers
-        )
+        inspected = isinstance(headers, CSVInspectionResult)
+        inspection = headers if inspected else CSVInspectionResult(Path(), "", "", list(headers))
+        headers = inspection.headers
+        bound = {}
+        missing = []
+        for column in profile.columns:
+            reference = column.reference
+            try:
+                # Null references preserve legacy uncertainty; never infer real
+                # provenance for generated-looking names or duplicate headers.
+                if reference is None:
+                    if may_be_synthetic_name(column.header) or headers.count(column.header) != 1:
+                        raise SourceBindingError("A origem do perfil exige revisão.")
+                    reference = SourceColumnRef(column.header)
+                if not inspected and (reference.is_synthetic or may_be_synthetic_name(reference.header)):
+                    raise SourceBindingError("A origem exige inspeção do CSV.")
+                index = bind_source(reference, inspection)
+                if index in bound:
+                    raise SourceBindingError("Políticas repetidas para a mesma origem.")
+                bound[index] = column
+            except SourceBindingError:
+                missing.append(column.header)
+        matched = tuple(header for index, header in enumerate(headers) if index in bound)
         configurations = tuple(
-            profile_columns.get(
-                header,
+            bound.get(
+                index,
                 ProfileColumn(
                     header=header,
                     prefix="",
@@ -154,10 +178,10 @@ class ProfileService:
                     action=ColumnAction.PRESERVE,
                 ),
             )
-            for header in headers
+            for index, header in enumerate(headers)
         )
-        extra = tuple(header for header in headers if header not in profile_columns)
-        return ProfileApplicationResult(configurations, matched, missing, extra,
+        extra = tuple(header for index, header in enumerate(headers) if index not in bound)
+        return ProfileApplicationResult(configurations, matched, tuple(missing), extra,
                                         profile.composites, profile.unknown_column_policy)
 
     @staticmethod
@@ -178,7 +202,13 @@ class ProfileService:
 def _selected_profile_columns(
     configurations: Sequence[ColumnConfig],
     *, has_composites: bool = False,
+    inspection: CSVInspectionResult | None = None,
 ) -> tuple[ProfileColumn, ...]:
+    headers = [config.header for config in configurations]
+    if inspection is not None and headers != inspection.headers:
+        raise ProfileValidationError("Configuração incompatível com a inspeção de origem.")
+    if inspection is None and any(may_be_synthetic_name(h) or headers.count(h) != 1 for h in headers):
+        raise ProfileValidationError("Inspecione o CSV para confirmar a proveniência das colunas.")
     if not (has_composites and configurations and all(c.action is ColumnAction.EXCLUDE for c in configurations)):
         validation = validate_configuration(configurations)
         if not validation.is_valid:
@@ -187,13 +217,14 @@ def _selected_profile_columns(
             )
     return tuple(
         ProfileColumn(
+            reference=source_ref_at(inspection, index) if inspection is not None else SourceColumnRef(configuration.header),
             header=configuration.header,
             prefix=configuration.prefix,
             normalization_rule=configuration.normalization_rule,
             action=configuration.action,
             output_name=configuration.output_name,
         )
-        for configuration in configurations
+        for index, configuration in enumerate(configurations)
     )
 
 

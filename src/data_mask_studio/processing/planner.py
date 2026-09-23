@@ -19,6 +19,28 @@ class PlanningError(ValueError):
     """Configuração ou binding inválido; nenhuma linha foi processada."""
 
 
+def bind_execution_sources(plan: ProcessingPlan, inspection: CSVInspectionResult) -> tuple[int, ...]:
+    """Map opened physical positions into the immutable plan's logical row view.
+
+    Both scalar and composite executors then consume this validated projection,
+    not stale physical positions. Output ordering remains the approved plan's.
+    """
+    try:
+        if tuple(c.input_index for c in plan.physical_columns) != tuple(range(len(inspection.headers))):
+            raise SourceBindingError("Estrutura física incompatível com o plano.")
+        indices = tuple(bind_source(c.reference, inspection) for c in plan.physical_columns)
+        if set(indices) != set(range(len(inspection.headers))):
+            raise SourceBindingError("Colunas físicas desconhecidas ou ambíguas.")
+        for output in plan.outputs:
+            if isinstance(output, BoundCompositeColumn):
+                for component in output.components:
+                    if bind_source(component.reference, inspection) != indices[component.input_index]:
+                        raise SourceBindingError("Identidade de componente incompatível.")
+        return indices
+    except (SourceBindingError, IndexError):
+        raise PlanningError("A estrutura ou proveniência da origem mudou. Inspecione o CSV novamente.") from None
+
+
 def build_processing_plan(
     inspection: CSVInspectionResult,
     scalar_configs: Sequence[ColumnConfig],

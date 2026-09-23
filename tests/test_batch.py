@@ -130,13 +130,15 @@ def test_validation_requires_all_exact_headers_including_explicit_preserve(
 def test_batch_validation_uses_synthetic_header_and_reports_warning(
     tmp_path: Path,
 ) -> None:
+    from data_mask_studio.csv_tools import inspect_csv
+    path = tmp_path / "empty-header.csv"
+    path.write_text(",CPF\nAna,123\n", encoding="utf-8")
     service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     profile = service.create(
         "Layout recuperado",
         [ColumnConfig("column_1", True, "COLUNA_1"), ColumnConfig("CPF")],
+        inspection=inspect_csv(path),
     )
-    path = tmp_path / "empty-header.csv"
-    path.write_text(",CPF\nAna,123\n", encoding="utf-8")
     item = BatchFile(path)
 
     validate_file(item, profile, service)

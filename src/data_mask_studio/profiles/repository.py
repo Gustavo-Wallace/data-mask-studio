@@ -22,6 +22,7 @@ from data_mask_studio.profiles.models import (
     UnknownColumnPolicy,
 )
 from data_mask_studio.profiles.composite_format import parse_composite, serialize_composite, require_fields
+from data_mask_studio.profiles.composite_format import parse_reference, serialize_reference
 from data_mask_studio.profiles.validation import validate_unique_names
 
 PROFILES_FILE_NAME = "profiles.json"
@@ -127,6 +128,7 @@ def _serialize_document(profiles: list[ConfigurationProfile]) -> dict[str, Any]:
                         "normalization_rule": column.normalization_rule.value,
                         "action": column.action.value,
                         "output_name": column.output_name,
+                        "reference": serialize_reference(column.reference) if column.reference is not None else None,
                     }
                     for column in profile.columns
                 ],
@@ -198,7 +200,7 @@ def _parse_column(value: object, version: int = 1) -> ProfileColumn:
     if not isinstance(value, dict):
         raise TypeError
     if version == 2:
-        require_fields(value, {"header", "prefix", "normalization_rule", "action", "output_name"})
+        require_fields(value, {"header", "prefix", "normalization_rule", "action", "output_name", "reference"})
         if not isinstance(value["action"], str):
             raise TypeError
     anonymize = value["anonymize"] if version == 1 else value["action"] == "mask"
@@ -223,6 +225,7 @@ def _parse_column(value: object, version: int = 1) -> ProfileColumn:
             raise TypeError
         normalization_rule = NormalizationRule(raw_normalization_rule)
     return ProfileColumn(
+        reference=(parse_reference(value["reference"]) if version == 2 and value["reference"] is not None else None),
         header=_required_string(value, "header"),
         prefix=_required_string(value, "prefix"),
         normalization_rule=normalization_rule,

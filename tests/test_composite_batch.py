@@ -45,7 +45,7 @@ def setup_profile(tmp_path, headers=('NOME', 'CPF', 'IDADE'), configs=None, inde
     template = write_csv(tmp_path / 'template.csv', headers, [['x'] * len(headers)])
     inspection = inspect_csv(template)
     configs = configs or [ColumnConfig(h, action=Action.PRESERVE if h == 'IDADE' else Action.EXCLUDE)
-                          for h in dict.fromkeys(inspection.headers)]
+                          for h in inspection.headers]
     first = CompositeColumnConfig('PESSOA', 'CORR', (
         CompositeSource(source_ref_at(inspection, indexes[0]), Rule.PERSON_NAME),
         CompositeSource(source_ref_at(inspection, indexes[1]), Rule.CPF),
@@ -54,7 +54,7 @@ def setup_profile(tmp_path, headers=('NOME', 'CPF', 'IDADE'), configs=None, inde
     if multiple:
         definitions.append(CompositeColumnConfig('OUTRA', 'OTHER', first.components[::-1], action=Action.MASK))
     service = ProfileService(ProfileRepository(tmp_path / 'profiles.json'))
-    service.create('Perfil composto batch', configs, composites=definitions)
+    service.create('Perfil composto batch', configs, composites=definitions, inspection=inspection)
     return service, service.list_profiles()[0]
 
 
