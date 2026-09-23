@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from data_mask_studio.environment import guarded
+from data_mask_studio.publication import publish
 
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
 from data_mask_studio.html_restoration.exceptions import (
@@ -206,9 +207,7 @@ def restore_html(
             os.fsync(temporary_file.fileno())
             _raise_if_cancelled(should_cancel)
 
-        if destination.exists() and not overwrite:
-            raise HTMLRestorationError("O arquivo de destino já existe.")
-        os.replace(temporary_path, destination)
+        publish(temporary_path, destination, overwrite)
         temporary_path = None
     except (
         HTMLMissingCodeError,

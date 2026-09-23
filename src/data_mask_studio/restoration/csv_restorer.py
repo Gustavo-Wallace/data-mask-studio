@@ -6,6 +6,7 @@ from collections.abc import Callable, MutableMapping
 from itertools import islice
 from pathlib import Path
 from data_mask_studio.environment import guarded
+from data_mask_studio.publication import publish
 
 from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
@@ -163,9 +164,7 @@ def restore_csv(
             os.fsync(temporary_file.fileno())
             _raise_if_cancelled(should_cancel)
 
-        if destination.exists() and not overwrite:
-            raise RestorationError("O arquivo de destino ja existe.")
-        os.replace(temporary_path, destination)
+        publish(temporary_path, destination, overwrite)
         temporary_path = None
     except (RestorationCancelled, MissingCodeError, RestorationSecurityError):
         raise

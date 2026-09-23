@@ -5,6 +5,8 @@ import secrets
 import struct
 import tempfile
 from data_mask_studio.environment import guarded
+from data_mask_studio.publication import publish
+from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +65,10 @@ def create_backup(
         raise BackupError("Use a extensão .dmsbackup para o arquivo de backup.")
     if not destination.parent.is_dir():
         raise BackupError("A pasta de destino do backup não existe.")
+    if any(paths_refer_to_same_file(destination, source) for source in (
+        paths.hmac_key_path, paths.vault_key_path, paths.vault_database_path, paths.profiles_path,
+    )):
+        raise BackupError("O backup não pode substituir um arquivo do ambiente local.")
     if destination.exists() and not overwrite:
         raise BackupError("O arquivo de backup já existe.")
 
@@ -165,9 +171,7 @@ def create_backup(
                 os.fsync(output.fileno())
 
             cancellation.raise_if_requested()
-            if destination.exists() and not overwrite:
-                raise BackupError("O arquivo de backup já existe.")
-            os.replace(temporary_output, destination)
+            publish(temporary_output, destination, overwrite)
             temporary_output = None
     except BackupError:
         raise
