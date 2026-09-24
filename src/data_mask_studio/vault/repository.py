@@ -108,6 +108,7 @@ class VaultRepository:
     def read_session(
         self, metrics: RestorationMetrics | None = None
     ) -> Iterator["VaultReadSession"]:
+        """Reuse one connection and, from the first lookup, one read snapshot."""
         connection = self._connect_for_read()
         if metrics is not None:
             metrics.connections_opened += 1
@@ -178,32 +179,11 @@ class VaultRepository:
 
     def get_decrypted_mapping(self, code: str) -> DecryptedVaultMapping | None:
         """Recupera um único código e todas as suas variações autenticadas."""
-        connection = self._connect_for_read()
         try:
-            row = connection.execute(
-                "SELECT code, prefix, canonical_encrypted_value AS encrypted_value, "
-                "canonical_nonce AS nonce, source_header, normalization_rule, "
-                "first_seen, last_seen, total_occurrences AS occurrence_count "
-                "FROM vault_mappings WHERE code = ?",
-                (code,),
-            ).fetchone()
-            if row is None:
-                return None
-            record = _record_from_row(row)
-            variation_rows = connection.execute(
-                "SELECT identifier, code, encrypted_value, nonce, first_seen, "
-                "last_seen, occurrence_count, normalization_rule FROM vault_variations "
-                "WHERE code = ? ORDER BY identifier",
-                (code,),
-            ).fetchall()
-            variations = [_variation_from_row(item) for item in variation_rows]
+            with self.read_session() as session:
+                return session.get_many((code,)).get(code)
         except (sqlite3.Error, ValueError) as error:
             raise VaultError("Não foi possível consultar o cofre local.") from error
-        finally:
-            connection.close()
-        if record.code != code:
-            raise VaultError("Foi encontrado um registro inconsistente no cofre local.")
-        return _decrypt_mapping(record, variations, self._cipher)
 
     def _get_variations(self, code: str) -> list[VaultVariationRecord]:
         connection = self._connect_for_read()
@@ -481,9 +461,7 @@ class VaultReadSession:
     def get_many_with_composites(self, codes: Sequence[str]) -> dict[str, DecryptedVaultMapping | CompositeMapping]:
         from data_mask_studio.vault.composite_repository import decode_composite_mapping
 
-        # Um snapshot coerente para scalar, canonical e variations, inclusive sob WAL.
-        if not self._connection.in_transaction:
-            self._connection.execute("BEGIN")
+        self._ensure_snapshot()
         result = self.get_many(codes)
         try:
             for chunk in _chunks(tuple(dict.fromkeys(codes)), BALANCED_SETTINGS.sqlite_lookup_batch_size):
@@ -525,6 +503,7 @@ class VaultReadSession:
         return result
 
     def get_many(self, codes: Sequence[str]) -> dict[str, DecryptedVaultMapping]:
+        self._ensure_snapshot()
         unique = tuple(dict.fromkeys(codes))
         if not unique:
             return {}
@@ -572,6 +551,15 @@ class VaultReadSession:
         if self._metrics is not None:
             self._metrics.decryption_seconds += time.perf_counter() - started
         return result
+
+    def _ensure_snapshot(self) -> None:
+        """Keep one WAL snapshot until the connection owner ends the transaction.
+
+        Reuse an existing read/write transaction without committing or rolling
+        it back. Repository.read_session closes its own connection on exit.
+        """
+        if not self._connection.in_transaction:
+            self._connection.execute("BEGIN")
 
     def _record_query(self, returned_codes: int) -> None:
         if self._metrics is not None:
