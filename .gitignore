@@ -73,3 +73,6 @@ vault.db-shm
 
 # Dados e relatórios sintéticos de benchmark
 /benchmarks/.data/
+
+.pytest-temp/
+.pytest_cache/

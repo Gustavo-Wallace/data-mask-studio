@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0 — Data Preparation Update
+
+- Ações por coluna Preservar, Mascarar e Excluir.
+- Normalização de colunas preservadas e renomeação de cabeçalhos de saída.
+- Colunas compostas com ações Preservar ou Mascarar e normalização independente.
+- Profile Format v2 com identidade mais rigorosa das colunas de origem.
+- Suporte a colunas compostas no processamento em lote e na restauração.
+- Inspeção e auditoria de integridade de mapeamentos compostos no cofre.
+- Vault Schema 4 com migração compatível de versões anteriores suportadas.
+- Reforços na proteção de chaves, concorrência e recuperação do ambiente.
+- Publicação de saídas mais segura e recuperável.
+- Restauração HTML sensível ao contexto.
+- Leituras consistentes do cofre durante consultas e restauração.
+- Validação mais rigorosa de colunas desconhecidas e arquivos temporários.
+
 ## 1.1.0
 
 - Nova normalização `PERSON_NAME` para variações de caixa, diacríticos e whitespace.
