@@ -7,7 +7,7 @@ English | [Português (Brasil)](README.pt-BR.md)
 <h1 align="center">Data Mask Studio (DMS)</h1>
 
 <p align="center">
-  Open-source data masking for CSV files on Windows, created by Gustavo Wallace Macedo Santos.
+  Open-source data preparation and masking for Windows, created by Gustavo Wallace Macedo Santos.
 </p>
 
 <p align="center">
@@ -20,13 +20,11 @@ English | [Português (Brasil)](README.pt-BR.md)
 
 ## Overview
 
-Data Mask Studio is a desktop application for protecting sensitive data in CSV files without sending it to external services. It provides deterministic data masking with controlled restoration through an encrypted local vault. Individual tokens do not contain or directly expose the original value.
+Data Mask Studio is a local-first desktop application for data preparation, anonymization and deterministic data masking, with controlled restoration through an encrypted local vault. Data stays local; individual tokens do not contain or directly expose the original value.
 
 The current version can selectively restore masked CSV files and codes found in local HTML files and dashboards.
 
 Official website: https://gustavo-wallace.github.io/data-mask-studio/
-
-GitHub: https://github.com/Gustavo-Wallace/data-mask-studio
 
 ## Download the latest version
 
@@ -42,9 +40,10 @@ Each release provides a per-user Windows installer (`DataMaskStudio-Setup-<versi
 
 ## Main features
 
-- Individual and batch CSV data masking.
+- CSV preparation and masking, individually or in batches with saved profiles.
+- Preserve, mask or exclude columns; normalize values, rename output headers and compose columns.
 - Assisted column detection.
-- Deterministic tokens with controlled restoration.
+- Deterministic masking with vault-controlled restoration.
 - CSV and HTML restoration.
 - Encrypted local vault.
 - Password-protected portable backups.
