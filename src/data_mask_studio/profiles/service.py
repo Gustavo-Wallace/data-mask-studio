@@ -180,9 +180,11 @@ class ProfileService:
             )
             for index, header in enumerate(headers)
         )
-        extra = tuple(header for index, header in enumerate(headers) if index not in bound)
+        extra_indices = tuple(index for index in range(len(headers)) if index not in bound)
+        extra = tuple(headers[index] for index in extra_indices)
         return ProfileApplicationResult(configurations, matched, tuple(missing), extra,
-                                        profile.composites, profile.unknown_column_policy)
+                                        profile.composites, profile.unknown_column_policy,
+                                        extra_source_indices=extra_indices)
 
     @staticmethod
     def _ensure_unique_name(

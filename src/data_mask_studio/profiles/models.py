@@ -76,6 +76,8 @@ class ProfileApplicationResult:
     extra_headers: tuple[str, ...] = ()
     composites: tuple["CompositeColumnConfig", ...] = ()
     unknown_column_policy: UnknownColumnPolicy = UnknownColumnPolicy.REQUIRE_EXPLICIT
+    # Physical positions in the inspected source, not header-name identities.
+    extra_source_indices: tuple[int, ...] = ()
 
     @property
     def has_matches(self) -> bool:

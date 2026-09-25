@@ -217,7 +217,7 @@ class AnonymizationWidget(QWidget):
             except ProfileError as error:
                 self._profile_initialization_error = str(error)
         self._profiles: list[ConfigurationProfile] = []
-        self._unreviewed_headers: set[str] = set()
+        self._unreviewed_sources: set[int] = set()
         self._profile_missing_headers: tuple[str, ...] = ()
         self.composite_section = CompositeSection(
             lambda: self._inspection_result, self._build_current_plan, self,
@@ -301,7 +301,7 @@ class AnonymizationWidget(QWidget):
     def _show_result(self, result: CSVInspectionResult) -> None:
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(True)
-        self._unreviewed_headers.clear()
+        self._unreviewed_sources.clear()
         self._profile_missing_headers = ()
         self._clear_detection_suggestions()
         self._inspection_result = result
@@ -345,7 +345,7 @@ class AnonymizationWidget(QWidget):
     def _reset_details(self) -> None:
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(False)
-        self._unreviewed_headers.clear()
+        self._unreviewed_sources.clear()
         self._profile_missing_headers = ()
         self._clear_detection_suggestions()
         self._inspection_result = None
@@ -497,7 +497,7 @@ class AnonymizationWidget(QWidget):
 
     def _configuration_changed(self, review_row: int | None = None) -> None:
         if review_row is not None:
-            self._unreviewed_headers.discard(self._column_configs[review_row].header)
+            self._unreviewed_sources.discard(review_row)
         self._configuration_validated = False
         self._configuration_dirty = True
         self.generate_button.setEnabled(False)
@@ -576,9 +576,10 @@ class AnonymizationWidget(QWidget):
             raise PlanningError("Selecione um CSV antes de configurar composites.")
         if self._profile_missing_headers:
             raise PlanningError("Cabeçalhos não encontrados: " + ", ".join(self._profile_missing_headers) + ".")
-        if self._unreviewed_headers:
+        if self._unreviewed_sources:
             raise PlanningError("Colunas adicionais não conhecidas pelo perfil: " +
-                                ", ".join(sorted(self._unreviewed_headers)) + ". Revise a configuração.")
+                                ", ".join(f"{self._inspection_result.headers[index]} (coluna {index + 1})"
+                                          for index in sorted(self._unreviewed_sources)) + ". Revise a configuração.")
         return ProfileService.build_configuration_plan(
             self._inspection_result, self._column_configs,
             self.composite_section.configurations if composites is None else composites,
@@ -943,7 +944,7 @@ class AnonymizationWidget(QWidget):
 
         self._apply_profile_configurations(application.configurations)
         self.composite_section.set_configurations(application.composites)
-        self._unreviewed_headers = set(application.extra_headers)
+        self._unreviewed_sources = set(application.extra_source_indices)
         self._profile_missing_headers = application.missing_headers
         self._configuration_dirty = False
         self.validate_current_configuration()
