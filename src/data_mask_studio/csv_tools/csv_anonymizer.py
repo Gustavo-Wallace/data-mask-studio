@@ -73,6 +73,11 @@ def anonymize_csv(
     processing_plan: ProcessingPlan | None = None,
 ) -> AnonymizationResult:
     """Processa um CSV linha a linha e publica o resultado de forma atômica."""
+    # Runtime boundary avoids making core result models depend on vault/package
+    # initialization during imports.
+    from data_mask_studio.transfer_package.binding import compute_file_binding
+    from data_mask_studio.transfer_package.models import MaskedFileBinding
+
     source = Path(source_path).expanduser().absolute()
     destination = Path(destination_path).expanduser().absolute()
     # O plano validado é a autoridade; configurações legadas não o sobrescrevem.
@@ -107,6 +112,15 @@ def anonymize_csv(
     fallback_counts: dict[int, int] = {}
     composite_fallbacks: dict[NormalizationRule, int] = {}
     scalar_occurrences = composite_occurrences = composite_tokens = 0
+    emitted_scalar_codes: set[str] = set()
+    emitted_composite_codes: set[str] = set()
+    physical_output_indices = {
+        source_index: output_index
+        for output_index, source_index in enumerate(
+            index for index, config in enumerate(configurations)
+            if config.action is not ColumnAction.EXCLUDE
+        )
+    }
     has_composites = processing_plan is not None and any(
         isinstance(output, BoundCompositeColumn) for output in processing_plan.outputs
     )
@@ -204,6 +218,7 @@ def anonymize_csv(
                             or (records_processed + 1) % effective_batch_size == 0
                         ):
                             _flush_mappings(vault_transaction, pending_mappings)
+                    row_composite_codes: list[str] = []
                     if has_composites:
                         composite_result = execute_composite_row(row, processing_plan, secret_key)
                         for fallback in composite_result.fallbacks:
@@ -218,7 +233,15 @@ def anonymize_csv(
                                 )
                                 composite_occurrences += cell.candidate.occurrences
                                 composite_tokens += 1
+                                row_composite_codes.append(cell.candidate.code)
                     writer.writerow(anonymized_row)
+                    # canonical_values contains only successfully masked scalar
+                    # cells, not preserved values that merely look like tokens.
+                    emitted_scalar_codes.update(
+                        anonymized_row[physical_output_indices[index]]
+                        for index in canonical_values
+                    )
+                    emitted_composite_codes.update(row_composite_codes)
                     records_processed += 1
                     if progress_callback is not None:
                         progress_callback(records_processed)
@@ -234,8 +257,11 @@ def anonymize_csv(
             # The file is closed and fsync'ed before the transaction commits.
             if publication is not None:
                 publication.prepare(temporary_path)
-                if should_cancel is not None and should_cancel():
-                    raise ProcessingCancelled("A geração do CSV foi cancelada.")
+                masked_file_binding = MaskedFileBinding(**publication.data["output"])
+            else:
+                masked_file_binding = compute_file_binding(temporary_path)
+            if should_cancel is not None and should_cancel():
+                raise ProcessingCancelled("A geração do CSV foi cancelada.")
 
         if publication is not None:
             publication.committed()
@@ -299,6 +325,9 @@ def anonymize_csv(
         composite_normalization_fallbacks=tuple(
             RuleFallbackCount(rule, count) for rule, count in composite_fallbacks.items()
         ),
+        emitted_scalar_codes=tuple(sorted(emitted_scalar_codes)),
+        emitted_composite_codes=tuple(sorted(emitted_composite_codes)),
+        masked_file_binding=masked_file_binding,
     )
 
 
