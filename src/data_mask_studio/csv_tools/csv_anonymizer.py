@@ -25,7 +25,7 @@ from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.csv_tools.models import CSVInspectionResult
 from data_mask_studio.processing.planner import bind_execution_sources, PlanningError
-from data_mask_studio.publication import Publication, PublicationError, publish
+from data_mask_studio.publication import Publication, PairPublication, PublicationError, publish
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.performance import BALANCED_SETTINGS, PerformanceSettings
 from data_mask_studio.processing.models import BoundCompositeColumn, ProcessingPlan
@@ -76,8 +76,9 @@ def anonymize_csv(
     performance_settings: PerformanceSettings = BALANCED_SETTINGS,
     processing_plan: ProcessingPlan | None = None,
     transfer_package_request: "PackageStagingRequest | None" = None,
+    transfer_package_destination: str | Path | None = None,
 ) -> AnonymizationResult:
-    """Processa um CSV linha a linha e publica o resultado de forma atômica."""
+    """Stream CSV output; optional package publication is recoverable, not atomic."""
     # Runtime boundary avoids making core result models depend on vault/package
     # initialization during imports.
     from data_mask_studio.transfer_package.binding import compute_file_binding
@@ -107,11 +108,28 @@ def anonymize_csv(
 
     temporary_path: Path | None = None
     staged_package = None
+    package_destination = None
+    if transfer_package_request is not None:
+        if transfer_package_destination is None:
+            raise CSVAnonymizationError("Informe o destino final do pacote de transferência.")
+        package_destination = Path(transfer_package_destination).expanduser().absolute()
+        if (package_destination.suffix.lower() != ".dmspackage"
+                or package_destination.is_symlink() or not package_destination.parent.is_dir()
+                or package_destination.exists() or destination.exists() or destination.is_symlink()
+                or any(paths_refer_to_same_file(package_destination, path) for path in (source, destination))):
+            raise CSVAnonymizationError("Destino do pacote inválido ou já existente.")
+        package_destination = package_destination.resolve()
+    elif transfer_package_destination is not None:
+        raise CSVAnonymizationError("O destino do pacote exige uma solicitação de transferência.")
     if transfer_package_request is not None and vault_repository is None:
         raise CSVAnonymizationError("Um cofre transacional é necessário para preparar o pacote.")
     publication = None
     if vault_repository is not None and secret_key is not None:
-        publication = Publication(vault_repository.database_path, source, destination, secret_key, overwrite)
+        publication = (PairPublication(vault_repository.database_path, source, destination, secret_key)
+                       if transfer_package_request is not None else
+                       Publication(vault_repository.database_path, source, destination, secret_key, overwrite))
+    if transfer_package_request is not None and publication is None:
+        raise CSVAnonymizationError("Um journal autenticado é necessário para publicar o pacote.")
     started_at = time.perf_counter()
     records_processed = 0
     vault_summary = VaultUpdateSummary()
@@ -263,7 +281,7 @@ def anonymize_csv(
                     raise ProcessingCancelled("A geração do CSV foi cancelada.")
 
             # The file is closed and fsync'ed before the transaction commits.
-            if publication is not None:
+            if publication is not None and transfer_package_request is None:
                 publication.prepare(temporary_path)
                 masked_file_binding = MaskedFileBinding(**publication.data["output"])
             else:
@@ -276,15 +294,24 @@ def anonymize_csv(
                         temporary_path, vault_transaction, transfer_package_request,
                         scalar_codes=emitted_scalar_codes, composite_codes=emitted_composite_codes,
                         expected_binding=masked_file_binding, should_cancel=should_cancel,
+                        destination_directory=package_destination.parent,
                     )
                 except PackageStagingCancelled:
                     raise ProcessingCancelled("A geração do CSV foi cancelada.") from None
+                publication.prepare_pair(
+                    temporary_path, staged_package.path, package_destination,
+                    {"size": masked_file_binding.size, "sha256": masked_file_binding.sha256},
+                    {"size": staged_package.ciphertext.size, "sha256": staged_package.ciphertext.sha256},
+                )
             if should_cancel is not None and should_cancel():
                 raise ProcessingCancelled("A geração do CSV foi cancelada.")
 
         if publication is not None:
             publication.committed()
-        publish(temporary_path, destination, overwrite)
+        if isinstance(publication, PairPublication):
+            publication.publish_pair(publish)
+        else:
+            publish(temporary_path, destination, overwrite)
         temporary_path = None
         if publication is not None:
             publication.complete()
@@ -315,6 +342,8 @@ def anonymize_csv(
             "O processamento foi interrompido por um erro inesperado."
         ) from error
     finally:
+        if isinstance(publication, PairPublication):
+            publication.close_reservations()
         if source_file is not None:
             source_file.close()
         if publication is not None and vault_transaction is not None and vault_transaction.publication_outcome == "rolled_back":
@@ -329,9 +358,11 @@ def anonymize_csv(
                 temporary_path.unlink()
             except OSError:
                 pass
-        if staged_package is not None and vault_transaction is not None and vault_transaction.publication_outcome == "rolled_back":
+        if (staged_package is not None and vault_transaction is not None
+                and vault_transaction.publication_outcome == "rolled_back"
+                and not (publication and publication.retained)):
             # Never discard a verified candidate after an uncertain commit or
-            # post-commit publication failure. Block 4B must journal ownership.
+            # post-commit publication failure; the journal owns recovery.
             try:
                 staged_package.discard()
             except PackageError as error:
@@ -356,7 +387,7 @@ def anonymize_csv(
         emitted_scalar_codes=tuple(sorted(emitted_scalar_codes)),
         emitted_composite_codes=tuple(sorted(emitted_composite_codes)),
         masked_file_binding=masked_file_binding,
-        staged_transfer_package=staged_package,
+        transfer_package_path=package_destination,
     )
 
 

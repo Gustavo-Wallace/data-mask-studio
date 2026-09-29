@@ -1,6 +1,7 @@
 """Pre-commit candidate only. No final publication or recovery journal here."""
 
 import os
+import hashlib
 import re
 import tempfile
 from collections.abc import Callable, Iterable
@@ -30,6 +31,7 @@ class PackageStagingRequest:
 class StagedPackage:
     path: Path = field(repr=False)
     binding: MaskedFileBinding = field(repr=False)
+    ciphertext: MaskedFileBinding = field(repr=False)
 
     def discard(self) -> None:
         """Only explicit DMS-owned candidates, not arbitrary final packages."""
@@ -47,6 +49,7 @@ def stage_transfer_package(
     scalar_codes: Iterable[str], composite_codes: Iterable[str],
     expected_binding: MaskedFileBinding | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    destination_directory: Path | None = None,
 ) -> StagedPackage:
     """Resolve own writes, encrypt/fsync, decrypt-verify and bind before commit.
 
@@ -68,8 +71,9 @@ def stage_transfer_package(
         payload = selected.to_payload(binding, app_version=request.application_version, max_payload_bytes=limit)
         encrypted = encrypt_package(payload, request.password, max_payload_bytes=limit)
         cancelled()
-        with tempfile.NamedTemporaryFile(dir=csv_staging.parent, prefix=".dms-package-", suffix=".tmp", delete=False) as stream:
-            staged = StagedPackage(Path(stream.name), binding)
+        with tempfile.NamedTemporaryFile(dir=destination_directory or csv_staging.parent, prefix=".dms-package-", suffix=".tmp", delete=False) as stream:
+            staged = StagedPackage(Path(stream.name), binding,
+                                   MaskedFileBinding(hashlib.sha256(encrypted).hexdigest(), len(encrypted)))
             stream.write(encrypted)
             stream.flush()
             os.fsync(stream.fileno())
@@ -80,6 +84,7 @@ def stage_transfer_package(
         if read_package(staged.path, request.password, max_payload_bytes=limit) != payload:
             raise PackageError("O candidato do pacote não corresponde à seleção esperada.")
         verify_file_binding(csv_staging, binding)
+        verify_file_binding(staged.path, staged.ciphertext)
         cancelled()
         return staged
     except BaseException as error:

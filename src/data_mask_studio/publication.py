@@ -8,7 +8,8 @@ import re
 import tempfile
 import uuid
 from pathlib import Path
-from data_mask_studio.environment import guarded
+from data_mask_studio.environment import guarded, generation
+from data_mask_studio.output_reservation import OutputReservation, publication_reservation
 
 
 class PublicationError(RuntimeError):
@@ -28,12 +29,13 @@ def fingerprint(path: Path) -> dict:
 
 
 def publish(temp: Path, destination: Path, overwrite: bool) -> None:
-    if overwrite:
-        os.replace(temp, destination)
-    else:
-        # Same-volume, atomic create-if-absent on Windows/NTFS. No unsafe fallback.
-        os.link(temp, destination)
-        temp.unlink()
+    with publication_reservation(destination):
+        if overwrite:
+            os.replace(temp, destination)
+        else:
+            # Same-volume, atomic create-if-absent on Windows/NTFS. No unsafe fallback.
+            os.link(temp, destination)
+            temp.unlink()
 
 
 def _encoded(data: dict) -> bytes:
@@ -97,6 +99,75 @@ class Publication:
         self.retained = False
 
 
+class PairPublication(Publication):
+    """One authenticated journal, two no-overwrite artifacts, not atomic rename."""
+
+    def __init__(self, database: Path, source: Path, destination: Path, key: bytes):
+        super().__init__(database, source, destination, key, False)
+        self.data.update(operation_journal_version=2, role="masked_csv",
+                         generation=hashlib.sha256(generation(database.parent)).hexdigest())
+        self.reservations = []
+
+    def close_reservations(self) -> None:
+        while self.reservations:
+            self.reservations.pop().close()
+
+    def prepare_pair(self, temp: Path, package_temp: Path, package_destination: Path,
+                     binding: dict, package_fingerprint: dict) -> None:
+        destination = Path(self.data["destination"])
+        self.data.update(temp=str(temp.resolve()), output=binding, previous=None,
+                         package={"role": "transfer_package", "temp": str(package_temp.resolve()),
+                                  "destination": str(package_destination.resolve()),
+                                  "output": package_fingerprint, "binding": binding})
+        try:
+            for final in (destination, package_destination):
+                self.reservations.append(OutputReservation(final))
+                if final.exists() or final.is_symlink():
+                    raise PublicationError("O arquivo de destino já existe.")
+            # Use staging's attested fingerprints, not arbitrary replacement bytes.
+            _check_pair(self.data)
+            self._write()
+            self.retained = True
+        except BaseException:
+            self.close_reservations()
+            raise
+
+    def publish_pair(self, publisher=publish) -> None:
+        _publish_pair(self.data, publisher)
+
+
+def _pair_artifacts(data: dict) -> tuple[dict, dict]:
+    return data, data["package"]
+
+
+def _check_pair(data: dict) -> None:
+    """Validate all candidates/finals before mutating either artifact."""
+    for artifact in _pair_artifacts(data):
+        temp, final = Path(artifact["temp"]), Path(artifact["destination"])
+        if not (temp.exists() or final.exists()):
+            raise PublicationError("Artefato da operação ausente; evidências preservadas.")
+        for path in (temp, final):
+            if path.is_symlink() or (path.exists() and fingerprint(path) != artifact["output"]):
+                raise PublicationError("Artefato da operação divergente; evidências preservadas.")
+    if data["package"]["binding"] != data["output"]:
+        raise PublicationError("Vínculo do pacote divergente; evidências preservadas.")
+
+
+def _publish_pair(data: dict, publisher=publish) -> None:
+    _check_pair(data)
+    for artifact in _pair_artifacts(data):
+        temp, final = Path(artifact["temp"]), Path(artifact["destination"])
+        if not final.exists():
+            _check_pair(data)
+            publisher(temp, final, False)
+    _check_pair(data)
+    for artifact in _pair_artifacts(data):
+        if fingerprint(Path(artifact["destination"])) != artifact["output"]:
+            raise PublicationError("Destino divergente; evidências preservadas.")
+    for artifact in _pair_artifacts(data):
+        Path(artifact["temp"]).unlink(missing_ok=True)
+
+
 def _load(path: Path, database: Path, key: bytes) -> dict:
     try:
         if path.is_symlink() or path.stat().st_size > 65536:
@@ -105,11 +176,15 @@ def _load(path: Path, database: Path, key: bytes) -> dict:
         if set(envelope) != {"data", "signature"}:
             raise ValueError()
         data = envelope["data"]
-        if set(data) != {"operation_journal_version", "id", "state", "database", "source", "destination", "overwrite", "temp", "output", "previous"}:
+        fields = {"operation_journal_version", "id", "state", "database", "source", "destination", "overwrite", "temp", "output", "previous"}
+        version = data["operation_journal_version"]
+        if version == 2:
+            fields |= {"role", "package", "generation"}
+        if set(data) != fields:
             raise ValueError()
         if not hmac.compare_digest(envelope["signature"], _signature(data, key)):
             raise ValueError()
-        if type(data["operation_journal_version"]) is not int or data["operation_journal_version"] != 1:
+        if type(version) is not int or version not in (1, 2):
             raise ValueError()
         identifier = data["id"]
         if not re.fullmatch(r"[0-9a-f]{32}", identifier):
@@ -133,6 +208,25 @@ def _load(path: Path, database: Path, key: bytes) -> dict:
                 raise ValueError()
         if data["output"] is None:
             raise ValueError()
+        if version == 2:
+            package = data["package"]
+            if (data["role"] != "masked_csv" or data["overwrite"] or data["previous"] is not None
+                    or not re.fullmatch(r"[0-9a-f]{64}", data["generation"])
+                    or set(package) != {"role", "temp", "destination", "output", "binding"}
+                    or package["role"] != "transfer_package" or package["binding"] != data["output"]):
+                raise ValueError()
+            package_temp, package_final = Path(package["temp"]), Path(package["destination"])
+            for item in (package_temp, package_final):
+                if not item.is_absolute() or item.is_symlink() or str(item.resolve()) != str(item):
+                    raise ValueError()
+            if (package_temp.parent != package_final.parent or package_final.suffix.lower() != ".dmspackage"
+                    or len({source, temp, destination, package_temp, package_final}) != 5
+                    or not re.fullmatch(r"\.dms-package-[a-z0-9_]{8}\.tmp", package_temp.name)):
+                raise ValueError()
+            value = package["output"]
+            if (set(value) != {"size", "sha256"} or type(value["size"]) is not int or value["size"] < 0
+                    or not re.fullmatch(r"[0-9a-f]{64}", value["sha256"])):
+                raise ValueError()
         return data
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError):
         raise PublicationError("Journal de publicação inválido; evidências preservadas.") from None
@@ -152,6 +246,22 @@ def recover_publications(database: Path, key: bytes) -> int:
                 "Há uma operação com confirmação do cofre indeterminada. "
                 "A publicação foi bloqueada e as evidências foram preservadas."
             )
+        if data["operation_journal_version"] == 2:
+            reservations = []
+            try:
+                if data["generation"] != hashlib.sha256(generation(database.parent)).hexdigest():
+                    raise PublicationError("Geração do ambiente divergente; evidências preservadas.")
+                for artifact in _pair_artifacts(data):
+                    reservations.append(OutputReservation(Path(artifact["destination"])))
+                _publish_pair(data)
+                path.unlink()
+                recovered += 1
+            except OSError:
+                raise PublicationError("Não foi possível concluir a publicação pendente; evidências preservadas.") from None
+            finally:
+                for reservation in reversed(reservations):
+                    reservation.close()
+            continue
         temp, destination = Path(data["temp"]), Path(data["destination"])
         try:
             final_matches = destination.exists() and fingerprint(destination) == data["output"]

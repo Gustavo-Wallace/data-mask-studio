@@ -57,23 +57,23 @@ def test_mixed_existing_and_new_are_packaged_before_commit(tmp_path, monkeypatch
             assert select_transaction_mappings(tx, scalar_codes=[new_scalar], composite_codes=[new_composite])
             observed.append(payload)
     monkeypatch.setattr(repo, 'transaction', transaction)
-    result = anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD))
+    result = anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD),
+                           transfer_package_destination=tmp_path / 'out.dmspackage')
     assert len(observed) == 1
     payload = observed[0]
     assert tuple(m.code for m in payload.scalar_mappings) == result.emitted_scalar_codes
     assert tuple(m.code for m in payload.composite_mappings) == result.emitted_composite_codes
     assert 'OTHER-ABCDEFGHIJKL' not in result.emitted_scalar_codes
-    assert result.staged_transfer_package.binding == payload.masked_file == result.masked_file_binding
+    assert payload.masked_file == result.masked_file_binding
     raw = destination.read_bytes()
     assert payload.masked_file.sha256 == hashlib.sha256(raw).hexdigest()
     assert payload.masked_file.size == len(raw)
-    assert read_package(result.staged_transfer_package.path, PASSWORD) == payload
-    encrypted = result.staged_transfer_package.path.read_bytes()
+    assert read_package(result.transfer_package_path, PASSWORD) == payload
+    encrypted = result.transfer_package_path.read_bytes()
     assert b'Fake Alice' not in encrypted and PASSWORD.encode() not in encrypted
     assert b'Unreferenced secret' not in encrypted
-    assert not list(tmp_path.glob('*.dmspackage'))
+    assert list(tmp_path.glob('*.dmspackage')) == [result.transfer_package_path]
     assert PASSWORD not in repr(PackageStagingRequest(PASSWORD))
-    result.staged_transfer_package.discard()
     assert not list(tmp_path.glob('.dms-package-*.tmp'))
 
 
@@ -118,7 +118,8 @@ def test_package_failure_rolls_back_without_final_files(tmp_path, monkeypatch, f
         monkeypatch.setattr(staging, 'encrypt_package', encrypt)
         kwargs['should_cancel'] = lambda: bool(cancelled)
     with pytest.raises(ProcessingCancelled if failure == 'cancel' else CSVAnonymizationError) as error:
-        anonymize_csv(source, destination, **kwargs, transfer_package_request=request)
+        anonymize_csv(source, destination, **kwargs, transfer_package_request=request,
+                      transfer_package_destination=tmp_path / 'out.dmspackage')
     assert 'private' not in str(error.value) and PASSWORD not in str(error.value)
     assert not destination.exists() and not list(tmp_path.glob('*.dmspackage'))
     assert not list(tmp_path.glob('.*.tmp'))
@@ -133,7 +134,7 @@ def test_non_package_path_does_no_package_work(tmp_path, monkeypatch):
     monkeypatch.setattr(staging, 'select_transaction_mappings', forbidden)
     monkeypatch.setattr(staging, 'encrypt_package', forbidden)
     result = anonymize_csv(source, destination, **kwargs)
-    assert result.staged_transfer_package is None and destination.exists()
+    assert result.transfer_package_path is None and destination.exists()
     assert not list(tmp_path.glob('.dms-package-*'))
 
 
@@ -148,7 +149,7 @@ def test_post_staging_cancel_discards_verified_candidate_on_rollback(tmp_path, m
     monkeypatch.setattr(staging, 'stage_transfer_package', stage)
     with pytest.raises(ProcessingCancelled):
         anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD),
-                      should_cancel=lambda: bool(candidates))
+                      transfer_package_destination=tmp_path / 'out.dmspackage', should_cancel=lambda: bool(candidates))
     assert len(candidates) == 1 and not candidates[0].path.exists()
     assert counts(repo) == (0, 0, 0) and not destination.exists()
 
@@ -171,7 +172,8 @@ def test_post_commit_failure_retains_candidate_not_final_package(tmp_path, monke
     def fail(*args): raise OSError('publication failure')
     monkeypatch.setattr('data_mask_studio.csv_tools.csv_anonymizer.publish', fail)
     with pytest.raises(CSVAnonymizationError):
-        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD))
+        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD),
+                      transfer_package_destination=tmp_path / 'out.dmspackage')
     candidates = list(tmp_path.glob('.dms-package-*.tmp'))
     assert len(candidates) == 1 and read_package(candidates[0], PASSWORD)
     assert counts(repo) == (1, 1, 1)
@@ -189,7 +191,8 @@ def test_csv_binding_change_is_detected_before_commit(tmp_path, monkeypatch):
         return payload
     monkeypatch.setattr(staging, 'read_package', changed)
     with pytest.raises(CSVAnonymizationError):
-        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD))
+        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD),
+                      transfer_package_destination=tmp_path / 'out.dmspackage')
     assert counts(repo) == (0, 0, 0)
     assert not destination.exists() and not list(tmp_path.glob('.*.tmp'))
 
@@ -214,7 +217,8 @@ def test_partial_package_write_is_ciphertext_only_and_cleaned(tmp_path, monkeypa
         return PartialWriter(stream) if kw.get('prefix') == '.dms-package-' else stream
     monkeypatch.setattr(staging.tempfile, 'NamedTemporaryFile', create)
     with pytest.raises(CSVAnonymizationError):
-        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD))
+        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD),
+                      transfer_package_destination=tmp_path / 'out.dmspackage')
     assert len(written) == 1 and counts(repo) == (0, 0, 0)
     assert not destination.exists() and not list(tmp_path.glob('.*.tmp'))
 
@@ -223,12 +227,14 @@ def test_partial_package_write_is_ciphertext_only_and_cleaned(tmp_path, monkeypa
 def test_invalid_trusted_budget_aborts_before_commit(tmp_path, budget):
     source, destination, repo, kwargs = case(tmp_path)
     with pytest.raises(CSVAnonymizationError):
-        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD, budget))
+        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD, budget),
+                      transfer_package_destination=tmp_path / 'out.dmspackage')
     assert counts(repo) == (0, 0, 0) and not destination.exists()
 
 
 def test_no_emitted_codes_cannot_make_package(tmp_path):
     source, destination, repo, kwargs = setup_case(tmp_path, [(' ', ' ', '20')])
     with pytest.raises(CSVAnonymizationError):
-        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD))
+        anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD),
+                      transfer_package_destination=tmp_path / 'out.dmspackage')
     assert counts(repo) == (0, 0, 0) and not destination.exists()

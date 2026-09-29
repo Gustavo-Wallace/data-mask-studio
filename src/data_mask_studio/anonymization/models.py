@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from data_mask_studio.transfer_package.models import MaskedFileBinding
-    from data_mask_studio.transfer_package.staging import StagedPackage
 
 from data_mask_studio.normalization import NormalizationRule
 
@@ -104,7 +103,7 @@ class AnonymizationResult:
     emitted_scalar_codes: tuple[str, ...] = field(default=(), repr=False)
     emitted_composite_codes: tuple[str, ...] = field(default=(), repr=False)
     masked_file_binding: "MaskedFileBinding | None" = field(default=None, repr=False)
-    staged_transfer_package: "StagedPackage | None" = field(default=None, repr=False)
+    transfer_package_path: Path | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
