@@ -215,6 +215,13 @@ class VaultTransaction:
         )
 
 
+    @contextmanager
+    def read_session(self) -> Iterator["VaultReadSession"]:
+        """Borrow this active transaction; never commit, close or start another."""
+        if not self._connection.in_transaction:
+            raise VaultError("A transação do cofre não está ativa.")
+        yield VaultReadSession(self._connection, self._cipher)
+
     def upsert_batch(self, candidates: Sequence[MappingCandidate]) -> None:
         merged = _merge_duplicate_candidates(candidates)
         existing = self._existing_mappings(candidate.code for candidate in merged)

@@ -7,6 +7,10 @@ from data_mask_studio.environment import guarded
 from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from data_mask_studio.transfer_package.staging import PackageStagingRequest
 
 from data_mask_studio.anonymization.anonymizer import anonymize_row_with_metadata
 from data_mask_studio.anonymization.column_config import validate_configuration
@@ -71,12 +75,13 @@ def anonymize_csv(
     mapping_batch_size: int | None = None,
     performance_settings: PerformanceSettings = BALANCED_SETTINGS,
     processing_plan: ProcessingPlan | None = None,
+    transfer_package_request: "PackageStagingRequest | None" = None,
 ) -> AnonymizationResult:
     """Processa um CSV linha a linha e publica o resultado de forma atômica."""
     # Runtime boundary avoids making core result models depend on vault/package
     # initialization during imports.
     from data_mask_studio.transfer_package.binding import compute_file_binding
-    from data_mask_studio.transfer_package.models import MaskedFileBinding
+    from data_mask_studio.transfer_package.models import MaskedFileBinding, PackageError
 
     source = Path(source_path).expanduser().absolute()
     destination = Path(destination_path).expanduser().absolute()
@@ -101,6 +106,9 @@ def anonymize_csv(
     )
 
     temporary_path: Path | None = None
+    staged_package = None
+    if transfer_package_request is not None and vault_repository is None:
+        raise CSVAnonymizationError("Um cofre transacional é necessário para preparar o pacote.")
     publication = None
     if vault_repository is not None and secret_key is not None:
         publication = Publication(vault_repository.database_path, source, destination, secret_key, overwrite)
@@ -260,6 +268,17 @@ def anonymize_csv(
                 masked_file_binding = MaskedFileBinding(**publication.data["output"])
             else:
                 masked_file_binding = compute_file_binding(temporary_path)
+            if transfer_package_request is not None:
+                from data_mask_studio.transfer_package.staging import stage_transfer_package, PackageStagingCancelled
+
+                try:
+                    staged_package = stage_transfer_package(
+                        temporary_path, vault_transaction, transfer_package_request,
+                        scalar_codes=emitted_scalar_codes, composite_codes=emitted_composite_codes,
+                        expected_binding=masked_file_binding, should_cancel=should_cancel,
+                    )
+                except PackageStagingCancelled:
+                    raise ProcessingCancelled("A geração do CSV foi cancelada.") from None
             if should_cancel is not None and should_cancel():
                 raise ProcessingCancelled("A geração do CSV foi cancelada.")
 
@@ -273,6 +292,8 @@ def anonymize_csv(
         raise
     except CSVAnonymizationError:
         raise
+    except PackageError as error:
+        raise CSVAnonymizationError(str(error)) from None
     except PublicationError as error:
         raise CSVAnonymizationError(str(error)) from error
     except CompositeExecutionError:
@@ -308,6 +329,13 @@ def anonymize_csv(
                 temporary_path.unlink()
             except OSError:
                 pass
+        if staged_package is not None and vault_transaction is not None and vault_transaction.publication_outcome == "rolled_back":
+            # Never discard a verified candidate after an uncertain commit or
+            # post-commit publication failure. Block 4B must journal ownership.
+            try:
+                staged_package.discard()
+            except PackageError as error:
+                raise CSVAnonymizationError(str(error)) from None
 
     return AnonymizationResult(
         output_path=destination,
@@ -328,6 +356,7 @@ def anonymize_csv(
         emitted_scalar_codes=tuple(sorted(emitted_scalar_codes)),
         emitted_composite_codes=tuple(sorted(emitted_composite_codes)),
         masked_file_binding=masked_file_binding,
+        staged_transfer_package=staged_package,
     )
 
 

@@ -3,6 +3,7 @@
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from itertools import chain
 
 from data_mask_studio.environment import EnvironmentError, guarded
 from data_mask_studio.metadata import application_version
@@ -17,7 +18,7 @@ from data_mask_studio.transfer_package.serialization import (
 from data_mask_studio.vault.composite_models import CompositeMapping
 from data_mask_studio.vault.exceptions import VaultError
 from data_mask_studio.vault.models import DecryptedVaultMapping
-from data_mask_studio.vault.repository import VaultRepository
+from data_mask_studio.vault.repository import VaultRepository, VaultTransaction, VaultReadSession
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,14 +60,32 @@ def select_mappings(
     All lookup batches share a read-only session and its pinned WAL snapshot.
     Mixed lookup also detects an identity present in both vault namespaces.
     """
+    scalars, composites = _selection_inputs(scalar_codes, composite_codes)
+    try:
+        return _select_from_snapshot(repository, scalars, composites)
+    except (VaultError, EnvironmentError, sqlite3.Error, OSError, ValueError, TypeError, KeyError):
+        raise PackageError("Não foi possível extrair todos os mapeamentos requeridos com segurança.") from None
+
+
+def _selection_inputs(scalar_codes, composite_codes):
     scalars = _identities(scalar_codes, composite=False)
     composites = _identities(composite_codes, composite=True)
     if not scalars and not composites:
         raise PackageError("Selecione ao menos um mapeamento para transferência.")
     if scalars & composites:
         raise PackageError("Identidade requerida com tipos conflitantes.")
+    return scalars, composites
+
+
+def select_transaction_mappings(
+    transaction: VaultTransaction, *, scalar_codes: Iterable[str] = (),
+    composite_codes: Iterable[str] = (),
+) -> SelectedMappings:
+    """Read own uncommitted writes; transaction lifetime belongs to the caller."""
+    scalars, composites = _selection_inputs(scalar_codes, composite_codes)
     try:
-        return _select_from_snapshot(repository, scalars, composites)
+        with transaction.read_session() as session:
+            return _select_session(session, scalars, composites)
     except (VaultError, EnvironmentError, sqlite3.Error, OSError, ValueError, TypeError, KeyError):
         raise PackageError("Não foi possível extrair todos os mapeamentos requeridos com segurança.") from None
 
@@ -75,26 +94,30 @@ def select_mappings(
 def _select_from_snapshot(
     repository: VaultRepository, scalars: set[str], composites: set[str],
 ) -> SelectedMappings:
+    with repository.as_read_only().read_session() as session:
+        return _select_session(session, scalars, composites)
+
+
+def _select_session(session: VaultReadSession, scalars: set[str], composites: set[str]) -> SelectedMappings:
     scalar_result: list[ScalarRestorationMapping] = []
     composite_result: list[CompositeRestorationMapping] = []
-    ordered = sorted(scalars | composites)
+    ordered = sorted(chain(scalars, composites))
     size = BALANCED_SETTINGS.sqlite_lookup_batch_size
-    with repository.as_read_only().read_session() as session:
-        for offset in range(0, len(ordered), size):
-            batch = ordered[offset:offset + size]
-            found = session.get_many_with_composites(batch)
-            if set(found) != set(batch):
-                raise PackageError("Há mapeamentos requeridos ausentes ou inconsistentes.")
-            for code in batch:
-                mapping = found[code]
-                if mapping.code != code:
-                    raise PackageError("Identidade retornada pelo cofre inconsistente.")
-                if code in scalars:
-                    if not isinstance(mapping, DecryptedVaultMapping):
-                        raise PackageError("Tipo de mapeamento incompatível com a seleção.")
-                    scalar_result.append(ScalarRestorationMapping.from_vault(mapping))
-                else:
-                    if not isinstance(mapping, CompositeMapping):
-                        raise PackageError("Tipo de mapeamento incompatível com a seleção.")
-                    composite_result.append(CompositeRestorationMapping.from_vault(mapping))
+    for offset in range(0, len(ordered), size):
+        batch = ordered[offset:offset + size]
+        found = session.get_many_with_composites(batch)
+        if set(found) != set(batch):
+            raise PackageError("Há mapeamentos requeridos ausentes ou inconsistentes.")
+        for code in batch:
+            mapping = found[code]
+            if mapping.code != code:
+                raise PackageError("Identidade retornada pelo cofre inconsistente.")
+            if code in scalars:
+                if not isinstance(mapping, DecryptedVaultMapping):
+                    raise PackageError("Tipo de mapeamento incompatível com a seleção.")
+                scalar_result.append(ScalarRestorationMapping.from_vault(mapping))
+            else:
+                if not isinstance(mapping, CompositeMapping):
+                    raise PackageError("Tipo de mapeamento incompatível com a seleção.")
+                composite_result.append(CompositeRestorationMapping.from_vault(mapping))
     return SelectedMappings(tuple(scalar_result), tuple(composite_result))
