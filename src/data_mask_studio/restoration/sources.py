@@ -2,7 +2,7 @@
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Protocol
 import sqlite3
 
@@ -12,6 +12,7 @@ from data_mask_studio.vault.models import DecryptedVaultMapping
 from data_mask_studio.vault.composite_models import CompositeMapping
 from data_mask_studio.vault.repository import VaultRepository, VaultReadSession
 from data_mask_studio.vault.exceptions import VaultError
+from data_mask_studio.performance import RestorationMetrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,8 @@ class RestorationSource(Protocol):
     def get_scalar(self, code: str) -> ScalarValue: ...
 
     def get_composite(self, code: str) -> CompositeValue: ...
+
+    def get_many_with_composites(self, codes: Sequence[str]) -> dict[str, ScalarValue | CompositeValue]: ...
 
 
 class VaultRestorationSource:
@@ -63,11 +66,31 @@ class VaultRestorationSource:
         return CompositeValue(mapping.code, mapping.identity_version, mapping.canonical_values,
                               mapping.variations[0].original_values if len(mapping.variations) == 1 else None)
 
+    def get_many_with_composites(self, codes: Sequence[str]) -> dict[str, ScalarValue | CompositeValue]:
+        if self._session is None:
+            raise RestorationSecurityError("A fonte de restauração está fechada.")
+        try:
+            mappings = self._session.get_many_with_composites(codes)
+            result = {}
+            for code, mapping in mappings.items():
+                if mapping.code != code:
+                    raise RestorationSecurityError("Identidade de mapeamento inconsistente.")
+                if isinstance(mapping, CompositeMapping):
+                    result[code] = CompositeValue(code, mapping.identity_version, mapping.canonical_values,
+                        mapping.variations[0].original_values if len(mapping.variations) == 1 else None)
+                elif isinstance(mapping, DecryptedVaultMapping):
+                    result[code] = ScalarValue(code, mapping.original_value, mapping.canonical_value)
+                else:
+                    raise RestorationSecurityError("Tipo de mapeamento inválido.")
+            return result
+        except (VaultError, EnvironmentError, sqlite3.Error, OSError):
+            raise RestorationSecurityError("Não foi possível consultar os mapeamentos com segurança.") from None
+
 
 @contextmanager
-def open_vault_source(repository: VaultRepository) -> Iterator[RestorationSource]:
+def open_vault_source(repository: VaultRepository, metrics: RestorationMetrics | None = None) -> Iterator[RestorationSource]:
     """Read-only connection and pinned snapshot, never migrate or write a vault."""
-    with repository.as_read_only().read_session() as session:
+    with repository.as_read_only().read_session(metrics) as session:
         source = VaultRestorationSource(session)
         try:
             yield source

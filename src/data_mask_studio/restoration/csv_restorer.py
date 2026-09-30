@@ -2,9 +2,13 @@ import csv
 import os
 import tempfile
 import time
+import io
+from contextlib import nullcontext, AbstractContextManager
+from dataclasses import replace
 from collections.abc import Callable, MutableMapping
 from itertools import islice
 from pathlib import Path
+from typing import BinaryIO
 from data_mask_studio.environment import guarded
 from data_mask_studio.publication import publish
 
@@ -36,7 +40,7 @@ from data_mask_studio.restoration.models import (
     RestorationStage,
 )
 from data_mask_studio.vault import VaultRepository
-from data_mask_studio.vault.composite_models import CompositeMapping
+from data_mask_studio.restoration.sources import CompositeValue, ScalarValue, RestorationSource, open_vault_source
 from data_mask_studio.composite_text import composite_text
 
 ProgressCallback = Callable[[RestorationProgress], None]
@@ -55,11 +59,47 @@ def restore_csv(
     metrics: RestorationMetrics | None = None,
 ) -> RestorationResult:
     """Restaura somente colunas escolhidas e publica o CSV atomicamente."""
+    return _restore_csv(configuration, destination_path, open_vault_source(repository, metrics),
+                        overwrite=overwrite, progress_callback=progress_callback,
+                        should_cancel=should_cancel, metrics=metrics)
+
+
+def restore_csv_from_package(
+    configuration: RestorationConfiguration, destination_path: str | Path,
+    package_path: str | Path, password: str, *, max_payload_bytes: int | None = None,
+    overwrite: bool = False, progress_callback: ProgressCallback | None = None,
+    should_cancel: CancellationCheck | None = None, metrics: RestorationMetrics | None = None,
+) -> RestorationResult:
+    """Package-only mode; missing-token policy is always ABORT, never fallback."""
+    from data_mask_studio.transfer_package.restoration_source import open_verified_package_input
+    from data_mask_studio.transfer_package.serialization import MAX_PAYLOAD_SIZE
+
+    configuration = replace(configuration, missing_code_policy=MissingCodePolicy.ABORT)
     _validate_configuration(configuration)
+    destination = Path(destination_path).expanduser().absolute()
+    _validate_destination(configuration.source_path, destination, overwrite)
+    _validate_destination(Path(package_path), destination, overwrite)
+    with open_verified_package_input(package_path, password, configuration.source_path,
+                                     max_payload_bytes=MAX_PAYLOAD_SIZE if max_payload_bytes is None else max_payload_bytes,
+                                     should_cancel=should_cancel) as (source, snapshot):
+        return _restore_csv(configuration, destination, nullcontext(source), overwrite=overwrite,
+                            progress_callback=progress_callback, should_cancel=should_cancel,
+                            metrics=metrics, verified_input=snapshot)
+
+
+def _restore_csv(
+    configuration: RestorationConfiguration, destination_path: str | Path,
+    source_context: AbstractContextManager[RestorationSource], *, overwrite: bool = False,
+    progress_callback: ProgressCallback | None = None, should_cancel: CancellationCheck | None = None,
+    metrics: RestorationMetrics | None = None, verified_input: BinaryIO | None = None,
+) -> RestorationResult:
+    # The package entry point validated configuration before making the verified
+    # snapshot. Never require or reopen the original pathname afterwards.
+    if verified_input is None:
+        _validate_configuration(configuration)
     source = configuration.source_path.expanduser().absolute()
     destination = Path(destination_path).expanduser().absolute()
     _validate_destination(source, destination, overwrite)
-    repository = repository.as_read_only()
     temporary_path: Path | None = None
     started_at = time.perf_counter()
     rows_processed = restored_codes = missing_codes = 0
@@ -82,19 +122,20 @@ def restore_csv(
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
             writer = csv.writer(temporary_file, delimiter=configuration.delimiter)
-            with source.open(
+            with (io.TextIOWrapper(verified_input, encoding=_python_encoding(configuration.encoding), newline="")
+                  if verified_input is not None else source.open(
                 "r",
                 encoding=_python_encoding(configuration.encoding),
                 newline="",
                 buffering=BALANCED_SETTINGS.io_buffer_size,
-            ) as source_file:
+            )) as source_file:
                 reader = csv.reader(
                     source_file, delimiter=configuration.delimiter, strict=True
                 )
                 headers, _replacements = resolve_empty_headers(next(reader))
                 _validate_current_headers(configuration, headers)
                 writer.writerow(headers)
-                with repository.read_session(metrics) as session:
+                with source_context as session:
                     while window := list(
                         islice(reader, BALANCED_SETTINGS.restoration_window_rows)
                     ):
@@ -135,20 +176,22 @@ def restore_csv(
                                             f"nao foi encontrado (coluna '{column.header}', linha {line_number})."
                                         )
                                     continue
-                                if isinstance(mapping, CompositeMapping):
-                                    if len(mapping.variations) == 1:
-                                        values = mapping.variations[0].original_values
+                                if isinstance(mapping, CompositeValue):
+                                    if mapping.original_values is not None:
+                                        values = mapping.original_values
                                         composite_restored_exact += 1
                                     else:
                                         values = mapping.canonical_values
                                         composite_restored_canonical += 1
                                     restored_row[column.index] = composite_text(values)
-                                else:
+                                elif isinstance(mapping, ScalarValue):
                                     restored_row[column.index] = (
                                         mapping.canonical_value
                                         if configuration.representation_policy is RepresentationPolicy.CANONICAL
                                         else mapping.original_value
                                     )
+                                else:
+                                    raise RestorationSecurityError("Tipo de mapeamento inválido.")
                                 restored_codes += 1
                             write_started = time.perf_counter()
                             writer.writerow(restored_row)

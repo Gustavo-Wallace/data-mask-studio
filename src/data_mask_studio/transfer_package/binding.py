@@ -19,11 +19,15 @@ def compute_file_binding(path: str | Path) -> MaskedFileBinding:
 
 def verify_file_binding(path: str | Path, expected: MaskedFileBinding) -> None:
     """Fail closed; does not guarantee that bytes remain unchanged afterwards."""
+    verify_binding(compute_file_binding(path), expected)
+
+
+def verify_binding(actual: MaskedFileBinding, expected: MaskedFileBinding) -> None:
+    """Compare an exact-byte streaming measurement with authenticated metadata."""
     if (not isinstance(expected, MaskedFileBinding)
             or type(expected.size) is not int or expected.size < 0
             or not isinstance(expected.sha256, str)
             or re.fullmatch(r"[0-9a-f]{64}", expected.sha256) is None):
         raise PackageError("Metadados de vínculo do arquivo inválidos.")
-    actual = compute_file_binding(path)
     if actual.size != expected.size or not hmac.compare_digest(actual.sha256, expected.sha256):
         raise PackageError("O arquivo não corresponde ao vínculo esperado.")

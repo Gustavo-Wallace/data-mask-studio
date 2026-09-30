@@ -6,6 +6,7 @@ from data_mask_studio.csv_tools.encoding import python_codec
 from data_mask_studio.csv_tools.header_resolver import resolve_empty_headers
 from data_mask_studio.restoration.code_classifier import classify_cell_format
 from data_mask_studio.restoration.exceptions import (
+    MissingCodeError,
     RestorationCancelled,
     RestorationError,
     RestorationSecurityError,
@@ -152,6 +153,8 @@ def _bulk_lookup(session, codes, cache, metrics):
                 metrics.cache_misses += 1
     try:
         fetched = session.get_many_with_composites(missing)
+    except (MissingCodeError, RestorationSecurityError):
+        raise
     except Exception as error:
         raise RestorationSecurityError(
             "Não foi possível recuperar um ou mais mapeamentos com segurança."

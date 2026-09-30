@@ -2,6 +2,7 @@ from data_mask_studio.restoration.analyzer import analyze_csv
 from data_mask_studio.restoration.code_classifier import classify_cell_format
 from data_mask_studio.restoration.csv_restorer import (
     restore_csv,
+    restore_csv_from_package,
     suggested_output_path,
 )
 from data_mask_studio.restoration.exceptions import (
@@ -47,5 +48,6 @@ __all__ = [
     "analyze_csv",
     "classify_cell_format",
     "restore_csv",
+    "restore_csv_from_package",
     "suggested_output_path",
 ]
