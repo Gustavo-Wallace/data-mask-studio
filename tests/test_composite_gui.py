@@ -3,7 +3,8 @@ import json
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
+from shiboken6 import isValid
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
 
@@ -21,17 +22,24 @@ from data_mask_studio.vault import VaultCipher, VaultRepository
 
 @pytest.fixture
 def gui(tmp_path):
+    # Flush deletions queued by earlier GUI tests before reapplying the theme.
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app = create_application([])
     service = ProfileService(ProfileRepository(tmp_path / 'profiles.json'))
     widget = AnonymizationWidget(profile_service=service)
     source = tmp_path / 'source.csv'
     source.write_text('NOME,CPF,IDADE\nGustavo Wallace,999.999.999-99,24\n', encoding='utf-8')
     widget.load_csv(str(source))
-    yield app, widget, service
-    widget.stop_worker()
-    widget.close()
-    widget.deleteLater()
-    app.processEvents()
+    try:
+        yield app, widget, service
+    finally:
+        widget.stop_worker()
+        widget.close()
+        widget.deleteLater()
+        app.processEvents()
+        # processEvents alone does not deliver DeferredDelete without app.exec().
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert not isValid(widget), "The per-test widget must be destroyed"
 
 
 def editor(widget, existing=None):
