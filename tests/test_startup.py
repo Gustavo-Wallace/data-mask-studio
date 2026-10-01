@@ -3,6 +3,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from qt_lifecycle import qt_widget_lifecycle, owned_test_widgets
+
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHeaderView, QLineEdit
 
@@ -28,6 +30,23 @@ class FixedKeyProvider:
 
 def profile_service(tmp_path: Path) -> ProfileService:
     return ProfileService(ProfileRepository(tmp_path / "profiles.json"))
+
+
+def test_test_widget_cleanup_preserves_preexisting_objects() -> None:
+    from shiboken6 import isValid
+
+    application = create_application([])
+    existing = QLineEdit("independent state")
+    with owned_test_widgets():
+        owned = QLineEdit("per-test state")
+        child = QLineEdit(owned)
+        owned.close()
+        assert isValid(owned)  # close alone is not destruction.
+    assert not isValid(owned)
+    assert not isValid(child)
+    assert isValid(existing)
+    assert existing.text() == "independent state"
+    assert application is not None
 
 
 def assert_configuration_controls_fit(window: MainWindow) -> None:
