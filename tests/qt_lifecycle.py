@@ -21,7 +21,8 @@ def owned_test_widgets():
             for widget in owned:
                 if not isValid(widget):
                     continue
-                stop_worker = getattr(widget, "stop_worker", None)
+                stop_worker = (getattr(widget, "stop_worker", None)
+                               or getattr(widget, "stop_workers", None))
                 if stop_worker is not None:
                     assert stop_worker(), "A test worker did not stop"
                 assert widget.close(), "A test window refused to close"

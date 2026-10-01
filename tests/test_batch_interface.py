@@ -3,6 +3,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from qt_lifecycle import qt_widget_lifecycle
+
 from data_mask_studio.anonymization import ColumnConfig
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.main_window import MainWindow
