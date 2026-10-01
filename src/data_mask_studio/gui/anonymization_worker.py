@@ -1,4 +1,5 @@
 from threading import Event
+from pathlib import Path
 from data_mask_studio.environment import guarded, provider_directory
 from collections.abc import Callable
 
@@ -17,6 +18,10 @@ from data_mask_studio.performance import BALANCED_SETTINGS, ProgressLimiter
 from data_mask_studio.processing.models import ProcessingPlan
 from data_mask_studio.security import KeyProvider
 from data_mask_studio.vault import VaultRepository, create_default_vault_repository
+from data_mask_studio.transfer_package.staging import PackageStagingRequest
+from data_mask_studio.csv_tools.csv_anonymizer import CSVAnonymizationError
+from data_mask_studio.security import KeyProviderError
+from data_mask_studio.vault import VaultError
 
 VaultRepositoryFactory = Callable[[], VaultRepository]
 
@@ -39,6 +44,8 @@ class AnonymizationWorker(QThread):
         *,
         overwrite: bool,
         processing_plan: ProcessingPlan | None = None,
+        transfer_package_request: PackageStagingRequest | None = None,
+        transfer_package_destination: Path | None = None,
     ) -> None:
         super().__init__()
         self._inspection = inspection
@@ -59,6 +66,17 @@ class AnonymizationWorker(QThread):
         self._vault_repository_factory = vault_repository_factory
         self._overwrite = overwrite
         self._cancel_requested = Event()
+        self._transfer_package_request = transfer_package_request
+        self._transfer_package_destination = transfer_package_destination
+
+    def _emit_failure(self, error: Exception) -> None:
+        if self._transfer_package_request is not None:
+            # Do not retain traceback frames containing package passwords in
+            # queued Qt signals or the widget's last-error diagnostic field.
+            message = (str(error) if isinstance(error, (CSVAnonymizationError, KeyProviderError, VaultError))
+                       else "Não foi possível gerar o CSV e o pacote de transferência.")
+            error = CSVAnonymizationError(message)
+        self.failed.emit(error)
 
     def request_cancel(self) -> None:
         self._cancel_requested.set()
@@ -67,7 +85,9 @@ class AnonymizationWorker(QThread):
         try:
             self._run_leased()
         except Exception as error:
-            self.failed.emit(error)
+            self._emit_failure(error)
+        finally:
+            self._transfer_package_request = None
 
     @guarded(lambda self: provider_directory(self._key_provider)
              if self._processing_plan is None or self._processing_plan.requires_masking else None)
@@ -82,6 +102,10 @@ class AnonymizationWorker(QThread):
             needs_masking = self._processing_plan is None or self._processing_plan.requires_masking
             secret_key = self._key_provider.get_key() if needs_masking else None
             vault_repository = self._vault_repository_factory() if needs_masking else None
+            package_options = {}
+            if self._transfer_package_request is not None:
+                package_options = dict(transfer_package_request=self._transfer_package_request,
+                                       transfer_package_destination=self._transfer_package_destination)
             result = anonymize_csv(
                 self._inspection.path,
                 self._output_path,
@@ -94,11 +118,12 @@ class AnonymizationWorker(QThread):
                 progress_callback=report,
                 should_cancel=self._cancel_requested.is_set,
                 vault_repository=vault_repository,
+                **package_options,
             )
         except ProcessingCancelled:
             self.cancelled.emit()
         except Exception as error:
-            self.failed.emit(error)
+            self._emit_failure(error)
         else:
             if limiter.should_emit(result.records_processed, force=True):
                 self.progress.emit(result.records_processed)

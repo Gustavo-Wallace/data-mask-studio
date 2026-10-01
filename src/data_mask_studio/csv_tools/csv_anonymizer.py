@@ -110,15 +110,7 @@ def anonymize_csv(
     staged_package = None
     package_destination = None
     if transfer_package_request is not None:
-        if transfer_package_destination is None:
-            raise CSVAnonymizationError("Informe o destino final do pacote de transferência.")
-        package_destination = Path(transfer_package_destination).expanduser().absolute()
-        if (package_destination.suffix.lower() != ".dmspackage"
-                or package_destination.is_symlink() or not package_destination.parent.is_dir()
-                or package_destination.exists() or destination.exists() or destination.is_symlink()
-                or any(paths_refer_to_same_file(package_destination, path) for path in (source, destination))):
-            raise CSVAnonymizationError("Destino do pacote inválido ou já existente.")
-        package_destination = package_destination.resolve()
+        package_destination = validate_transfer_package_destination(source, destination, transfer_package_destination)
     elif transfer_package_destination is not None:
         raise CSVAnonymizationError("O destino do pacote exige uma solicitação de transferência.")
     if transfer_package_request is not None and vault_repository is None:
@@ -446,6 +438,22 @@ def _flush_mappings(
         return
     transaction.upsert_batch(list(pending.values()))
     pending.clear()
+
+
+def validate_transfer_package_destination(source: Path, destination: Path, package_path: str | Path | None) -> Path:
+    """Shared preflight; reservations and no-overwrite publication remain authoritative."""
+    if package_path is None or not str(package_path).strip():
+        raise CSVAnonymizationError("Informe o destino final do pacote de transferência.")
+    try:
+        package = Path(package_path).expanduser().absolute()
+        if (package.suffix.lower() != ".dmspackage" or package.is_symlink()
+                or not package.parent.is_dir() or package.exists()
+                or destination.exists() or destination.is_symlink()
+                or any(paths_refer_to_same_file(package, path) for path in (source, destination))):
+            raise CSVAnonymizationError("Destino do pacote inválido ou já existente.")
+        return package.resolve()
+    except (OSError, ValueError):
+        raise CSVAnonymizationError("Destino do pacote inválido ou indisponível.") from None
 
 
 def paths_refer_to_same_file(first: str | Path, second: str | Path) -> bool:

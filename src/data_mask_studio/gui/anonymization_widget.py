@@ -48,6 +48,8 @@ from data_mask_studio.detection import (
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.gui.composite_section import CompositeSection
+from data_mask_studio.gui.transfer_package_controls import TransferPackageControls
+from data_mask_studio.transfer_package.models import PackageError
 from data_mask_studio.processing.planner import PlanningError
 from data_mask_studio.gui.column_configuration_table import (
     PREFIX_PLACEHOLDER,
@@ -267,6 +269,8 @@ class AnonymizationWidget(QWidget):
         layout.addLayout(selection_layout)
         layout.addWidget(self.config_table, stretch=1)
         layout.addWidget(self.composite_section)
+        self.transfer_controls = TransferPackageControls(self)
+        layout.addWidget(self.transfer_controls)
         layout.addLayout(action_layout)
         layout.addLayout(progress_layout)
         layout.addWidget(self.output_path_label)
@@ -299,6 +303,7 @@ class AnonymizationWidget(QWidget):
         self._show_result(result)
 
     def _show_result(self, result: CSVInspectionResult) -> None:
+        self.transfer_controls.reset()
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(True)
         self._unreviewed_sources.clear()
@@ -343,6 +348,7 @@ class AnonymizationWidget(QWidget):
         self._set_status(status, is_error=is_error)
 
     def _reset_details(self) -> None:
+        self.transfer_controls.reset()
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(False)
         self._unreviewed_sources.clear()
@@ -496,6 +502,7 @@ class AnonymizationWidget(QWidget):
         self._configuration_changed(row)
 
     def _configuration_changed(self, review_row: int | None = None) -> None:
+        self._update_transfer_controls()
         if review_row is not None:
             self._unreviewed_sources.discard(review_row)
         self._configuration_validated = False
@@ -505,6 +512,17 @@ class AnonymizationWidget(QWidget):
             "Configuração alterada. Use “Validar configuração” para conferir.",
             is_error=False,
         )
+
+    def _update_transfer_controls(self) -> None:
+        self.transfer_controls.set_mask_available(
+            self._inspection_result is not None and (
+                any(column.action is ColumnAction.MASK for column in self._column_configs)
+                or any(column.action is ColumnAction.MASK for column in self.composite_section.configurations)
+            )
+        )
+        if self._inspection_result is not None and self.transfer_controls.output_path is None:
+            source = self._inspection_result.path
+            self.transfer_controls.set_output_path(source.with_name(f"{source.stem}_anonimizado.csv"))
 
     def select_all_columns(self) -> None:
         for action_field in self._action_fields:
@@ -519,6 +537,7 @@ class AnonymizationWidget(QWidget):
             )
 
     def _update_selected_count(self) -> None:
+        self._update_transfer_controls()
         selected_count = sum(
             configuration.anonymize for configuration in self._column_configs
         )
@@ -547,6 +566,7 @@ class AnonymizationWidget(QWidget):
                 prefix_field.setStyleSheet("border: 1px solid #b42318;")
 
     def validate_current_configuration(self) -> None:
+        self._update_transfer_controls()
         result = validate_configuration(self._column_configs)
         self._refresh_validation_indicators()
         try:
@@ -650,6 +670,7 @@ class AnonymizationWidget(QWidget):
             worker.deleteLater()
 
     def _set_detection_state(self, analyzing: bool) -> None:
+        self.transfer_controls.setEnabled(not analyzing)
         self.composite_section.setEnabled(not analyzing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
         self.select_button.setEnabled(not analyzing)
@@ -1059,6 +1080,7 @@ class AnonymizationWidget(QWidget):
         destination = Path(selected_path)
         if destination.suffix.lower() != ".csv":
             destination = destination.with_suffix(".csv")
+        self.transfer_controls.set_output_path(destination)
         if paths_refer_to_same_file(source, destination):
             self._set_status(
                 "O arquivo de saída não pode ser o mesmo CSV original.",
@@ -1091,6 +1113,11 @@ class AnonymizationWidget(QWidget):
             self.generate_button.setEnabled(False)
             self._set_status(str(error), is_error=True)
             return
+        try:
+            package_options = self.transfer_controls.request(self._inspection_result.path, destination, plan.requires_masking)
+        except (CSVAnonymizationError, PackageError) as error:
+            self._set_status(str(error), is_error=True)
+            return
         self._clear_output_result()
         self._set_processing_state(True)
         self.progress_bar.setRange(0, 0)
@@ -1108,7 +1135,9 @@ class AnonymizationWidget(QWidget):
             self._vault_repository_factory,
             overwrite=overwrite,
             processing_plan=plan,
+            **package_options,
         )
+        self.transfer_controls.clear_passwords()
         self._worker = worker
         worker.progress.connect(self._processing_progress)
         worker.completed.connect(self._processing_completed)
@@ -1136,6 +1165,10 @@ class AnonymizationWidget(QWidget):
         )
         self._last_output_path = result.output_path
         self.output_path_label.setText(f"Arquivo gerado: {result.output_path}")
+        if result.transfer_package_path is not None:
+            self.output_path_label.setText(
+                f"Arquivo gerado: {result.output_path}\nPacote de transferência criado: {result.transfer_package_path}"
+            )
         self.output_path_label.setVisible(True)
         self.open_folder_button.setVisible(True)
         self.open_folder_button.setEnabled(True)
@@ -1193,6 +1226,10 @@ class AnonymizationWidget(QWidget):
             self._set_status("Cancelamento solicitado...", is_error=False)
 
     def _set_processing_state(self, processing: bool) -> None:
+        self.transfer_controls.setEnabled(not processing)
+        if not processing:
+            self.transfer_controls.clear_passwords()
+            self._update_transfer_controls()
         self.composite_section.setEnabled(not processing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
         self.select_button.setEnabled(not processing)

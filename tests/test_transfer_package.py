@@ -220,9 +220,28 @@ def test_multiple_scalar_mappings_and_legacy_identifier(payload):
     assert decrypt_package(encrypt_package(value, PASSWORD), PASSWORD) == value
 
 
-@pytest.mark.parametrize("password", ["", "short", " " * 15])
+@pytest.mark.parametrize("password", ["", "short", "abcdefg", " " * 8, " " * 15])
 def test_password_policy(payload, password):
     with pytest.raises(PackageError): encrypt_package(payload, password)
+
+
+@pytest.mark.parametrize("password", ["abcdefgh", "abcdefghijkl", "abcdefghijklmnop"])
+def test_package_password_boundary_round_trip(payload, password):
+    assert decrypt_package(encrypt_package(payload, password), password) == payload
+
+
+def test_package_password_message_and_backup_policy_remain_separate():
+    from data_mask_studio.backup.crypto import validate_password as validate_backup_password
+    from data_mask_studio.backup.exceptions import BackupError
+    with pytest.raises(PackageError, match="8 caracteres"):
+        service.validate_password("abcdefg")
+    service.validate_password("abcdefgh")
+    for password in ("", "abcdefgh", "abcdefghijk", " " * 12):
+        with pytest.raises(BackupError, match="12 caracteres"):
+            validate_backup_password(password)
+    validate_backup_password("abcdefghijkl", "abcdefghijkl")
+    with pytest.raises(BackupError):
+        validate_backup_password("abcdefghijkl", "different confirmation")
 
 
 def test_invalid_payload_does_not_modify_existing_destination(payload, tmp_path):

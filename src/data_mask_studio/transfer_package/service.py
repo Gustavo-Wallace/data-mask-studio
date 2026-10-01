@@ -20,11 +20,16 @@ from data_mask_studio.transfer_package.serialization import MAX_PAYLOAD_SIZE, de
 MAGIC = b"DMSTRANSFER\x00"
 KDF_DOMAIN = b"data-mask-studio-transfer-package-v1\x00"
 HEADER = struct.Struct(f">{len(MAGIC)}sH16s12s")
+MIN_PASSWORD_LENGTH = 8
+
+
+def validate_password(password: str) -> None:
+    if not isinstance(password, str) or len(password) < MIN_PASSWORD_LENGTH or not password.strip():
+        raise PackageError(f"A senha do pacote deve possuir pelo menos {MIN_PASSWORD_LENGTH} caracteres.")
 
 
 def _key(password: str, salt: bytes) -> bytes:
-    if not isinstance(password, str) or len(password) < 12 or not password.strip():
-        raise PackageError("A senha do pacote deve possuir pelo menos 12 caracteres.")
+    validate_password(password)
     try:
         # Same cost as backups; separate salt domain and no backup dependencies.
         return Scrypt(salt=KDF_DOMAIN + salt, length=32, n=2**15, r=8, p=1).derive(password.encode("utf-8"))
