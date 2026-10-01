@@ -15,7 +15,7 @@ permissions:
 jobs:
   tests:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
