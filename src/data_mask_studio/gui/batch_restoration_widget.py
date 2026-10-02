@@ -3,10 +3,11 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
+from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QComboBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -162,14 +163,14 @@ class BatchRestorationWidget(QWidget):
         output_row.addWidget(self.output_field, stretch=1)
         output_row.addWidget(self.choose_output_button)
 
-        self.representation_combo = QComboBox()
+        self.representation_combo = ScrollSafeComboBox()
         self.representation_combo.addItem(
             "Primeira representação original", RepresentationPolicy.FIRST_ORIGINAL.value
         )
         self.representation_combo.addItem(
             "Valor canônico", RepresentationPolicy.CANONICAL.value
         )
-        self.missing_policy_combo = QComboBox()
+        self.missing_policy_combo = ScrollSafeComboBox()
         self.missing_policy_combo.addItem(
             "Manter código original", BatchMissingCodePolicy.KEEP.value
         )

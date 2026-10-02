@@ -3,8 +3,9 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
+from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -68,14 +69,14 @@ class HTMLRestorationWidget(QWidget):
         details.addRow("Caminho:", self.path_field)
         details.addRow("Codificação:", self.encoding_label)
 
-        self.missing_policy_combo = QComboBox()
+        self.missing_policy_combo = ScrollSafeComboBox()
         self.missing_policy_combo.addItem(
             "Manter código original", HTMLMissingCodePolicy.KEEP.value
         )
         self.missing_policy_combo.addItem(
             "Interromper restauração", HTMLMissingCodePolicy.ABORT.value
         )
-        self.representation_combo = QComboBox()
+        self.representation_combo = ScrollSafeComboBox()
         self.representation_combo.addItem(
             "Primeira representação original",
             RepresentationPolicy.FIRST_ORIGINAL.value,

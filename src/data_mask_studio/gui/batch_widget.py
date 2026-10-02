@@ -3,9 +3,10 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
+from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -101,7 +102,7 @@ class BatchWidget(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
-        self.profile_combo = QComboBox()
+        self.profile_combo = ScrollSafeComboBox()
         self.profile_combo.currentIndexChanged.connect(self._profile_changed)
         profile_row = QHBoxLayout()
         profile_row.addWidget(QLabel("Perfil:"))

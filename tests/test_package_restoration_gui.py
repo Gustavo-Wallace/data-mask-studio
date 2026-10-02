@@ -150,6 +150,7 @@ def test_short_password_forwarded_off_gui_thread_and_cancellation(gui, tmp_path,
     finish(app, widget)
     assert observed == [(True, "x", path, MissingCodePolicy.ABORT)]
     assert "cancelada" in widget.status_label.text()
+    assert widget.progress_bar.value() == 0
     assert widget.source_combo.isEnabled()
 
 
@@ -184,10 +185,12 @@ def test_real_package_restoration_without_vault(gui, tmp_path, monkeypatch, case
     finish(app, widget)
     if case == "success":
         assert read_rows(output)[1][0] == " Synthetic Person "
+        assert widget.progress_bar.value() == widget.progress_bar.maximum() == 1
         assert widget._last_output_path == output
         assert "sucesso" in widget.status_label.text()
     else:
         assert not output.exists() and widget._last_output_path is None
+        assert widget.progress_bar.value() == 0
         assert widget._last_error.__traceback__ is None
         assert widget._last_error.__context__ is None
         assert "sucesso" not in widget.status_label.text()

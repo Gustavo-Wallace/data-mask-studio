@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
         page_specs = (
             ("PROCESSAMENTO", "Anonimizar CSV", "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.", self.anonymization_widget),
             ("PROCESSAMENTO", "Anonimização em lote", "Processe vários arquivos CSV com um perfil de configuração salvo.", self.batch_widget),
-            ("RESTAURAÇÃO", "Restaurar CSV", "Recupere valores de colunas selecionadas usando o cofre local.", self.restoration_widget),
+            ("RESTAURAÇÃO", "Restaurar CSV", "Recupere valores de colunas selecionadas usando o cofre local ou um pacote de transferência.", self.restoration_widget),
             ("RESTAURAÇÃO", "Restaurar HTML", "Recupere códigos presentes em HTML e dashboards locais.", self.html_restoration_widget),
             ("RESTAURAÇÃO", "Restauração em lote", "Restaure vários arquivos CSV ou HTML usando o cofre local.", self.batch_restoration_widget),
             ("COFRE", "Consultar cofre", "Consulte códigos específicos sem expor todo o conteúdo do cofre.", self.consultant_widget),

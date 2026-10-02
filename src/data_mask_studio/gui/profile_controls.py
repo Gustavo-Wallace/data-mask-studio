@@ -1,7 +1,8 @@
 from collections.abc import Callable
 
+from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+
 from PySide6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -28,7 +29,7 @@ class ProfileControls(QWidget):
         label = QLabel("Perfil de configuração")
         label.setStyleSheet("font-size: 16px; font-weight: 600;")
 
-        self.profile_combo = QComboBox()
+        self.profile_combo = ScrollSafeComboBox()
         self.profile_combo.setMinimumWidth(180)
         self.apply_button = QPushButton("Aplicar perfil")
         self.apply_button.clicked.connect(apply_profile)

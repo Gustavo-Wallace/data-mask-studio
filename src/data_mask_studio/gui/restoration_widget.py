@@ -7,7 +7,6 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QComboBox,
     QFileDialog,
     QFormLayout,
     QHeaderView,
@@ -22,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from data_mask_studio.performance import calculate_metrics
+from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 
 from data_mask_studio.csv_tools import (
     CSVInspectionError,
@@ -73,7 +73,7 @@ class RestorationWidget(QWidget):
         self._last_output_path: Path | None = None
         self._last_error: Exception | None = None
 
-        self.source_combo = QComboBox()
+        self.source_combo = ScrollSafeComboBox()
         self.source_combo.setAccessibleName("Origem da restauração")
         self.source_combo.addItem("Cofre local", "vault")
         self.source_combo.addItem("Pacote de transferência", "package")
@@ -125,7 +125,7 @@ class RestorationWidget(QWidget):
         selection.addStretch()
         selection.addWidget(self.selected_count_label)
 
-        self.missing_policy_combo = QComboBox()
+        self.missing_policy_combo = ScrollSafeComboBox()
         self.missing_policy_combo.addItem(
             "Manter código original", MissingCodePolicy.KEEP.value
         )
@@ -135,7 +135,7 @@ class RestorationWidget(QWidget):
         self.missing_policy_combo.addItem(
             "Interromper restauração", MissingCodePolicy.ABORT.value
         )
-        self.representation_combo = QComboBox()
+        self.representation_combo = ScrollSafeComboBox()
         self.representation_combo.addItem(
             "Primeira representação original",
             RepresentationPolicy.FIRST_ORIGINAL.value,
@@ -341,6 +341,7 @@ class RestorationWidget(QWidget):
         self._start_worker(worker, "Analisando códigos...")
 
     def _analysis_completed(self, result: AnalysisResult) -> None:
+        self._operation_succeeded = True
         prefixes = ", ".join(result.prefixes) or "nenhum"
         incompatibilities = (
             "\n".join(result.possible_incompatibilities) or "nenhuma"
@@ -442,7 +443,9 @@ class RestorationWidget(QWidget):
         status: str,
     ) -> None:
         self._worker = worker
+        self._operation_succeeded = False
         self._set_processing_state(True)
+        self.progress_bar.reset()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(True)
         self.progress_label.setText("0 linhas processadas")
@@ -470,6 +473,7 @@ class RestorationWidget(QWidget):
         )
 
     def _restoration_completed(self, result: RestorationResult) -> None:
+        self._operation_succeeded = True
         self.package_controls.clear_password()
         self._last_output_path = result.output_path
         missing_policy = {
@@ -496,10 +500,12 @@ class RestorationWidget(QWidget):
         self._set_status("CSV restaurado gerado com sucesso.", is_error=False)
 
     def _cancelled(self) -> None:
+        self._operation_succeeded = False
         self.package_controls.clear_password()
         self._set_status("A operacao foi cancelada com seguranca.", is_error=False)
 
     def _failed(self, error: Exception) -> None:
+        self._operation_succeeded = False
         self.package_controls.clear_password()
         self._last_error = error
         if isinstance(error, RestorationSecurityError):
@@ -516,7 +522,7 @@ class RestorationWidget(QWidget):
         self._worker = None
         self._set_processing_state(False)
         self.progress_bar.setRange(0, 1)
-        self.progress_bar.setValue(1)
+        self.progress_bar.setValue(1 if getattr(self, "_operation_succeeded", False) else 0)
         if worker is not None:
             worker.deleteLater()
 
