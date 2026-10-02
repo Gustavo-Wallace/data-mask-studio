@@ -29,7 +29,8 @@ def validate_password(password: str) -> None:
 
 
 def _key(password: str, salt: bytes) -> bytes:
-    validate_password(password)
+    if not isinstance(password, str) or not password:
+        raise PackageError("Informe a senha do pacote.")
     try:
         # Same cost as backups; separate salt domain and no backup dependencies.
         return Scrypt(salt=KDF_DOMAIN + salt, length=32, n=2**15, r=8, p=1).derive(password.encode("utf-8"))
@@ -38,6 +39,7 @@ def _key(password: str, salt: bytes) -> bytes:
 
 
 def encrypt_package(payload: TransferPayload, password: str, *, max_payload_bytes: int = MAX_PAYLOAD_SIZE) -> bytes:
+    validate_password(password)
     plaintext = encode_payload(payload, max_payload_bytes=max_payload_bytes)
     salt, nonce = os.urandom(16), os.urandom(12)
     header = HEADER.pack(MAGIC, FORMAT_VERSION, salt, nonce)

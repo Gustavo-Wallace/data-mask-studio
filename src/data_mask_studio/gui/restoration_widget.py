@@ -35,6 +35,7 @@ from data_mask_studio.gui.restoration_worker import (
     RestorationAnalysisWorker,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit, EmptyStateTable
+from data_mask_studio.gui.package_restoration_controls import PackageRestorationControls
 from data_mask_studio.restoration import (
     AnalysisResult,
     MissingCodePolicy,
@@ -71,6 +72,16 @@ class RestorationWidget(QWidget):
         self._worker: RestorationAnalysisWorker | CSVRestorationWorker | None = None
         self._last_output_path: Path | None = None
         self._last_error: Exception | None = None
+
+        self.source_combo = QComboBox()
+        self.source_combo.setAccessibleName("Origem da restauração")
+        self.source_combo.addItem("Cofre local", "vault")
+        self.source_combo.addItem("Pacote de transferência", "package")
+        self.package_controls = PackageRestorationControls(self)
+        self.package_controls.setVisible(False)
+        self.package_controls.setEnabled(False)
+        source_layout = QFormLayout()
+        source_layout.addRow("Origem da restauração:", self.source_combo)
 
         self.select_button = QPushButton("Selecionar CSV anonimizado")
         self.select_button.clicked.connect(self._select_csv)
@@ -171,6 +182,8 @@ class RestorationWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 20, 36, 20)
         layout.setSpacing(8)
+        layout.addLayout(source_layout)
+        layout.addWidget(self.package_controls)
         layout.addLayout(file_buttons)
         layout.addLayout(details)
         layout.addLayout(selection)
@@ -183,6 +196,31 @@ class RestorationWidget(QWidget):
         layout.addWidget(self.status_label)
         layout.addStretch()
         self._update_enabled_state(False)
+        self.source_combo.currentIndexChanged.connect(self._source_changed)
+
+    def _package_mode(self) -> bool:
+        return self.source_combo.currentData() == "package"
+
+    def _source_changed(self) -> None:
+        self.package_controls.clear_password()
+        if self._package_mode():
+            self._local_missing_policy_index = self.missing_policy_combo.currentIndex()
+            self.missing_policy_combo.setCurrentIndex(
+                self.missing_policy_combo.findData(MissingCodePolicy.ABORT.value)
+            )
+        else:
+            self.missing_policy_combo.setCurrentIndex(getattr(self, "_local_missing_policy_index", 0))
+        self.package_controls.setVisible(self._package_mode())
+        self.package_controls.setEnabled(self._package_mode())
+        self.summary.clear()
+        self._last_output_path = None
+        self.open_folder_button.setVisible(False)
+        self._update_enabled_state(self._inspection is not None)
+        self._set_status(
+            "O pacote e o vínculo com o CSV serão verificados durante a restauração."
+            if self._package_mode() else "Restauração pelo cofre local selecionada.",
+            is_error=False,
+        )
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -192,6 +230,9 @@ class RestorationWidget(QWidget):
             self.load_csv(file_path)
 
     def load_csv(self, file_path: str) -> None:
+        if self._worker is not None:
+            return
+        self.package_controls.clear_password()
         try:
             inspection = inspect_csv(file_path)
         except CSVInspectionError as error:
@@ -229,6 +270,23 @@ class RestorationWidget(QWidget):
             status = f"{status} {warning}"
         self._set_status(status, is_error=False)
 
+    def clear_selection(self) -> None:
+        if self._worker is not None:
+            return
+        self.package_controls.clear_password()
+        self._inspection = None
+        self._last_output_path = None
+        self.path_field.clear()
+        for label in (self.file_name_label, self.encoding_label, self.delimiter_label):
+            label.setText("—")
+        self.table.setRowCount(0)
+        self._checkboxes.clear()
+        self.summary.clear()
+        self.open_folder_button.setVisible(False)
+        self._update_selected_count()
+        self._update_enabled_state(False)
+        self._set_status("Selecione um CSV anonimizado para começar.", is_error=False)
+
     def select_all_columns(self) -> None:
         for checkbox in self._checkboxes:
             checkbox.setChecked(True)
@@ -262,7 +320,7 @@ class RestorationWidget(QWidget):
             delimiter=self._inspection.delimiter,
             headers=tuple(self._inspection.headers),
             selected_columns=columns,
-            missing_code_policy=MissingCodePolicy(
+            missing_code_policy=MissingCodePolicy.ABORT if self._package_mode() else MissingCodePolicy(
                 self.missing_policy_combo.currentData()
             ),
             representation_policy=RepresentationPolicy(
@@ -271,7 +329,7 @@ class RestorationWidget(QWidget):
         )
 
     def start_analysis(self) -> None:
-        if self._worker is not None:
+        if self._worker is not None or self._package_mode():
             return
         try:
             configuration = self._configuration()
@@ -347,8 +405,19 @@ class RestorationWidget(QWidget):
         self.start_restoration(destination, overwrite=overwrite)
 
     def start_restoration(self, destination: Path, *, overwrite: bool) -> None:
+        if self._worker is not None:
+            return
         try:
             configuration = self._configuration()
+            options = {}
+            if self._package_mode():
+                options["package_request"] = self.package_controls.request()
+            destination = Path(destination).expanduser().absolute()
+            if (destination.suffix.lower() != ".csv" or not destination.parent.is_dir()
+                    or destination.is_dir()
+                    or paths_refer_to_same_file(configuration.source_path, destination)
+                    or (destination.exists() and not overwrite)):
+                raise RestorationError("Destino inválido ou existente sem autorização de substituição.")
         except RestorationError as error:
             self._set_status(str(error), is_error=True)
             return
@@ -357,7 +426,13 @@ class RestorationWidget(QWidget):
             configuration,
             str(destination),
             overwrite=overwrite,
+            **options,
         )
+        self.package_controls.clear_password()
+        self._last_error = None
+        self._last_output_path = None
+        self.open_folder_button.setVisible(False)
+        self.summary.clear()
         worker.completed.connect(self._restoration_completed)
         self._start_worker(worker, "Gerando CSV restaurado...")
 
@@ -395,6 +470,7 @@ class RestorationWidget(QWidget):
         )
 
     def _restoration_completed(self, result: RestorationResult) -> None:
+        self.package_controls.clear_password()
         self._last_output_path = result.output_path
         missing_policy = {
             MissingCodePolicy.KEEP: "Manter código original",
@@ -420,9 +496,11 @@ class RestorationWidget(QWidget):
         self._set_status("CSV restaurado gerado com sucesso.", is_error=False)
 
     def _cancelled(self) -> None:
+        self.package_controls.clear_password()
         self._set_status("A operacao foi cancelada com seguranca.", is_error=False)
 
     def _failed(self, error: Exception) -> None:
+        self.package_controls.clear_password()
         self._last_error = error
         if isinstance(error, RestorationSecurityError):
             message = "Não foi possível recuperar um ou mais mapeamentos com segurança."
@@ -433,6 +511,7 @@ class RestorationWidget(QWidget):
         self._set_status(message, is_error=True)
 
     def _worker_finished(self) -> None:
+        self.package_controls.clear_password()
         worker = self._worker
         self._worker = None
         self._set_processing_state(False)
@@ -458,6 +537,8 @@ class RestorationWidget(QWidget):
         return self._worker.wait(5000)
 
     def _set_processing_state(self, processing: bool) -> None:
+        self.source_combo.setEnabled(not processing)
+        self.package_controls.setEnabled(not processing and self._package_mode())
         self.select_button.setEnabled(not processing)
         self.table.setEnabled(not processing)
         has_file = self._inspection is not None
@@ -472,6 +553,9 @@ class RestorationWidget(QWidget):
             widget.setEnabled(not processing and has_file)
         self.cancel_button.setVisible(processing)
         self.cancel_button.setEnabled(processing)
+        if self._package_mode():
+            self.analyze_button.setEnabled(False)
+            self.missing_policy_combo.setEnabled(False)
 
     def _update_enabled_state(self, has_file: bool) -> None:
         for widget in (
@@ -483,6 +567,9 @@ class RestorationWidget(QWidget):
             self.representation_combo,
         ):
             widget.setEnabled(has_file)
+        if self._package_mode():
+            self.analyze_button.setEnabled(False)
+            self.missing_policy_combo.setEnabled(False)
 
     def open_output_folder(self) -> None:
         if self._last_output_path is None:

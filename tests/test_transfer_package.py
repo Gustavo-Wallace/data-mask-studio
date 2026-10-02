@@ -230,6 +230,23 @@ def test_package_password_boundary_round_trip(payload, password):
     assert decrypt_package(encrypt_package(payload, password), password) == payload
 
 
+def test_opening_existing_package_uses_authentication_not_creation_minimum(payload):
+    # Independently construct a valid v1 package with a short password.
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+    from data_mask_studio.transfer_package import service
+    from data_mask_studio.transfer_package.serialization import encode_payload
+    salt, nonce = b"S" * 16, b"N" * 12
+    header = service.HEADER.pack(service.MAGIC, 1, salt, nonce)
+    key = Scrypt(salt=service.KDF_DOMAIN + salt, length=32, n=2**15, r=8, p=1).derive(b"x")
+    content = header + AESGCM(key).encrypt(nonce, encode_payload(payload), header)
+    assert decrypt_package(content, "x") == payload
+    with pytest.raises(PackageError):
+        decrypt_package(content, "y")
+    with pytest.raises(PackageError):
+        encrypt_package(payload, "x")
+
+
 def test_package_password_message_and_backup_policy_remain_separate():
     from data_mask_studio.backup.crypto import validate_password as validate_backup_password
     from data_mask_studio.backup.exceptions import BackupError
