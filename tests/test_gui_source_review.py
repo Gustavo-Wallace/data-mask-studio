@@ -1,5 +1,7 @@
 import pytest
 
+from qt_lifecycle import qt_widget_lifecycle
+
 from data_mask_studio.anonymization import ColumnAction as Action, ColumnConfig
 from data_mask_studio.app import create_application
 from data_mask_studio.csv_tools import inspect_csv
