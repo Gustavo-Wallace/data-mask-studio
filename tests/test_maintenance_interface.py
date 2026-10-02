@@ -3,6 +3,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from qt_lifecycle import qt_widget_lifecycle
+
 from PySide6.QtWidgets import QMessageBox
 
 from data_mask_studio.anonymization import TokenGenerator
