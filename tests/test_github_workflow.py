@@ -21,6 +21,14 @@ def test_windows_workflow_is_isolated_and_runs_all_tests() -> None:
     assert "push:" in content
     assert "pull_request:" in content
     assert content.count("- main") == 2
+    assert (
+        '  push:\n    branches:\n      - main\n      - "ui/**"\n  pull_request:'
+        in content
+    )
+    assert (
+        "  pull_request:\n    branches:\n      - main\n  workflow_dispatch:"
+        in content
+    )
     assert "workflow_dispatch:" in content
     assert "permissions:" in content
     assert "contents: read" in content
