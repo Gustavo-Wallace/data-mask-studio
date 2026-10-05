@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
+from data_mask_studio.gui.styles import section_title_stylesheet
 from data_mask_studio.anonymization import (
     AnonymizationResult,
     ColumnAction,
@@ -146,7 +147,7 @@ class AnonymizationWidget(QWidget):
         details_layout.addRow("Quantidade de colunas:", self.column_count_label)
 
         configuration_label = QLabel("Configuração das colunas")
-        configuration_label.setStyleSheet("font-size: 16px; font-weight: 600;")
+        configuration_label.setStyleSheet(section_title_stylesheet())
 
         self.profile_controls = ProfileControls(
             apply_profile=self.apply_selected_profile,
