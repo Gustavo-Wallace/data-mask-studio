@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from data_mask_studio.gui.visual_tokens import METRICS
+
 
 class PageHeader(QFrame):
     """Cabeçalho compacto e consistente para uma página principal."""
@@ -25,7 +27,7 @@ class PageHeader(QFrame):
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(METRICS["header_text_spacing"])
         layout.addWidget(self.title_label)
         layout.addWidget(self.description_label)
 
@@ -60,6 +62,6 @@ class PageShell(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
-        layout.setSpacing(16)
+        layout.setSpacing(METRICS["header_content_spacing"])
         layout.addWidget(self.header)
         layout.addWidget(self.scroll_area, stretch=1)

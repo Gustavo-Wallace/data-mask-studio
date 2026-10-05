@@ -81,7 +81,7 @@ def test_qss_resolves_tokens_without_widening_state_or_container_selectors():
     assert f"border-radius: {METRICS['control_radius']}px" in rule(
         "QLineEdit, QComboBox, QPlainTextEdit, QTextEdit, QTableWidget")
     assert f"border-radius: {METRICS['panel_radius']}px" in rule("QGroupBox")
-    assert f"color: {COLORS['muted_text']}" in rule("QLabel#pageDescription")
+    assert f"color: {COLORS['muted_text']}" in rule("QFrame#pageHeader > QLabel#pageDescription")
     # Do not introduce a broad label font rule or change the existing transparent label rule.
     assert rule("QLabel").strip() == "background: transparent;"
 

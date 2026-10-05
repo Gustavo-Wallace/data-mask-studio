@@ -52,4 +52,7 @@ METRICS = MappingProxyType({
     "section_font_size": 16,
     "description_font_size": 13,
     "navigation_marker_width": 3,
+    "page_title_font_size": 20,
+    "header_text_spacing": 6,
+    "header_content_spacing": 18,
 })

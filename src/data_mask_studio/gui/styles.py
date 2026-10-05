@@ -177,11 +177,11 @@ def application_stylesheet() -> str:
     QPushButton#navigationUtility:pressed { background: $navigation_pressed; }
     QPushButton#navigationUtility:focus { border-color: $focus; }
     QPushButton#navigationUtility:disabled { color: $disabled_text; background: transparent; border-color: transparent; }
-    QLabel#pageTitle { font-size: 22px; font-weight: 650; color: #f4f7fb; }
+    QFrame#pageHeader > QLabel#pageTitle { font-size: ${page_title_font_size}px; font-weight: 650; color: $text; }
     QLabel#aboutTitle { font-size: 20px; font-weight: 700; color: #f4f7fb; }
     QLabel#aboutDetails, QLabel#aboutLinks, QLabel#aboutCopyright, QLabel#aboutSignatureNotice { color: $muted_text; }
     QLabel#aboutLinks { link-color: $focus; }
-    QLabel#pageDescription { color: $muted_text; font-size: ${description_font_size}px; }
+    QFrame#pageHeader > QLabel#pageDescription { color: $muted_text; font-size: ${description_font_size}px; }
     QScrollArea#pageScrollArea { background: transparent; }
     QGroupBox { background: $surface; border: 1px solid $panel_border; border-radius: ${panel_radius}px; margin-top: ${panel_spacing}px; padding-top: ${panel_spacing}px; font-weight: 600; }
     QGroupBox::title { subcontrol-origin: margin; left: ${panel_spacing}px; padding: 0 5px; }
