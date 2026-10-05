@@ -156,20 +156,27 @@ def application_stylesheet() -> str:
     QWidget#mainWorkspace, QWidget#pageShell, QWidget[pageContent="true"] { background: $window; }
     QScrollArea#pageScrollArea, QScrollArea#pageScrollArea > QWidget > QWidget { background: $window; }
     QLabel { background: transparent; }
-    QWidget#sidebarNavigation { background: #10151d; border-right: 1px solid #2a3442; }
+    QWidget#sidebarNavigation { background: $base; border-right: 1px solid $panel_border; }
     QWidget#applicationIdentity { background: transparent; }
     QLabel#identityMonogram { min-width: __BADGE_WIDTH__px; min-height: __BADGE_HEIGHT__px; max-width: __BADGE_WIDTH__px; max-height: __BADGE_HEIGHT__px; border: __BADGE_BORDER__px solid __BORDER_COLOR__; border-radius: __BADGE_RADIUS__px; background: __BACKGROUND_COLOR__; color: __FOREGROUND_COLOR__; font-size: 11px; font-weight: 700; qproperty-alignment: AlignCenter; }
     QLabel#identityName { font-size: 15px; font-weight: 700; color: #f4f7fb; }
     QWidget#navigationCategory { background: transparent; }
-    QLabel#navigationGroup { color: #94a5b8; font-size: 10px; font-weight: 650; }
-    QFrame#navigationDivider { color: #334050; background: transparent; }
-    QPushButton#navigationItem { text-align: left; min-height: 34px; padding: 0 14px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #d2dbe6; }
-    QPushButton#navigationItem:hover { background: #1c2531; }
-    QPushButton#navigationItem:checked { background: #22354b; border-color: #3b6b99; color: $white; font-weight: 600; }
+    QLabel#navigationGroup { color: $disabled_text; font-size: 10px; font-weight: 600; }
+    QFrame#navigationDivider { border: 0; background: $panel_border; }
+    QPushButton#navigationItem { text-align: left; min-height: 34px; padding: 0 ${button_padding}px; border: 1px solid transparent; border-left: ${navigation_marker_width}px solid transparent; border-radius: ${control_radius}px; background: transparent; color: $muted_text; }
+    QPushButton#navigationItem:hover { background: $surface; }
+    QPushButton#navigationItem:pressed { background: $navigation_pressed; }
+    QPushButton#navigationItem:checked { background: $navigation_active; border-left-color: $accent; color: $white; font-weight: 600; }
+    QPushButton#navigationItem:checked:hover, QPushButton#navigationItem:checked:pressed { background: $navigation_pressed; }
     QPushButton#navigationItem:focus { border-color: $focus; }
-    QPushButton#navigationUtility { text-align: left; min-height: 30px; padding: 0 14px; border: 1px solid transparent; background: transparent; color: #aebac8; }
-    QPushButton#navigationUtility:hover { background: #1c2531; color: $white; }
+    QPushButton#navigationItem:checked:focus { border-left-color: $accent; }
+    QPushButton#navigationItem:disabled { color: $disabled_text; background: transparent; border-color: transparent; }
+    QPushButton#navigationItem:checked:disabled { background: $navigation_active; border-left-color: $disabled_border; }
+    QPushButton#navigationUtility { text-align: left; min-height: 30px; padding: 0 ${button_padding}px; border: 1px solid transparent; border-left: ${navigation_marker_width}px solid transparent; border-radius: ${control_radius}px; background: transparent; color: $muted_text; }
+    QPushButton#navigationUtility:hover { background: $surface; color: $white; }
+    QPushButton#navigationUtility:pressed { background: $navigation_pressed; }
     QPushButton#navigationUtility:focus { border-color: $focus; }
+    QPushButton#navigationUtility:disabled { color: $disabled_text; background: transparent; border-color: transparent; }
     QLabel#pageTitle { font-size: 22px; font-weight: 650; color: #f4f7fb; }
     QLabel#aboutTitle { font-size: 20px; font-weight: 700; color: #f4f7fb; }
     QLabel#aboutDetails, QLabel#aboutLinks, QLabel#aboutCopyright, QLabel#aboutSignatureNotice { color: $muted_text; }

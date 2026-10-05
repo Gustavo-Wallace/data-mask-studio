@@ -4,7 +4,7 @@ from types import MappingProxyType
 
 
 # As diferenças entre texto de entrada, texto secundário e desabilitado são
-# intencionais. Cores específicas de navegação e branding continuam separadas.
+# intencionais. A marca oficial continua definida em branding.py.
 COLORS = MappingProxyType({
     "window": "#151a22",
     "base": "#10161e",
@@ -36,6 +36,8 @@ COLORS = MappingProxyType({
     "warning_surface": "#342c20",
     "warning_border": "#8b6b35",
     "warning_text": "#f3d29b",
+    "navigation_active": "#1d3043",
+    "navigation_pressed": "#263c52",
 })
 
 # Unidades lógicas do Qt/QSS, mantendo as medidas atuais e o scaling do Qt.
@@ -49,4 +51,5 @@ METRICS = MappingProxyType({
     "panel_spacing": 10,
     "section_font_size": 16,
     "description_font_size": 13,
+    "navigation_marker_width": 3,
 })

@@ -86,6 +86,24 @@ def test_qss_resolves_tokens_without_widening_state_or_container_selectors():
     assert rule("QLabel").strip() == "background: transparent;"
 
 
+def test_sidebar_states_use_scoped_selectors_and_shared_theme_values():
+    assert f"background: {COLORS['base']}" in rule("QWidget#sidebarNavigation")
+    assert f"border-right: 1px solid {COLORS['panel_border']}" in rule("QWidget#sidebarNavigation")
+    assert f"background: {COLORS['panel_border']}" in rule("QFrame#navigationDivider")
+    assert f"color: {COLORS['disabled_text']}" in rule("QLabel#navigationGroup")
+    for selector in ("QPushButton#navigationItem", "QPushButton#navigationUtility"):
+        assert f"border-left: {METRICS['navigation_marker_width']}px solid transparent" in rule(selector)
+        assert f"padding: 0 {METRICS['button_padding']}px" in rule(selector)
+        assert f"background: {COLORS['surface']}" in rule(selector + ":hover")
+        assert f"background: {COLORS['navigation_pressed']}" in rule(selector + ":pressed")
+        assert f"border-color: {COLORS['focus']}" in rule(selector + ":focus")
+        assert f"color: {COLORS['disabled_text']}" in rule(selector + ":disabled")
+    assert f"background: {COLORS['navigation_active']}" in rule("QPushButton#navigationItem:checked")
+    assert f"border-left-color: {COLORS['accent']}" in rule("QPushButton#navigationItem:checked")
+    assert f"border-left-color: {COLORS['accent']}" in rule("QPushButton#navigationItem:checked:focus")
+    assert f"border-left-color: {COLORS['disabled_border']}" in rule("QPushButton#navigationItem:checked:disabled")
+
+
 @pytest.mark.parametrize("action,surface,border", [
     (ColumnAction.PRESERVE, "action_preserve", "neutral_indicator"),
     (ColumnAction.MASK, "action_mask", "accent"),

@@ -7,7 +7,7 @@ from qt_lifecycle import qt_widget_lifecycle
 
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QPushButton, QTabWidget
+from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton, QTabWidget
 
 from data_mask_studio.app import create_application
 from data_mask_studio.backup import EnvironmentPaths
@@ -18,6 +18,7 @@ from data_mask_studio.gui.components import (
     PageHeader,
 )
 from data_mask_studio.gui.main_window import MainWindow
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.profiles import ProfileRepository, ProfileService
 from data_mask_studio.vault import VaultCipher, VaultRepository
 
@@ -373,3 +374,74 @@ def test_layout_remains_visible_at_supported_sizes(tmp_path: Path) -> None:
 
     window.close()
     application.processEvents()
+
+
+def test_sidebar_alignment_compact_footer_and_fixed_width(tmp_path: Path) -> None:
+    application = create_application([])
+    window = build_window(tmp_path)
+    window.show()
+    application.processEvents()
+    navigation = window.navigation
+
+    def text_left(button: QPushButton) -> int:
+        option = QStyleOptionButton()
+        option.initFrom(button)
+        option.text = button.text()
+        contents = button.style().subElementRect(
+            QStyle.SubElement.SE_PushButtonContents, option, button,
+        )
+        return button.mapTo(navigation, contents.topLeft()).x()
+
+    for width, height in ((960, 640), (1280, 800)):
+        window.resize(width, height)
+        application.processEvents()
+        assert navigation.minimumWidth() == navigation.maximumWidth() == 220
+        assert navigation.height() == window.centralWidget().height()
+        assert navigation.footer_divider.height() == 1
+        assert navigation.footer_divider.focusPolicy() == Qt.FocusPolicy.NoFocus
+        assert navigation.footer_divider.geometry().top() > navigation.buttons[-1].geometry().bottom()
+        assert navigation.footer_divider.geometry().bottom() < navigation.about_button.geometry().top()
+        assert navigation.about_button.geometry().bottom() < navigation.height()
+        assert navigation.about_button.isVisible() and not navigation.about_button.isCheckable()
+        assert all(navigation.rect().contains(button.geometry()) for button in navigation.buttons)
+        for category, index in zip(navigation.categories, (0, 2, 5), strict=True):
+            label_x = category.label.mapTo(navigation, QPoint(0, 0)).x()
+            assert abs(label_x - text_left(navigation.buttons[index])) <= 1
+            assert category.layout().contentsMargins().left() == (
+                METRICS["button_padding"] + METRICS["navigation_marker_width"]
+            )
+        assert text_left(navigation.about_button) == text_left(navigation.buttons[0])
+
+
+def test_sidebar_selection_signals_and_disabled_keyboard_navigation_are_preserved(tmp_path: Path) -> None:
+    application = create_application([])
+    window = build_window(tmp_path)
+    window.show()
+    application.processEvents()
+    navigation = window.navigation
+    changes: list[int] = []
+    navigation.current_changed.connect(changes.append)
+    initial_sizes = [button.size() for button in navigation.buttons]
+    assert window.current_page_index() == 0
+
+    for index in (2, 5, 8, 0):
+        navigation.buttons[index].click()
+        application.processEvents()
+        assert navigation.current_index() == window.current_page_index() == index
+        assert window.page_stack.currentWidget() is window.page_shells[index]
+        assert [button.isChecked() for button in navigation.buttons] == [
+            position == index for position in range(len(navigation.buttons))
+        ]
+        assert [button.size() for button in navigation.buttons] == initial_sizes
+    assert changes == [2, 5, 8, 0]
+    navigation.buttons[0].click()
+    assert changes == [2, 5, 8, 0]  # Clicking the active item does not emit a new destination.
+
+    navigation.set_page_enabled(1, False)
+    navigation.buttons[0].setFocus()
+    QTest.keyClick(navigation.buttons[0], Qt.Key.Key_Down)
+    application.processEvents()
+    assert window.current_page_index() == 2
+    assert navigation.buttons[2].hasFocus() and navigation.buttons[2].isChecked()
+    assert not navigation.page_enabled(1)
+    assert changes == [2, 5, 8, 0, 2]

@@ -11,6 +11,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from data_mask_studio.gui.visual_tokens import METRICS
+
+
+def _navigation_divider() -> QFrame:
+    divider = QFrame()
+    divider.setObjectName("navigationDivider")
+    divider.setFrameShape(QFrame.Shape.HLine)
+    divider.setFixedHeight(1)
+    divider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    return divider
+
 
 @dataclass(frozen=True, slots=True)
 class NavigationItem:
@@ -59,12 +70,15 @@ class NavigationCategory(QWidget):
         self.label = QLabel(title)
         self.label.setObjectName("navigationGroup")
         self.label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        divider = QFrame()
-        divider.setObjectName("navigationDivider")
-        divider.setFrameShape(QFrame.Shape.HLine)
-        divider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        divider = _navigation_divider()
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(3, 0, 3, 0)
+        # Alinha a categoria ao conteúdo dos botões, não à borda do controle.
+        layout.setContentsMargins(
+            METRICS["button_padding"] + METRICS["navigation_marker_width"],
+            0,
+            METRICS["button_padding"] + 1,
+            0,
+        )
         layout.setSpacing(8)
         layout.addWidget(self.label)
         layout.addWidget(divider, stretch=1)
@@ -94,13 +108,13 @@ class SidebarNavigation(QWidget):
 
         self.identity = ApplicationIdentity()
         layout.addWidget(self.identity)
-        layout.addSpacing(12)
+        layout.addSpacing(METRICS["button_padding"])
         previous_group = ""
         for index, item in enumerate(items):
             if item.group != previous_group:
                 category = NavigationCategory(item.group)
                 self._categories.append(category)
-                layout.addSpacing(12 if previous_group else 2)
+                layout.addSpacing(METRICS["button_padding"] if previous_group else 2)
                 layout.addWidget(category)
                 previous_group = item.group
             button = QPushButton(item.title)
@@ -120,6 +134,8 @@ class SidebarNavigation(QWidget):
             self._buttons.append(button)
             layout.addWidget(button)
         layout.addStretch()
+        self.footer_divider = _navigation_divider()
+        layout.addWidget(self.footer_divider)
         self.about_button = QPushButton("Sobre")
         self.about_button.setObjectName("navigationUtility")
         self.about_button.setAutoDefault(False)
