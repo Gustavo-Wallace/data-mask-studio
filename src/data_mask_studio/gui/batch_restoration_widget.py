@@ -7,6 +7,7 @@ from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComb
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QFileDialog,
     QFormLayout,
@@ -43,6 +44,8 @@ from data_mask_studio.gui.batch_restoration_worker import (
     BatchRestorationProcessingWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
+from data_mask_studio.gui.components.presentation import set_button_role
+from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
 
@@ -164,6 +167,7 @@ class BatchRestorationWidget(QWidget):
         output_row.addWidget(self.choose_output_button)
 
         self.representation_combo = ScrollSafeComboBox()
+        self.representation_combo.setAccessibleName("Representação restaurada")
         self.representation_combo.addItem(
             "Primeira representação original", RepresentationPolicy.FIRST_ORIGINAL.value
         )
@@ -171,6 +175,7 @@ class BatchRestorationWidget(QWidget):
             "Valor canônico", RepresentationPolicy.CANONICAL.value
         )
         self.missing_policy_combo = ScrollSafeComboBox()
+        self.missing_policy_combo.setAccessibleName("Códigos ausentes")
         self.missing_policy_combo.addItem(
             "Manter código original", BatchMissingCodePolicy.KEEP.value
         )
@@ -180,15 +185,32 @@ class BatchRestorationWidget(QWidget):
         self.missing_policy_combo.addItem(
             "Interromper todo o lote", BatchMissingCodePolicy.ABORT_BATCH.value
         )
-        options = QFormLayout()
+        self.options_controls = QWidget()
+        options = QFormLayout(self.options_controls)
+        options.setContentsMargins(0, 0, 0, 0)
         options.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         options.addRow("Representação restaurada:", self.representation_combo)
         options.addRow("Códigos ausentes:", self.missing_policy_combo)
+        self.options_toggle = QPushButton("Opções de restauração")
+        self.options_toggle.setCheckable(True)
+        self.options_toggle.setAccessibleName("Mostrar ou ocultar opções de restauração")
+        self.options_toggle.toggled.connect(self._update_options_disclosure)
+        self.options_summary = QLabel()
+        self.options_summary.setWordWrap(True)
+        self.options_summary.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.options_summary.setStyleSheet(
+            f"color: {COLORS['muted_text']}; font-size: {METRICS['description_font_size']}px;"
+        )
+        self.missing_policy_combo.currentIndexChanged.connect(self._update_options_summary)
+        self.representation_combo.currentIndexChanged.connect(self._update_options_summary)
+        set_button_role(self.options_toggle, "secondary")
 
         self.analyze_button = QPushButton("Analisar arquivos")
         self.analyze_button.clicked.connect(self.analyze_files)
         self.start_button = QPushButton("Iniciar restauração")
         self.start_button.clicked.connect(self.start_restoration)
+        set_button_role(self.analyze_button, "secondary")
+        set_button_role(self.start_button, "primary")
         self.cancel_button = QPushButton("Cancelar")
         self.cancel_button.clicked.connect(self.cancel)
         self.cancel_button.setVisible(False)
@@ -222,7 +244,9 @@ class BatchRestorationWidget(QWidget):
         layout.addLayout(file_actions)
         layout.addWidget(self.splitter_panel)
         layout.addLayout(output_row)
-        layout.addLayout(options)
+        layout.addWidget(self.options_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.options_summary)
+        layout.addWidget(self.options_controls)
         layout.addLayout(operation_row)
         layout.addWidget(QLabel("Progresso do arquivo atual:"))
         layout.addWidget(self.current_progress)
@@ -231,7 +255,34 @@ class BatchRestorationWidget(QWidget):
         layout.addWidget(self.current_progress_label)
         layout.addWidget(self.summary_output)
         layout.addWidget(self.status_label)
+        option_tab_order = (
+            self.output_field, self.choose_output_button, self.options_toggle,
+            self.representation_combo, self.missing_policy_combo,
+            self.analyze_button, self.start_button,
+        )
+        for previous, following in zip(option_tab_order, option_tab_order[1:]):
+            QWidget.setTabOrder(previous, following)
+        self._update_options_summary()
+        self._update_options_disclosure()
         self._update_actions()
+
+    def _update_options_disclosure(self, *_args: object) -> None:
+        focused = QApplication.focusWidget()
+        options_have_focus = focused is not None and self.options_controls.isAncestorOf(focused)
+        expanded = self.options_toggle.isChecked()
+        self.options_controls.setVisible(expanded)
+        self.options_summary.setVisible(not expanded)
+        self.options_toggle.setText(
+            "Ocultar opções de restauração" if expanded else "Opções de restauração"
+        )
+        if options_have_focus and not expanded and self.isVisible():
+            self.options_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _update_options_summary(self, *_args: object) -> None:
+        self.options_summary.setText(
+            f"Não encontrados: {self.missing_policy_combo.currentText()}. "
+            f"Valor: {self.representation_combo.currentText()}."
+        )
 
     def add_paths(self, paths: Iterable[str | Path]) -> int:
         added = add_files(self.files, paths)
@@ -539,6 +590,7 @@ class BatchRestorationWidget(QWidget):
             self.file_table,
             self.output_field,
             self.choose_output_button,
+            self.options_toggle,
             self.representation_combo,
             self.missing_policy_combo,
             self.analyze_button,

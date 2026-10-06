@@ -6,6 +6,7 @@ from PySide6.QtGui import QDesktopServices
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -24,6 +25,8 @@ from data_mask_studio.gui.html_restoration_worker import (
     HTMLRestorationWorker,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
+from data_mask_studio.gui.components.presentation import set_button_role
+from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.html_restoration import (
     HTMLAnalysisResult,
     HTMLInspectionResult,
@@ -70,6 +73,7 @@ class HTMLRestorationWidget(QWidget):
         details.addRow("Codificação:", self.encoding_label)
 
         self.missing_policy_combo = ScrollSafeComboBox()
+        self.missing_policy_combo.setAccessibleName("Códigos não encontrados")
         self.missing_policy_combo.addItem(
             "Manter código original", HTMLMissingCodePolicy.KEEP.value
         )
@@ -77,6 +81,7 @@ class HTMLRestorationWidget(QWidget):
             "Interromper restauração", HTMLMissingCodePolicy.ABORT.value
         )
         self.representation_combo = ScrollSafeComboBox()
+        self.representation_combo.setAccessibleName("Valor restaurado")
         self.representation_combo.addItem(
             "Primeira representação original",
             RepresentationPolicy.FIRST_ORIGINAL.value,
@@ -84,14 +89,31 @@ class HTMLRestorationWidget(QWidget):
         self.representation_combo.addItem(
             "Valor canônico normalizado", RepresentationPolicy.CANONICAL.value
         )
-        policies = QFormLayout()
+        self.options_controls = QWidget()
+        policies = QFormLayout(self.options_controls)
+        policies.setContentsMargins(0, 0, 0, 0)
         policies.addRow("Códigos não encontrados:", self.missing_policy_combo)
         policies.addRow("Valor restaurado:", self.representation_combo)
+        self.options_toggle = QPushButton("Opções de restauração")
+        self.options_toggle.setCheckable(True)
+        self.options_toggle.setAccessibleName("Mostrar ou ocultar opções de restauração")
+        self.options_toggle.toggled.connect(self._update_options_disclosure)
+        self.options_summary = QLabel()
+        self.options_summary.setWordWrap(True)
+        self.options_summary.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.options_summary.setStyleSheet(
+            f"color: {COLORS['muted_text']}; font-size: {METRICS['description_font_size']}px;"
+        )
+        self.missing_policy_combo.currentIndexChanged.connect(self._update_options_summary)
+        self.representation_combo.currentIndexChanged.connect(self._update_options_summary)
+        set_button_role(self.options_toggle, "secondary")
 
         self.analyze_button = QPushButton("Analisar códigos")
         self.analyze_button.clicked.connect(self.start_analysis)
         self.generate_button = QPushButton("Gerar HTML restaurado")
         self.generate_button.clicked.connect(self._choose_output)
+        set_button_role(self.analyze_button, "secondary")
+        set_button_role(self.generate_button, "primary")
         self.cancel_button = QPushButton("Cancelar")
         self.cancel_button.clicked.connect(self.cancel_processing)
         self.cancel_button.setVisible(False)
@@ -124,14 +146,42 @@ class HTMLRestorationWidget(QWidget):
         layout.setSpacing(10)
         layout.addLayout(select_layout)
         layout.addLayout(details)
-        layout.addLayout(policies)
+        layout.addWidget(self.options_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.options_summary)
+        layout.addWidget(self.options_controls)
         layout.addLayout(actions)
         layout.addLayout(progress)
         layout.addWidget(self.summary)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
         layout.addStretch()
+        option_tab_order = (
+            self.path_field, self.options_toggle, self.missing_policy_combo,
+            self.representation_combo, self.analyze_button, self.generate_button,
+        )
+        for previous, following in zip(option_tab_order, option_tab_order[1:]):
+            QWidget.setTabOrder(previous, following)
+        self._update_options_summary()
+        self._update_options_disclosure()
         self._set_file_controls_enabled(False)
+
+    def _update_options_disclosure(self, *_args: object) -> None:
+        focused = QApplication.focusWidget()
+        options_have_focus = focused is not None and self.options_controls.isAncestorOf(focused)
+        expanded = self.options_toggle.isChecked()
+        self.options_controls.setVisible(expanded)
+        self.options_summary.setVisible(not expanded)
+        self.options_toggle.setText(
+            "Ocultar opções de restauração" if expanded else "Opções de restauração"
+        )
+        if options_have_focus and not expanded and self.isVisible():
+            self.options_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _update_options_summary(self, *_args: object) -> None:
+        self.options_summary.setText(
+            f"Não encontrados: {self.missing_policy_combo.currentText()}. "
+            f"Valor: {self.representation_combo.currentText()}."
+        )
 
     def _select_html(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -332,6 +382,7 @@ class HTMLRestorationWidget(QWidget):
         return self._worker.wait(5000)
 
     def _set_processing_state(self, processing: bool) -> None:
+        self.options_toggle.setEnabled(not processing)
         self.select_button.setEnabled(not processing)
         has_file = self._inspection is not None
         for widget in (
