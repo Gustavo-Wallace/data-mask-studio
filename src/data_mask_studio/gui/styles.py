@@ -194,6 +194,16 @@ def application_stylesheet() -> str:
     QCheckBox:hover { color: $white; }
     QCheckBox:disabled { color: $disabled_text; }
     QHeaderView::section { background: $raised_surface; color: #dce4ee; border: 0; border-right: 1px solid $border; border-bottom: 1px solid $border; padding: 7px; font-weight: 600; }
+    QTableView, QTableWidget { background: $base; alternate-background-color: $table_alternate; color: $input_text; border: 1px solid $panel_border; border-radius: ${control_radius}px; gridline-color: $table_grid; selection-background-color: $selection; selection-color: $white; }
+    QTableView:focus, QTableWidget:focus { border-color: $input_focus; }
+    QTableView:disabled, QTableWidget:disabled { color: $disabled_text; background: $disabled_surface; border-color: $disabled_border; }
+    QTableView QHeaderView::section { background: $raised_surface; color: $text; border: 0; border-right: 1px solid $table_grid; border-bottom: 1px solid $panel_border; padding: ${table_header_padding}px ${input_padding}px; font-weight: 600; }
+    QTableView QHeaderView::section:disabled { background: $disabled_surface; color: $disabled_text; }
+    QTableView QTableCornerButton::section { background: $raised_surface; border: 0; border-right: 1px solid $table_grid; border-bottom: 1px solid $panel_border; }
+    QTableView::item:hover:!selected { background: $table_hover; }
+    QTableView::item:selected { background: $selection; color: $white; }
+    QTableView::item:focus { border: 1px solid $focus; }
+    QTableView::item:selected:disabled { background: $disabled_surface; color: $disabled_text; }
     QPushButton { min-height: ${control_height}px; padding: 0 ${button_padding}px; border: 1px solid #435064; border-radius: ${control_radius}px; background: $button; color: $button_text; }
     QPushButton:hover { background: $button_hover; }
     QPushButton:focus { border-color: $focus; }

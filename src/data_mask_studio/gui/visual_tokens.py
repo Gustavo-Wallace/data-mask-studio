@@ -16,6 +16,9 @@ COLORS = MappingProxyType({
     "disabled_text": "#8592a3",
     "border": "#354253",
     "panel_border": "#303b49",
+    "table_grid": "#263240",
+    "table_alternate": "#151e28",
+    "table_hover": "#1e2c3c",
     "button": "#252e3a",
     "button_hover": "#303b49",
     "button_text": "#e5ebf3",
@@ -55,4 +58,5 @@ METRICS = MappingProxyType({
     "page_title_font_size": 20,
     "header_text_spacing": 6,
     "header_content_spacing": 18,
+    "table_header_padding": 5,
 })
