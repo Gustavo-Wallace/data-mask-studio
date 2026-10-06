@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QFileDialog,
     QFormLayout,
@@ -22,6 +23,8 @@ from PySide6.QtWidgets import (
 )
 from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.presentation import set_button_role
+from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 
 from data_mask_studio.csv_tools import (
     CSVInspectionError,
@@ -126,6 +129,7 @@ class RestorationWidget(QWidget):
         selection.addWidget(self.selected_count_label)
 
         self.missing_policy_combo = ScrollSafeComboBox()
+        self.missing_policy_combo.setAccessibleName("Códigos não encontrados")
         self.missing_policy_combo.addItem(
             "Manter código original", MissingCodePolicy.KEEP.value
         )
@@ -136,6 +140,7 @@ class RestorationWidget(QWidget):
             "Interromper restauração", MissingCodePolicy.ABORT.value
         )
         self.representation_combo = ScrollSafeComboBox()
+        self.representation_combo.setAccessibleName("Valor restaurado")
         self.representation_combo.addItem(
             "Primeira representação original",
             RepresentationPolicy.FIRST_ORIGINAL.value,
@@ -143,14 +148,31 @@ class RestorationWidget(QWidget):
         self.representation_combo.addItem(
             "Preferir valor canônico", RepresentationPolicy.CANONICAL.value
         )
-        policies = QFormLayout()
+        self.options_controls = QWidget()
+        policies = QFormLayout(self.options_controls)
+        policies.setContentsMargins(0, 0, 0, 0)
         policies.addRow("Códigos não encontrados:", self.missing_policy_combo)
         policies.addRow("Valor restaurado:", self.representation_combo)
+        self.options_toggle = QPushButton("Opções de restauração")
+        self.options_toggle.setCheckable(True)
+        self.options_toggle.setAccessibleName("Mostrar ou ocultar opções de restauração")
+        self.options_toggle.toggled.connect(self._update_options_disclosure)
+        self.options_summary = QLabel()
+        self.options_summary.setWordWrap(True)
+        self.options_summary.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.options_summary.setStyleSheet(
+            f"color: {COLORS['muted_text']}; font-size: {METRICS['description_font_size']}px;"
+        )
+        self.missing_policy_combo.currentIndexChanged.connect(self._update_options_summary)
+        self.representation_combo.currentIndexChanged.connect(self._update_options_summary)
+        set_button_role(self.options_toggle, "secondary")
 
         self.analyze_button = QPushButton("Analisar códigos")
         self.analyze_button.clicked.connect(self.start_analysis)
         self.generate_button = QPushButton("Gerar CSV restaurado")
         self.generate_button.clicked.connect(self._choose_output)
+        set_button_role(self.analyze_button, "secondary")
+        set_button_role(self.generate_button, "primary")
         self.cancel_button = QPushButton("Cancelar")
         self.cancel_button.clicked.connect(self.cancel_processing)
         self.cancel_button.setVisible(False)
@@ -188,15 +210,44 @@ class RestorationWidget(QWidget):
         layout.addLayout(details)
         layout.addLayout(selection)
         layout.addWidget(self.table, stretch=1)
-        layout.addLayout(policies)
+        layout.addWidget(self.options_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.options_summary)
+        layout.addWidget(self.options_controls)
         layout.addLayout(actions)
         layout.addLayout(progress)
         layout.addWidget(self.summary)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
         layout.addStretch()
+        option_tab_order = (
+            self.table, self.options_toggle, self.missing_policy_combo,
+            self.representation_combo, self.analyze_button, self.generate_button,
+        )
+        for previous, following in zip(option_tab_order, option_tab_order[1:]):
+            QWidget.setTabOrder(previous, following)
+        self._update_options_summary()
+        self._update_options_disclosure()
         self._update_enabled_state(False)
         self.source_combo.currentIndexChanged.connect(self._source_changed)
+
+    def _update_options_disclosure(self, *_args: object) -> None:
+        focused = QApplication.focusWidget()
+        options_have_focus = focused is not None and self.options_controls.isAncestorOf(focused)
+        expanded = self.options_toggle.isChecked()
+        self.options_controls.setVisible(expanded)
+        self.options_summary.setVisible(not expanded)
+        self.options_toggle.setText(
+            "Ocultar opções de restauração" if expanded else "Opções de restauração"
+        )
+        if options_have_focus and not expanded and self.isVisible():
+            self.options_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _update_options_summary(self, *_args: object) -> None:
+        restriction = " (obrigatório no pacote)" if self._package_mode() else ""
+        self.options_summary.setText(
+            f"Não encontrados: {self.missing_policy_combo.currentText()}{restriction}. "
+            f"Valor: {self.representation_combo.currentText()}."
+        )
 
     def _package_mode(self) -> bool:
         return self.source_combo.currentData() == "package"
@@ -216,6 +267,7 @@ class RestorationWidget(QWidget):
         self._last_output_path = None
         self.open_folder_button.setVisible(False)
         self._update_enabled_state(self._inspection is not None)
+        self._update_options_summary()
         self._set_status(
             "O pacote e o vínculo com o CSV serão verificados durante a restauração."
             if self._package_mode() else "Restauração pelo cofre local selecionada.",
@@ -543,6 +595,7 @@ class RestorationWidget(QWidget):
         return self._worker.wait(5000)
 
     def _set_processing_state(self, processing: bool) -> None:
+        self.options_toggle.setEnabled(not processing)
         self.source_combo.setEnabled(not processing)
         self.package_controls.setEnabled(not processing and self._package_mode())
         self.select_button.setEnabled(not processing)
