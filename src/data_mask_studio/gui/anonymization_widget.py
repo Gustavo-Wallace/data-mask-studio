@@ -5,6 +5,7 @@ import time
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -163,6 +164,10 @@ class AnonymizationWidget(QWidget):
         self.update_profile_button = self.profile_controls.update_button
         self.rename_profile_button = self.profile_controls.rename_button
         self.delete_profile_button = self.profile_controls.delete_button
+        self.profile_toggle = QPushButton("Perfis de configuração (opcional)")
+        self.profile_toggle.setCheckable(True)
+        self.profile_toggle.setAccessibleName("Mostrar ou ocultar perfis de configuração")
+        self.profile_toggle.toggled.connect(self._update_profile_disclosure)
 
         self.select_all_button = QPushButton("Mascarar todas")
         self.select_all_button.clicked.connect(self.select_all_columns)
@@ -265,6 +270,7 @@ class AnonymizationWidget(QWidget):
         layout.setSpacing(10)
         layout.addLayout(button_layout)
         layout.addLayout(details_layout)
+        layout.addWidget(self.profile_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.profile_controls)
         layout.addWidget(configuration_label)
         layout.addLayout(selection_layout)
@@ -279,7 +285,26 @@ class AnonymizationWidget(QWidget):
         layout.addWidget(self.status_label)
 
         self.setLayout(layout)
+        profile_tab_order = (
+            self.path_field, self.profile_toggle, self.profile_combo,
+            self.apply_profile_button, self.save_profile_button, self.update_profile_button,
+            self.rename_profile_button, self.delete_profile_button, self.select_all_button,
+        )
+        for previous, following in zip(profile_tab_order, profile_tab_order[1:]):
+            QWidget.setTabOrder(previous, following)
         self._refresh_profiles()
+
+    def _update_profile_disclosure(self, *_args: object) -> None:
+        """Recolhe apenas os controles de perfis, sem alterar o estado da página."""
+        focused = QApplication.focusWidget()
+        profile_has_focus = focused is not None and self.profile_controls.isAncestorOf(focused)
+        expanded = self.profile_toggle.isChecked()
+        self.profile_controls.setVisible(expanded)
+        self.profile_toggle.setText(
+            "Ocultar perfis" if expanded else "Perfis de configuração (opcional)"
+        )
+        if profile_has_focus and not expanded and self.isVisible():
+            self.profile_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -304,6 +329,7 @@ class AnonymizationWidget(QWidget):
         self._show_result(result)
 
     def _show_result(self, result: CSVInspectionResult) -> None:
+        self.profile_toggle.setChecked(False)
         self.transfer_controls.reset()
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(True)
@@ -349,6 +375,7 @@ class AnonymizationWidget(QWidget):
         self._set_status(status, is_error=is_error)
 
     def _reset_details(self) -> None:
+        self.profile_toggle.setChecked(False)
         self.transfer_controls.reset()
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(False)
@@ -684,6 +711,7 @@ class AnonymizationWidget(QWidget):
             not analyzing and has_file and self._configuration_validated
         )
         self.profile_combo.setEnabled(not analyzing)
+        self.profile_toggle.setEnabled(not analyzing)
         self.analyze_button.setText("Cancelar análise" if analyzing else "Analisar colunas")
         self.analyze_button.setEnabled(has_file)
         if analyzing:
@@ -874,6 +902,7 @@ class AnonymizationWidget(QWidget):
         self.update_profile_button.setEnabled(has_profile and has_csv)
         self.rename_profile_button.setEnabled(has_profile)
         self.delete_profile_button.setEnabled(has_profile)
+        self._update_profile_disclosure()
 
     def save_as_profile(self) -> None:
         if (
@@ -1244,6 +1273,7 @@ class AnonymizationWidget(QWidget):
             not processing and has_file and self._configuration_validated
         )
         self.profile_combo.setEnabled(not processing)
+        self.profile_toggle.setEnabled(not processing)
         if processing:
             for button in (
                 self.apply_profile_button,
