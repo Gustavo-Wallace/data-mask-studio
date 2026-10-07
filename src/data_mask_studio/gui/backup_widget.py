@@ -33,7 +33,9 @@ from data_mask_studio.gui.backup_worker import (
     BackupValidationWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTextEdit
-from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, confirm_destructive_action, set_feedback_state,
+)
 from data_mask_studio.security import DataProtector, KeyProvider
 
 
@@ -204,12 +206,10 @@ class BackupWidget(QWidget):
             return
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Substituir backup",
                 "O arquivo de backup já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -253,12 +253,10 @@ class BackupWidget(QWidget):
                 True,
             )
             return
-        answer = QMessageBox.question(
+        answer = confirm_destructive_action(
             self,
             "Confirmar restauração",
             "A restauração substituirá o cofre, as chaves e os perfis locais atuais.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return

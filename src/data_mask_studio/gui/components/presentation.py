@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QLabel,
     QLineEdit,
+    QLayout,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QStyle,
@@ -14,7 +16,10 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTextEdit,
     QToolTip,
+    QWidget,
 )
+
+from data_mask_studio.gui.visual_tokens import METRICS
 
 
 FeedbackState = Literal["neutral", "success", "warning", "error"]
@@ -73,6 +78,28 @@ def set_button_role(button: QPushButton, role: str) -> None:
     button.setProperty("role", role)
     button.style().unpolish(button)
     button.style().polish(button)
+
+
+def configure_dialog_layout(layout: QLayout) -> None:
+    """Espaçamento de diálogos próprios; layouts nativos do Qt ficam intactos."""
+    margin = METRICS["dialog_margin"]
+    layout.setContentsMargins(margin, margin, margin, margin)
+    layout.setSpacing(METRICS["panel_spacing"])
+
+
+def confirm_destructive_action(parent: QWidget, title: str, text: str) -> int:
+    """QMessageBox padrão, com a mesma resposta segura Não/Enter/Escape."""
+    message = QMessageBox(
+        QMessageBox.Icon.Warning, title, text,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, parent,
+    )
+    message.setDefaultButton(QMessageBox.StandardButton.No)
+    message.setEscapeButton(QMessageBox.StandardButton.No)
+    set_button_role(message.button(QMessageBox.StandardButton.Yes), "destructive")
+    try:
+        return message.exec()
+    finally:
+        message.deleteLater()
 
 
 def configure_path_field(field: QLineEdit, accessible_name: str) -> None:

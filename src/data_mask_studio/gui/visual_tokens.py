@@ -60,4 +60,5 @@ METRICS = MappingProxyType({
     "header_text_spacing": 6,
     "header_content_spacing": 18,
     "table_header_padding": 5,
+    "dialog_margin": 20,
 })

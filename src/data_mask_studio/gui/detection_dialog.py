@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QCheckBox,
     QDialog,
     QHeaderView,
@@ -20,6 +21,9 @@ from data_mask_studio.detection import (
 )
 from data_mask_studio.detection.models import CONFIDENCE_LABELS, TYPE_LABELS
 from data_mask_studio.normalization import normalization_label
+from data_mask_studio.gui.components.presentation import (
+    configure_dialog_layout, set_button_role, set_feedback_state,
+)
 
 
 class DetectionDialog(QDialog):
@@ -37,7 +41,8 @@ class DetectionDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Sugestões de colunas sensíveis")
-        self.resize(1100, 520)
+        available = self.screen().availableGeometry()
+        self.resize(min(1100, available.width()), min(520, available.height()))
         self._suggestions = suggestions
         self._acceptance_fields: list[QCheckBox] = []
 
@@ -46,6 +51,7 @@ class DetectionDialog(QDialog):
             "Revise as sugestões; nenhuma alteração é aplicada automaticamente."
         )
         explanation.setWordWrap(True)
+        set_feedback_state(explanation, "neutral")
 
         self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
@@ -73,6 +79,7 @@ class DetectionDialog(QDialog):
 
         self.apply_high_button = QPushButton("Aplicar sugestões de confiança alta")
         self.apply_high_button.clicked.connect(self._request_high_confidence)
+        set_button_role(self.apply_high_button, "primary")
         self.apply_accepted_button = QPushButton("Aplicar sugestões aceitas")
         self.apply_accepted_button.clicked.connect(self._request_accepted)
         self.clear_button = QPushButton("Limpar sugestões")
@@ -84,13 +91,20 @@ class DetectionDialog(QDialog):
         actions.addWidget(self.apply_high_button)
         actions.addWidget(self.apply_accepted_button)
         actions.addStretch()
-        actions.addWidget(self.clear_button)
-        actions.addWidget(self.close_button)
+        footer = QHBoxLayout()
+        footer.addStretch()
+        footer.addWidget(self.clear_button)
+        footer.addWidget(self.close_button)
 
         layout = QVBoxLayout(self)
+        configure_dialog_layout(layout)
         layout.addWidget(explanation)
         layout.addWidget(self.table, stretch=1)
         layout.addLayout(actions)
+        layout.addLayout(footer)
+        # Os textos das ações não devem impor uma largura maior que a tela.
+        if layout.minimumSize().width() > available.width():
+            actions.setDirection(QBoxLayout.Direction.TopToBottom)
 
     def _populate_table(self) -> None:
         self.table.setRowCount(len(self._suggestions))

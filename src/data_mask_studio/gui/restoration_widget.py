@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (
 from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.gui.components.presentation import (
-    FeedbackState, TruncatedTextToolTipDelegate, set_button_role, set_feedback_state,
+    FeedbackState, TruncatedTextToolTipDelegate, confirm_destructive_action,
+    set_button_role, set_feedback_state,
 )
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 
@@ -454,12 +455,10 @@ class RestorationWidget(QWidget):
             return
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Confirmar substituição",
                 "O arquivo de saída já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return

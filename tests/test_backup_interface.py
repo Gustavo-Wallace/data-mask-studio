@@ -3,6 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
 from qt_lifecycle import qt_widget_lifecycle
 
 from PySide6.QtWidgets import QLineEdit, QMessageBox
@@ -90,7 +91,7 @@ def test_backup_widget_creates_validates_and_requires_restore_confirmation(
 
     monkeypatch.setattr(
         QMessageBox,
-        "question",
+        "exec",
         lambda *args, **kwargs: QMessageBox.StandardButton.No,
     )
     widget.restore_button.click()
@@ -100,7 +101,7 @@ def test_backup_widget_creates_validates_and_requires_restore_confirmation(
     widget.environment_restored.connect(lambda: restored.append(True))
     monkeypatch.setattr(
         QMessageBox,
-        "question",
+        "exec",
         lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
     )
     widget.restore_button.click()
@@ -133,3 +134,37 @@ def test_backup_widget_rejects_short_password_and_disables_restore(tmp_path: Pat
     assert not widget.restore_button.isEnabled()
     widget.close()
     application.quit()
+
+
+@pytest.mark.parametrize("answer", [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes])
+def test_existing_backup_keeps_explicit_overwrite_confirmation(tmp_path: Path, monkeypatch, answer) -> None:
+    application = create_application([])
+    widget, _ = prepare_widget(tmp_path)
+    destination = tmp_path / "existing.dmsbackup"
+    destination.write_bytes(b"existing synthetic backup")
+    widget.destination_field.setText(str(destination))
+    widget.create_password_field.setText(PASSWORD)
+    widget.confirm_password_field.setText(PASSWORD)
+    observed = []
+
+    def confirm(box):
+        observed.append(box.windowTitle())
+        assert box.icon() == QMessageBox.Icon.Warning
+        assert box.standardButton(box.defaultButton()) == QMessageBox.StandardButton.No
+        assert box.standardButton(box.escapeButton()) == QMessageBox.StandardButton.No
+        assert box.button(QMessageBox.StandardButton.Yes).property("role") == "destructive"
+        return answer
+
+    monkeypatch.setattr(QMessageBox, "exec", confirm)
+    widget.start_creation()
+    assert observed == ["Substituir backup"]
+    if answer == QMessageBox.StandardButton.Yes:
+        worker = widget._worker
+        assert worker is not None and worker.wait(10000)
+        application.processEvents()
+        assert destination.read_bytes() != b"existing synthetic backup"
+        assert widget.create_status.property("feedbackState") == "success"
+        assert widget.create_password_field.text() == widget.confirm_password_field.text() == ""
+    else:
+        assert widget._worker is None
+        assert destination.read_bytes() == b"existing synthetic backup"

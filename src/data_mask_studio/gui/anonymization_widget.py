@@ -61,7 +61,9 @@ from data_mask_studio.gui.detection_dialog import DetectionDialog
 from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
-from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, confirm_destructive_action, set_feedback_state,
+)
 from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -1076,12 +1078,10 @@ class AnonymizationWidget(QWidget):
         profile = self._selected_profile()
         if profile is None or self._profile_service is None:
             return
-        answer = QMessageBox.question(
+        answer = confirm_destructive_action(
             self,
             "Excluir perfil",
             f"Excluir somente o perfil “{profile.name}”?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -1125,12 +1125,10 @@ class AnonymizationWidget(QWidget):
 
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Confirmar substituição",
                 "O arquivo de saída já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 self._set_status("O arquivo existente não foi alterado.", is_error=False)

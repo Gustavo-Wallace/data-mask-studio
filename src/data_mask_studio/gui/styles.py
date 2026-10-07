@@ -183,7 +183,8 @@ def application_stylesheet() -> str:
     QPushButton#navigationUtility:disabled { color: $disabled_text; background: transparent; border-color: transparent; }
     QFrame#pageHeader > QLabel#pageTitle { font-size: ${page_title_font_size}px; font-weight: 650; color: $text; }
     QLabel#aboutTitle { font-size: 20px; font-weight: 700; color: #f4f7fb; }
-    QLabel#aboutDetails, QLabel#aboutLinks, QLabel#aboutCopyright, QLabel#aboutSignatureNotice { color: $muted_text; }
+    QLabel#aboutDetails, QLabel#aboutLinks, QLabel#aboutCopyright { color: $muted_text; }
+    QLabel#aboutSignatureNotice { color: $warning_text; }
     QLabel#aboutLinks { link-color: $focus; }
     QFrame#pageHeader > QLabel#pageDescription { color: $muted_text; font-size: ${description_font_size}px; }
     QScrollArea#pageScrollArea { background: transparent; }
@@ -211,6 +212,7 @@ def application_stylesheet() -> str:
     QPushButton { min-height: ${control_height}px; padding: 0 ${button_padding}px; border: 1px solid #435064; border-radius: ${control_radius}px; background: $button; color: $button_text; }
     QPushButton:hover { background: $button_hover; }
     QPushButton:focus { border-color: $focus; }
+    QMessageBox QPushButton:default, QDialog QDialogButtonBox QPushButton:default { border-color: $focus; }
     QPushButton[role="primary"] { background: $primary; border-color: $accent; color: white; font-weight: 600; }
     QPushButton[role="primary"]:hover { background: #3078b2; }
     QPushButton[role="destructive"] { color: $danger_text; border-color: $danger_border; background: $danger_surface; }

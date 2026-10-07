@@ -34,7 +34,9 @@ from data_mask_studio.gui.maintenance_worker import (
     TemporaryScanWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
-from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, confirm_destructive_action, set_feedback_state,
+)
 from data_mask_studio.integrity import AuditReport
 from data_mask_studio.maintenance import (
     STATUS_LABELS,
@@ -304,12 +306,10 @@ class MaintenanceWidget(QWidget):
         ]
         if not selected or not self._begin_allowed():
             return
-        answer = QMessageBox.warning(
+        answer = confirm_destructive_action(
             self,
             "Confirmar limpeza",
             f"Excluir {len(selected)} temporário(s) antigo(s) selecionado(s)?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return

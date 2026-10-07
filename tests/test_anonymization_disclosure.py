@@ -213,6 +213,9 @@ def test_expanded_profile_controls_save_update_rename_and_delete_using_existing_
     widget.profile_toggle.click()
     assert not widget.profile_controls.isVisible() and widget.profile_combo.currentData() == identifier
     widget.profile_toggle.click()
+    monkeypatch.setattr(
+        QMessageBox, "exec", lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
     widget.delete_profile_button.click()
     assert widget._profile_service.list_profiles() == [] and widget.profile_combo.count() == 0
     assert widget.profile_controls.isVisible() and not widget.delete_profile_button.isEnabled()

@@ -25,7 +25,9 @@ from data_mask_studio.gui.html_restoration_worker import (
     HTMLRestorationWorker,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
-from data_mask_studio.gui.components.presentation import FeedbackState, set_button_role, set_feedback_state
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, confirm_destructive_action, set_button_role, set_feedback_state,
+)
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.html_restoration import (
     HTMLAnalysisResult,
@@ -264,12 +266,10 @@ class HTMLRestorationWidget(QWidget):
             return
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Confirmar substituição",
                 "O arquivo de saída já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
