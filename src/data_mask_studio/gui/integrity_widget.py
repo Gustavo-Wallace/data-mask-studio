@@ -14,7 +14,10 @@ from PySide6.QtWidgets import (
 from data_mask_studio.backup import EnvironmentPaths
 from data_mask_studio.gui.integrity_worker import IntegrityWorker
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
-from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, configure_result_area, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.integrity import AuditReport, IntegrityAuditor, IntegrityStatus
 from data_mask_studio.security import KeyProvider
 
@@ -62,6 +65,7 @@ class IntegrityWidget(QWidget):
         self.last_check_label = QLabel(
             "Última verificação nesta sessão: ainda não executada"
         )
+        self.last_check_label.setWordWrap(True)
         self.status_label = QLabel("Pronto para executar a auditoria.")
         self.status_label.setWordWrap(True)
         set_feedback_state(self.status_label, "neutral")
@@ -69,14 +73,16 @@ class IntegrityWidget(QWidget):
             "O resumo seguro da auditoria será exibido aqui."
         )
         self.report_view.setReadOnly(True)
+        configure_result_area(self.report_view, 160)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(actions)
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.last_check_label)
         layout.addWidget(self.status_label)
-        layout.addWidget(self.report_view)
+        layout.addWidget(self.report_view, stretch=1)
         layout.addStretch()
 
     def start_audit(self) -> None:

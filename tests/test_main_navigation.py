@@ -292,11 +292,11 @@ def test_common_headers_roles_paths_empty_states_and_internal_tabs(
     assert isinstance(window.batch_widget.file_table, EmptyStateTable)
     assert "Nenhum arquivo" in window.batch_widget.file_table.accessibleDescription()
     report = window.maintenance_widget.overview_output
-    assert report.maximumHeight() == 280
+    assert report.maximumHeight() == 160
     report.setPlainText("Relatório técnico seguro")
     assert report.maximumHeight() == 16_777_215
     report.clear()
-    assert report.maximumHeight() == 280
+    assert report.maximumHeight() == 160
     assert isinstance(window.consultant_widget.results_output, EmptyStatePlainTextEdit)
     assert isinstance(window.batch_restoration_widget.summary_output, EmptyStateTextEdit)
     assert window.backup_widget.restore_button.text() == "Restaurar backup…"

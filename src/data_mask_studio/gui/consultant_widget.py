@@ -17,7 +17,10 @@ from data_mask_studio.consultant import (
     ConsultationStatus,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
-from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, configure_result_area, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.normalization import normalization_label
 from data_mask_studio.vault import VaultRepository
 from data_mask_studio.vault.composite_models import CompositeMapping
@@ -57,6 +60,7 @@ class ConsultantWidget(QWidget):
             "Os resultados da consulta aparecerão aqui."
         )
         self.results_output.setReadOnly(True)
+        configure_result_area(self.results_output, 160)
 
         warning = QLabel(
             "Atenção: os resultados contêm dados sensíveis e devem permanecer "
@@ -71,11 +75,11 @@ class ConsultantWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 24, 36, 24)
-        layout.setSpacing(10)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addWidget(self.codes_input)
         layout.addLayout(button_layout)
-        layout.addWidget(self.results_output)
         layout.addWidget(warning)
+        layout.addWidget(self.results_output, stretch=1)
         layout.addWidget(self.status_label)
         layout.addStretch()
 
