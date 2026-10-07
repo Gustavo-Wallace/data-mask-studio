@@ -34,6 +34,7 @@ from data_mask_studio.gui.maintenance_worker import (
     TemporaryScanWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
+from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
 from data_mask_studio.integrity import AuditReport
 from data_mask_studio.maintenance import (
     STATUS_LABELS,
@@ -90,6 +91,7 @@ class MaintenanceWidget(QWidget):
         self.cancel_button.setVisible(False)
         self.status_label = QLabel("Pronto para diagnosticar o ambiente local.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
         operation_row = QHBoxLayout()
         operation_row.addWidget(self.progress, stretch=1)
         operation_row.addWidget(self.cancel_button)
@@ -237,6 +239,7 @@ class MaintenanceWidget(QWidget):
         self._set_status(
             f"Diagnóstico concluído: {STATUS_LABELS[result.status]}.",
             result.status.value == "failure",
+            state="warning" if result.status.value == "attention" else "success",
         )
 
     def copy_report(self) -> None:
@@ -272,7 +275,7 @@ class MaintenanceWidget(QWidget):
 
     def _backup_completed(self, result: BackupValidationResult) -> None:
         self.backup_result.setPlainText(_render_backup(result))
-        self._set_status("Backup válido.", False)
+        self._set_status("Backup válido.", False, state="success" if result.is_compatible else "warning")
 
     def start_temporary_scan(self) -> None:
         if not self._begin_allowed():
@@ -286,7 +289,7 @@ class MaintenanceWidget(QWidget):
     def _temporaries_completed(self, items: list[TemporaryItem]) -> None:
         self.temporary_items = items
         self._refresh_temporary_table()
-        self._set_status(f"{len(items)} temporário(s) conhecido(s) localizado(s).", False)
+        self._set_status(f"{len(items)} temporário(s) conhecido(s) localizado(s).", False, state="success")
 
     def _temporary_toggled(self, row: int, checked: bool) -> None:
         if row < len(self.temporary_items):
@@ -324,6 +327,7 @@ class MaintenanceWidget(QWidget):
             f"Limpeza concluída: {result.removed} removido(s), "
             f"{result.preserved} preservado(s), {result.failed} falha(s).",
             result.failed > 0,
+            state="warning" if result.preserved else "success",
         )
 
     def start_compaction(self) -> None:
@@ -366,7 +370,7 @@ class MaintenanceWidget(QWidget):
             )
         )
         self.environment_changed.emit()
-        self._set_status("Compactação concluída com segurança.", False)
+        self._set_status("Compactação concluída com segurança.", False, state="success")
 
     def _begin_allowed(self) -> bool:
         if self._worker is not None:
@@ -396,7 +400,7 @@ class MaintenanceWidget(QWidget):
             self._set_status("Cancelamento solicitado...", False)
 
     def _cancelled(self) -> None:
-        self._set_status("Operação cancelada com segurança.", False)
+        self._set_status("Operação cancelada com segurança.", False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         message = (
@@ -468,11 +472,11 @@ class MaintenanceWidget(QWidget):
             any(item.selected and item.removable for item in self.temporary_items)
         )
 
-    def _set_status(self, message: str, error: bool) -> None:
+    def _set_status(
+        self, message: str, error: bool, *, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if error else state)
 
 
 def _render_diagnostic(result: DiagnosticResult) -> str:

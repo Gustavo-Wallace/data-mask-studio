@@ -72,6 +72,7 @@ def test_backup_widget_creates_validates_and_requires_restore_confirmation(
     assert widget.create_password_field.text() == ""
     assert widget.confirm_password_field.text() == ""
     assert widget.open_folder_button.isEnabled()
+    assert widget.create_status.property("feedbackState") == "success"
 
     widget.restore_file_field.setText(str(destination))
     widget.restore_password_field.setText(PASSWORD)
@@ -83,6 +84,7 @@ def test_backup_widget_creates_validates_and_requires_restore_confirmation(
 
     assert widget.restore_button.isEnabled()
     assert "Versão do formato: 1" in widget.restore_summary.toPlainText()
+    assert widget.restore_status.property("feedbackState") == "success"
     widget.show_restore_password.setChecked(True)
     assert widget.restore_password_field.echoMode() is QLineEdit.EchoMode.Normal
 
@@ -111,6 +113,7 @@ def test_backup_widget_creates_validates_and_requires_restore_confirmation(
     assert not widget.restore_button.isEnabled()
 
     widget.stop_worker()
+    assert widget.restore_status.property("feedbackState") == "success"
     assert widget.restore_password_field.text() == ""
     widget.close()
     application.quit()

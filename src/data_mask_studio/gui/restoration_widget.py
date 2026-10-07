@@ -23,7 +23,9 @@ from PySide6.QtWidgets import (
 )
 from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
-from data_mask_studio.gui.components.presentation import TruncatedTextToolTipDelegate, set_button_role
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, TruncatedTextToolTipDelegate, set_button_role, set_feedback_state,
+)
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 
 from data_mask_studio.csv_tools import (
@@ -201,6 +203,7 @@ class RestorationWidget(QWidget):
         self.open_folder_button.setVisible(False)
         self.status_label = QLabel("Selecione um CSV anonimizado para comecar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 20, 36, 20)
@@ -321,7 +324,7 @@ class RestorationWidget(QWidget):
         status = "Cabecalhos lidos com sucesso."
         if warning:
             status = f"{status} {warning}"
-        self._set_status(status, is_error=False)
+        self._set_status(status, is_error=False, state="warning" if warning else "success")
 
     def clear_selection(self) -> None:
         if self._worker is not None:
@@ -410,7 +413,11 @@ class RestorationWidget(QWidget):
             f"Prefixos: {prefixes}\n"
             f"Possíveis incompatibilidades: {incompatibilities}"
         )
-        self._set_status("Análise concluída sem alterar o cofre.", is_error=False)
+        self._set_status(
+            "Análise concluída sem alterar o cofre.", is_error=False,
+            state="warning" if result.missing_codes or result.invalid_formats
+            or result.possible_incompatibilities else "success",
+        )
 
     def _choose_output(self) -> None:
         try:
@@ -550,12 +557,15 @@ class RestorationWidget(QWidget):
             f"Representação: {representation}"
         )
         self.open_folder_button.setVisible(True)
-        self._set_status("CSV restaurado gerado com sucesso.", is_error=False)
+        self._set_status(
+            "CSV restaurado gerado com sucesso.", is_error=False,
+            state="warning" if result.missing_codes else "success",
+        )
 
     def _cancelled(self) -> None:
         self._operation_succeeded = False
         self.package_controls.clear_password()
-        self._set_status("A operacao foi cancelada com seguranca.", is_error=False)
+        self._set_status("A operacao foi cancelada com seguranca.", is_error=False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         self._operation_succeeded = False
@@ -639,8 +649,8 @@ class RestorationWidget(QWidget):
         ):
             self._set_status("Nao foi possivel abrir a pasta do arquivo.", is_error=True)
 
-    def _set_status(self, message: str, *, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)

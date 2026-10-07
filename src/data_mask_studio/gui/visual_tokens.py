@@ -13,6 +13,7 @@ COLORS = MappingProxyType({
     "text": "#e8edf5",
     "input_text": "#edf2f7",
     "muted_text": "#bdc8d5",
+    "success_text": "#9bd5b2",
     "disabled_text": "#8592a3",
     "border": "#354253",
     "panel_border": "#303b49",

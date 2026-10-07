@@ -61,6 +61,7 @@ from data_mask_studio.gui.detection_dialog import DetectionDialog
 from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
 from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -264,6 +265,7 @@ class AnonymizationWidget(QWidget):
 
         self.status_label = QLabel("Selecione um arquivo CSV para começar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout()
         layout.setContentsMargins(36, 24, 36, 24)
@@ -354,7 +356,7 @@ class AnonymizationWidget(QWidget):
         status = "Cabeçalhos lidos com sucesso."
         if warning:
             status = f"{status} {warning}"
-        self._set_status(status, is_error=False)
+        self._set_status(status, is_error=False, state="warning" if warning else "success")
 
     def _show_error(self, file_path: str, message: str) -> None:
         selected_path = Path(file_path).expanduser().absolute()
@@ -617,6 +619,7 @@ class AnonymizationWidget(QWidget):
                 f"{result.selected_count} para mascarar, "
                 f"{preserved} para preservar e {excluded} para excluir.",
                 is_error=False,
+                state="success",
             )
 
     def _build_current_plan(self, composites=None):
@@ -672,13 +675,14 @@ class AnonymizationWidget(QWidget):
         self._set_status(
             "Análise concluída. Revise as sugestões antes de aplicá-las.",
             is_error=False,
+            state="success",
         )
 
     def _detection_cancelled(self) -> None:
         self._set_detection_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        self._set_status("A análise das colunas foi cancelada.", is_error=False)
+        self._set_status("A análise das colunas foi cancelada.", is_error=False, state="warning")
 
     def _detection_failed(self, error: Exception) -> None:
         self._set_detection_state(False)
@@ -839,6 +843,7 @@ class AnonymizationWidget(QWidget):
         self._set_status(
             "Sugestões removidas. A configuração atual foi preservada.",
             is_error=False,
+            state="success",
         )
 
     def _clear_detection_suggestions(self) -> None:
@@ -928,7 +933,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(profile.identifier)
-        self._set_status(f"Perfil “{profile.name}” salvo com sucesso.", is_error=False)
+        self._set_status(f"Perfil “{profile.name}” salvo com sucesso.", is_error=False, state="success")
 
     def update_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -962,7 +967,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(updated.identifier)
-        self._set_status(f"Perfil “{updated.name}” atualizado.", is_error=False)
+        self._set_status(f"Perfil “{updated.name}” atualizado.", is_error=False, state="success")
 
     def apply_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -1000,7 +1005,7 @@ class AnonymizationWidget(QWidget):
         self._configuration_dirty = False
         self.validate_current_configuration()
         if self._configuration_validated:
-            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False)
+            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False, state="success")
         else:
             details = self.status_label.text()
             scalar_validation = validate_configuration(self._column_configs)
@@ -1065,7 +1070,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(renamed.identifier)
-        self._set_status(f"Perfil renomeado para “{renamed.name}”.", is_error=False)
+        self._set_status(f"Perfil renomeado para “{renamed.name}”.", is_error=False, state="success")
 
     def delete_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -1086,7 +1091,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles()
-        self._set_status(f"Perfil “{profile.name}” excluído.", is_error=False)
+        self._set_status(f"Perfil “{profile.name}” excluído.", is_error=False, state="success")
 
     def _choose_output_file(self) -> None:
         if self._inspection_result is None or not self._configuration_validated:
@@ -1224,13 +1229,14 @@ class AnonymizationWidget(QWidget):
             f"{result.updated_mappings} mapeamentos existentes atualizados. "
             f"{vault_notice}{fallback_notice}",
             is_error=False,
+            state="warning" if result.normalization_fallbacks else "success",
         )
 
     def _processing_cancelled(self) -> None:
         self._set_processing_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        self._set_status("A geração do CSV foi cancelada.", is_error=False)
+        self._set_status("A geração do CSV foi cancelada.", is_error=False, state="warning")
 
     def _processing_failed(self, error: Exception) -> None:
         self._last_processing_error = error
@@ -1324,7 +1330,8 @@ class AnonymizationWidget(QWidget):
             worker.request_cancel()
         return all(worker.wait(5000) for worker in workers)
 
-    def _set_status(self, message: str, *, is_error: bool) -> None:
-        color = "#b42318" if is_error else "#276749"
+    def _set_status(
+        self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(f"color: {color};")
+        set_feedback_state(self.status_label, "error" if is_error else state)

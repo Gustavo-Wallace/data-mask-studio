@@ -17,6 +17,7 @@ from data_mask_studio.consultant import (
     ConsultationStatus,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
+from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
 from data_mask_studio.normalization import normalization_label
 from data_mask_studio.vault import VaultRepository
 from data_mask_studio.vault.composite_models import CompositeMapping
@@ -62,10 +63,11 @@ class ConsultantWidget(QWidget):
             "neste ambiente local."
         )
         warning.setWordWrap(True)
-        warning.setStyleSheet("color: #8a5a00;")
+        set_feedback_state(warning, "warning")
 
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 24, 36, 24)
@@ -94,6 +96,8 @@ class ConsultantWidget(QWidget):
         self._set_status(
             f"Consulta concluída: {found_count} de {len(results)} códigos encontrados.",
             is_error=False,
+            state="error" if any(result.status is ConsultationStatus.RECOVERY_FAILED for result in results)
+            else "warning" if found_count < len(results) else "success",
         )
 
     def copy_result(self) -> None:
@@ -102,19 +106,21 @@ class ConsultantWidget(QWidget):
             self.copy_button.setEnabled(False)
             return
         QApplication.clipboard().setText(text)
-        self._set_status("Resultado copiado para a área de transferência.", is_error=False)
+        self._set_status("Resultado copiado para a área de transferência.", is_error=False, state="success")
 
     def clear_consultation(self) -> None:
         self.codes_input.clear()
         self.results_output.clear()
         self.status_label.clear()
+        set_feedback_state(self.status_label, "neutral")
         self.copy_button.setEnabled(False)
         self.codes_input.setFocus()
 
-    def _set_status(self, message: str, *, is_error: bool) -> None:
-        color = "#b42318" if is_error else "#276749"
+    def _set_status(
+        self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(f"color: {color};")
+        set_feedback_state(self.status_label, "error" if is_error else state)
 
 
 def _render_result(result: ConsultationResult) -> str:

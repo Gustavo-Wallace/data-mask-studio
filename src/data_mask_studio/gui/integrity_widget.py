@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from data_mask_studio.backup import EnvironmentPaths
 from data_mask_studio.gui.integrity_worker import IntegrityWorker
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
+from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
 from data_mask_studio.integrity import AuditReport, IntegrityAuditor, IntegrityStatus
 from data_mask_studio.security import KeyProvider
 
@@ -63,6 +64,7 @@ class IntegrityWidget(QWidget):
         )
         self.status_label = QLabel("Pronto para executar a auditoria.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
         self.report_view = EmptyStatePlainTextEdit(
             "O resumo seguro da auditoria será exibido aqui."
         )
@@ -121,11 +123,12 @@ class IntegrityWidget(QWidget):
         self._set_status(
             f"Auditoria concluída: {_STATUS_LABELS[report.status]}.",
             report.status is IntegrityStatus.FAILURE,
+            state="warning" if report.status is IntegrityStatus.ATTENTION else "success",
         )
         self.audit_completed.emit(report)
 
     def _cancelled(self) -> None:
-        self._set_status("Auditoria cancelada. Nenhum dado foi alterado.", False)
+        self._set_status("Auditoria cancelada. Nenhum dado foi alterado.", False, state="warning")
 
     def _failed(self, _error: Exception) -> None:
         self._set_status(
@@ -148,6 +151,7 @@ class IntegrityWidget(QWidget):
     def clear_report(self) -> None:
         self._last_report = None
         self.report_view.clear()
+        set_feedback_state(self.status_label, "neutral")
         self.copy_button.setEnabled(False)
         self.progress_bar.setRange(0, 12)
         self.progress_bar.setValue(0)
@@ -162,8 +166,8 @@ class IntegrityWidget(QWidget):
                 return False
         return True
 
-    def _set_status(self, message: str, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, is_error: bool, *, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)

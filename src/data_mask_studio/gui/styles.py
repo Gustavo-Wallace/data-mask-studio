@@ -156,6 +156,10 @@ def application_stylesheet() -> str:
     QWidget#mainWorkspace, QWidget#pageShell, QWidget[pageContent="true"] { background: $window; }
     QScrollArea#pageScrollArea, QScrollArea#pageScrollArea > QWidget > QWidget { background: $window; }
     QLabel { background: transparent; }
+    QLabel[feedbackState="neutral"] { color: $muted_text; }
+    QLabel[feedbackState="success"] { color: $success_text; }
+    QLabel[feedbackState="warning"] { color: $warning_text; }
+    QLabel[feedbackState="error"] { color: $danger_text; }
     QWidget#sidebarNavigation { background: $base; border-right: 1px solid $panel_border; }
     QWidget#applicationIdentity { background: transparent; }
     QLabel#identityMonogram { min-width: __BADGE_WIDTH__px; min-height: __BADGE_HEIGHT__px; max-width: __BADGE_WIDTH__px; max-height: __BADGE_HEIGHT__px; border: __BADGE_BORDER__px solid __BORDER_COLOR__; border-radius: __BADGE_RADIUS__px; background: __BACKGROUND_COLOR__; color: __FOREGROUND_COLOR__; font-size: 11px; font-weight: 700; qproperty-alignment: AlignCenter; }

@@ -37,6 +37,7 @@ from data_mask_studio.gui.batch_worker import (
     BatchValidationWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
+from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
 from data_mask_studio.profiles import (
     ConfigurationProfile,
     ProfileError,
@@ -148,6 +149,7 @@ class BatchWidget(QWidget):
         self.summary_output.setMaximumHeight(125)
         self.status_label = QLabel("Adicione arquivos CSV para começar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
@@ -238,6 +240,7 @@ class BatchWidget(QWidget):
         self._refresh_table()
         self.summary_output.clear()
         self.open_output_button.setEnabled(False)
+        set_feedback_state(self.status_label, "neutral")
         self._update_actions()
 
     def _profile_changed(self) -> None:
@@ -283,6 +286,7 @@ class BatchWidget(QWidget):
             f"Validação concluída: {compatible} compatível(is), "
             f"{incompatible} incompatível(is).",
             is_error=compatible == 0,
+            state="warning" if incompatible else "success",
         )
 
     def _validation_finished(self) -> None:
@@ -384,7 +388,12 @@ class BatchWidget(QWidget):
         )
         self.summary_output.setPlainText(_render_summary(summary))
         self.open_output_button.setEnabled(summary.completed_files > 0)
-        self._set_status("Processamento em lote encerrado.", is_error=False)
+        self._set_status(
+            "Processamento em lote encerrado.", is_error=False,
+            state="error" if summary.error_files else "warning"
+            if summary.incompatible_files or summary.cancelled_or_skipped_files
+            or summary.normalization_fallbacks else "success",
+        )
 
     def _processing_finished(self) -> None:
         worker = self._processing_worker
@@ -477,11 +486,11 @@ class BatchWidget(QWidget):
             for worker in (self._validation_worker, self._processing_worker)
         )
 
-    def _set_status(self, message: str, *, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)
 
 
 def _render_summary(summary: BatchSummary) -> str:

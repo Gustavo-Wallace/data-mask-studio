@@ -61,6 +61,10 @@ def test_batch_restoration_widget_analyzes_and_restores_offscreen(
 
     assert widget.files[0].status is BatchRestorationStatus.COMPATIBLE
     assert widget.file_table.item(0, 2).text() == "utf-8"
+    assert widget._analysis_worker is None
+    assert widget.overall_progress.value() == widget.overall_progress.maximum() == 1
+    assert widget.current_progress.maximum() == 1 and widget.current_progress.value() == 0
+    assert widget.current_progress_label.text() == "Nenhum processamento em andamento."
     widget.file_table.selectRow(0)
     widget.select_candidate_columns()
     assert widget.files[0].columns[0].selected
@@ -84,6 +88,10 @@ def test_batch_restoration_widget_analyzes_and_restores_offscreen(
     )
     assert widget.open_output_button.isEnabled()
     assert "Concluídos: 1" in widget.summary_output.toPlainText()
+    assert widget._processing_worker is None
+    assert widget.overall_progress.value() == widget.overall_progress.maximum() == 1
+    assert widget.current_progress.maximum() == 1 and widget.current_progress.value() == 0
+    assert widget.current_progress_label.text() == "Nenhum processamento em andamento."
 
     widget.close()
     application.quit()

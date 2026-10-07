@@ -25,7 +25,7 @@ from data_mask_studio.gui.html_restoration_worker import (
     HTMLRestorationWorker,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
-from data_mask_studio.gui.components.presentation import set_button_role
+from data_mask_studio.gui.components.presentation import FeedbackState, set_button_role, set_feedback_state
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.html_restoration import (
     HTMLAnalysisResult,
@@ -140,6 +140,7 @@ class HTMLRestorationWidget(QWidget):
         self.open_folder_button.setVisible(False)
         self.status_label = QLabel("Selecione um arquivo HTML para começar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 24, 36, 24)
@@ -208,7 +209,7 @@ class HTMLRestorationWidget(QWidget):
         self.summary.clear()
         self.open_folder_button.setVisible(False)
         self._set_file_controls_enabled(True)
-        self._set_status("Arquivo HTML inspecionado com sucesso.", is_error=False)
+        self._set_status("Arquivo HTML inspecionado com sucesso.", is_error=False, state="success")
 
     def start_analysis(self) -> None:
         if self._inspection is None or self._worker is not None:
@@ -227,7 +228,10 @@ class HTMLRestorationWidget(QWidget):
             f"Formatos semelhantes inválidos: {result.invalid_similar_codes}\n"
             f"Prefixos encontrados: {prefixes}"
         )
-        self._set_status("Análise concluída sem modificar o arquivo ou o cofre.", False)
+        self._set_status(
+            "Análise concluída sem modificar o arquivo ou o cofre.", False,
+            state="warning" if result.missing_codes or result.invalid_similar_codes else "success",
+        )
 
     def _choose_output(self) -> None:
         if self._inspection is None:
@@ -341,11 +345,14 @@ class HTMLRestorationWidget(QWidget):
             f"Representação: {representation}"
         )
         self.open_folder_button.setVisible(True)
-        self._set_status("HTML restaurado gerado com sucesso.", False)
+        self._set_status(
+            "HTML restaurado gerado com sucesso.", False,
+            state="warning" if result.missing_occurrences else "success",
+        )
 
     def _cancelled(self) -> None:
         self._reset_progress()
-        self._set_status("A operação foi cancelada com segurança.", False)
+        self._set_status("A operação foi cancelada com segurança.", False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         self._reset_progress()
@@ -420,8 +427,8 @@ class HTMLRestorationWidget(QWidget):
         if not opened:
             self._set_status("Não foi possível abrir a pasta do resultado.", True)
 
-    def _set_status(self, message: str, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, is_error: bool, *, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)

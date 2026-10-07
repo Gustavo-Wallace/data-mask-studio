@@ -44,7 +44,9 @@ from data_mask_studio.gui.batch_restoration_worker import (
     BatchRestorationProcessingWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
-from data_mask_studio.gui.components.presentation import TruncatedTextToolTipDelegate, set_button_role
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, TruncatedTextToolTipDelegate, set_button_role, set_feedback_state,
+)
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
@@ -240,6 +242,7 @@ class BatchRestorationWidget(QWidget):
         self.summary_output.setMaximumHeight(110)
         self.status_label = QLabel("Adicione arquivos CSV ou HTML para começar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
@@ -334,6 +337,7 @@ class BatchRestorationWidget(QWidget):
         self._refresh_column_table(None)
         self.summary_output.clear()
         self.open_output_button.setEnabled(False)
+        set_feedback_state(self.status_label, "neutral")
         self._update_actions()
 
     def invalidate_analysis(self) -> None:
@@ -362,7 +366,6 @@ class BatchRestorationWidget(QWidget):
         self._set_busy(True, "Analisando arquivos...")
         self.overall_progress.setRange(0, len(self.files))
         self.overall_progress.setValue(0)
-        self.current_progress.setRange(0, 0)
         worker.start()
 
     def _analysis_progress(self, completed: int, total: int) -> None:
@@ -370,9 +373,11 @@ class BatchRestorationWidget(QWidget):
         self.overall_progress.setValue(completed)
 
     def _analysis_cancelled(self) -> None:
-        self._set_status("Análise cancelada com segurança.", False)
+        self._reset_current_progress()
+        self._set_status("Análise cancelada com segurança.", False, state="warning")
 
     def _analysis_completed(self) -> None:
+        self._reset_current_progress()
         compatible = sum(
             item.status is BatchRestorationStatus.COMPATIBLE for item in self.files
         )
@@ -382,6 +387,7 @@ class BatchRestorationWidget(QWidget):
         self._set_status(
             f"Análise concluída: {compatible} compatível(is), {review} para revisão.",
             compatible + review == 0,
+            state="warning" if review or compatible < len(self.files) else "success",
         )
 
     def _analysis_finished(self) -> None:
@@ -498,12 +504,16 @@ class BatchRestorationWidget(QWidget):
         self.overall_progress.setValue(
             summary.completed_files + summary.error_files + summary.skipped_files
         )
-        self.current_progress.setRange(0, 1)
-        self.current_progress.setValue(1)
+        self._reset_current_progress()
         self.summary_output.setPlainText(_render_summary(summary))
         self.open_output_button.setEnabled(summary.completed_files > 0)
         message = "Lote cancelado com segurança." if summary.cancelled else "Lote concluído."
-        self._set_status(message, False)
+        self._set_status(
+            message, False,
+            state="error" if summary.error_files else "warning"
+            if summary.cancelled or summary.cancelled_files or summary.skipped_files
+            or summary.missing_occurrences else "success",
+        )
 
     def _processing_finished(self) -> None:
         worker = self._processing_worker
@@ -513,6 +523,7 @@ class BatchRestorationWidget(QWidget):
         self._set_busy(False)
 
     def _worker_failed(self, error: Exception) -> None:
+        self._reset_current_progress()
         message = (
             str(error)
             if isinstance(error, BatchRestorationError)
@@ -583,7 +594,17 @@ class BatchRestorationWidget(QWidget):
         self.select_candidates_button.setEnabled(enabled)
         self.unselect_columns_button.setEnabled(enabled)
 
+    def _reset_current_progress(self) -> None:
+        """Sem arquivo ativo: encerra a animação sem representar sucesso."""
+        self.current_progress.setRange(0, 1)
+        self.current_progress.setValue(0)
+        self.current_progress_label.setText("Nenhum processamento em andamento.")
+
     def _set_busy(self, busy: bool, message: str = "") -> None:
+        self._reset_current_progress()
+        if busy:
+            self.current_progress.setRange(0, 0)
+            self.current_progress_label.clear()
         for control in (
             self.add_files_button,
             self.add_folder_button,
@@ -655,11 +676,11 @@ class BatchRestorationWidget(QWidget):
                 worker.request_cancel()
         return all(worker is None or worker.wait(5000) for worker in workers)
 
-    def _set_status(self, message: str, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, is_error: bool, *, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)
 
 
 def _render_summary(summary: BatchRestorationSummary) -> str:

@@ -1,7 +1,10 @@
+from typing import Literal
+
 from PySide6.QtCore import QEvent, QModelIndex, Qt
 from PySide6.QtGui import QHelpEvent, Qt as GuiQt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
@@ -12,6 +15,19 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QToolTip,
 )
+
+
+FeedbackState = Literal["neutral", "success", "warning", "error"]
+
+
+def set_feedback_state(label: QLabel, state: FeedbackState) -> None:
+    """Estiliza somente feedback explícito, sem mudar texto, layout ou foco."""
+    if label.property("feedbackState") == state:
+        return
+    label.setProperty("feedbackState", state)
+    label.style().unpolish(label)
+    label.style().polish(label)
+    label.update()
 
 
 class TruncatedTextToolTipDelegate(QStyledItemDelegate):
