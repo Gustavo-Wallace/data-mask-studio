@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
-from data_mask_studio.gui.components.presentation import set_button_role
+from data_mask_studio.gui.components.presentation import TruncatedTextToolTipDelegate, set_button_role
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 
 from data_mask_studio.csv_tools import (
@@ -109,6 +109,7 @@ class RestorationWidget(QWidget):
         )
         self.table.setHorizontalHeaderLabels(["Restaurar", "Cabeçalho"])
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.table.setItemDelegateForColumn(1, TruncatedTextToolTipDelegate(self.table))
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents

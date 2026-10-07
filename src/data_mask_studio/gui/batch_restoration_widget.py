@@ -44,7 +44,7 @@ from data_mask_studio.gui.batch_restoration_worker import (
     BatchRestorationProcessingWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
-from data_mask_studio.gui.components.presentation import set_button_role
+from data_mask_studio.gui.components.presentation import TruncatedTextToolTipDelegate, set_button_role
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
@@ -103,6 +103,7 @@ class BatchRestorationWidget(QWidget):
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         self.file_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.file_table.setWordWrap(False)
         self.file_table.setMinimumHeight(145)
         self.file_table.setMaximumHeight(270)
         self.file_table.verticalHeader().setVisible(False)
@@ -121,6 +122,7 @@ class BatchRestorationWidget(QWidget):
         )
         self.column_table.verticalHeader().setVisible(False)
         self.column_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.column_table.setItemDelegateForColumn(1, TruncatedTextToolTipDelegate(self.column_table))
         self.column_table.setMinimumHeight(115)
         self.column_table.setMaximumHeight(210)
         column_header = self.column_table.horizontalHeader()
