@@ -204,8 +204,8 @@ def test_result_sizing_of_other_pages_is_unchanged(page):
     _, window = page
     for output, empty_height in (
         (window.batch_widget.summary_output, 80),
-        (window.restoration_widget.summary, 125),
-        (window.html_restoration_widget.summary, 220),
+        (window.restoration_widget.summary, window.restoration_widget.summary.minimumHeight()),
+        (window.html_restoration_widget.summary, window.html_restoration_widget.summary.minimumHeight()),
         (window.batch_restoration_widget.summary_output,
          window.batch_restoration_widget.summary_output.minimumHeight()),
         (window.backup_widget.restore_summary, 80),

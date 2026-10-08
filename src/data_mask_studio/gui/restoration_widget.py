@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -24,7 +25,7 @@ from PySide6.QtWidgets import (
 from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.gui.components.presentation import (
-    FeedbackState, TruncatedTextToolTipDelegate, confirm_destructive_action,
+    FeedbackState, TruncatedTextToolTipDelegate, configure_result_area, confirm_destructive_action,
     set_button_role, set_feedback_state,
 )
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
@@ -189,6 +190,7 @@ class RestorationWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_label = QLabel()
+        self.progress_label.setWordWrap(True)
         self.progress_label.setVisible(False)
         progress = QHBoxLayout()
         progress.addWidget(self.progress_bar, stretch=1)
@@ -198,7 +200,8 @@ class RestorationWidget(QWidget):
             "O resumo da análise ou restauração aparecerá aqui."
         )
         self.summary.setReadOnly(True)
-        self.summary.setMaximumHeight(125)
+        self.summary.setMinimumHeight(self.summary.minimumSizeHint().height())
+        configure_result_area(self.summary, self.summary.minimumHeight())
         self.open_folder_button = QPushButton("Abrir pasta do arquivo")
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.open_folder_button.setVisible(False)
@@ -224,6 +227,10 @@ class RestorationWidget(QWidget):
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
         layout.addStretch()
+        self.table.model().rowsInserted.connect(self._update_information_layout)
+        self.table.model().rowsRemoved.connect(self._update_information_layout)
+        self.summary.textChanged.connect(self._update_information_layout)
+        self._update_information_layout()
         option_tab_order = (
             self.table, self.options_toggle, self.missing_policy_combo,
             self.representation_combo, self.analyze_button, self.generate_button,
@@ -234,6 +241,29 @@ class RestorationWidget(QWidget):
         self._update_options_disclosure()
         self._update_enabled_state(False)
         self.source_combo.currentIndexChanged.connect(self._source_changed)
+
+    def _update_information_layout(self) -> None:
+        has_columns = self.table.rowCount() > 0
+        has_summary = bool(self.summary.toPlainText().strip())
+        minimum = (
+            self.table.horizontalHeader().sizeHint().height()
+            + 2 * self.table.verticalHeader().defaultSectionSize()
+            + 2 * self.table.frameWidth()
+        )
+        self.table.setMinimumHeight(minimum)
+        self.table.setMaximumHeight(16_777_215 if has_columns else minimum)
+        # Explicit minima keep each view readable without imposing its preferred
+        # height on the enclosing scroll area. Populated views share spare space.
+        for view, populated in ((self.table, has_columns), (self.summary, has_summary)):
+            policy = view.sizePolicy()
+            policy.setVerticalPolicy(
+                QSizePolicy.Policy.Ignored if populated else QSizePolicy.Policy.Preferred
+            )
+            view.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(self.table), int(has_columns))
+        layout.setStretch(layout.indexOf(self.summary), int(has_summary))
+        layout.setStretch(layout.count() - 1, int(not (has_columns or has_summary)))
 
     def _update_options_disclosure(self, *_args: object) -> None:
         focused = QApplication.focusWidget()

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +27,7 @@ from data_mask_studio.gui.html_restoration_worker import (
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
 from data_mask_studio.gui.components.presentation import (
-    FeedbackState, confirm_destructive_action, set_button_role, set_feedback_state,
+    FeedbackState, configure_result_area, confirm_destructive_action, set_button_role, set_feedback_state,
 )
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.html_restoration import (
@@ -128,6 +129,7 @@ class HTMLRestorationWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_label = QLabel()
+        self.progress_label.setWordWrap(True)
         self.progress_label.setVisible(False)
         progress = QHBoxLayout()
         progress.addWidget(self.progress_bar, stretch=1)
@@ -137,6 +139,8 @@ class HTMLRestorationWidget(QWidget):
             "O resumo da análise aparecerá aqui."
         )
         self.summary.setReadOnly(True)
+        self.summary.setMinimumHeight(self.summary.minimumSizeHint().height())
+        configure_result_area(self.summary, self.summary.minimumHeight())
         self.open_folder_button = QPushButton("Abrir pasta do resultado")
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.open_folder_button.setVisible(False)
@@ -146,7 +150,7 @@ class HTMLRestorationWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 24, 36, 24)
-        layout.setSpacing(10)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(select_layout)
         layout.addLayout(details)
         layout.addWidget(self.options_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -158,6 +162,8 @@ class HTMLRestorationWidget(QWidget):
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
         layout.addStretch()
+        self.summary.textChanged.connect(self._update_information_layout)
+        self._update_information_layout()
         option_tab_order = (
             self.path_field, self.options_toggle, self.missing_policy_combo,
             self.representation_combo, self.analyze_button, self.generate_button,
@@ -167,6 +173,17 @@ class HTMLRestorationWidget(QWidget):
         self._update_options_summary()
         self._update_options_disclosure()
         self._set_file_controls_enabled(False)
+
+    def _update_information_layout(self) -> None:
+        has_summary = bool(self.summary.toPlainText().strip())
+        policy = self.summary.sizePolicy()
+        policy.setVerticalPolicy(
+            QSizePolicy.Policy.Ignored if has_summary else QSizePolicy.Policy.Preferred
+        )
+        self.summary.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(self.summary), int(has_summary))
+        layout.setStretch(layout.count() - 1, int(not has_summary))
 
     def _update_options_disclosure(self, *_args: object) -> None:
         focused = QApplication.focusWidget()
