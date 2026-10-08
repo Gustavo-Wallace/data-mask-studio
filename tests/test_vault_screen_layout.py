@@ -203,7 +203,7 @@ def test_real_audit_and_diagnostic_preserve_safe_reports_and_copy_contract(page)
 def test_result_sizing_of_other_pages_is_unchanged(page):
     _, window = page
     for output, empty_height in (
-        (window.batch_widget.summary_output, 125),
+        (window.batch_widget.summary_output, 80),
         (window.restoration_widget.summary, 125),
         (window.html_restoration_widget.summary, 220),
         (window.batch_restoration_widget.summary_output, 110),

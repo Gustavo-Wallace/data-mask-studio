@@ -8,6 +8,7 @@ from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComb
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -37,7 +39,10 @@ from data_mask_studio.gui.batch_worker import (
     BatchValidationWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
-from data_mask_studio.gui.components.presentation import FeedbackState, set_feedback_state
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, configure_result_area, set_button_role, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.profiles import (
     ConfigurationProfile,
     ProfileError,
@@ -68,8 +73,10 @@ class BatchWidget(QWidget):
         self._output_directory: Path | None = None
 
         self.add_files_button = QPushButton("Adicionar arquivos")
+        set_button_role(self.add_files_button, "primary")
         self.add_files_button.clicked.connect(self._choose_files)
         self.add_folder_button = QPushButton("Adicionar pasta")
+        set_button_role(self.add_folder_button, "primary")
         self.add_folder_button.clicked.connect(self._choose_folder)
         self.remove_button = QPushButton("Remover selecionados")
         self.remove_button.clicked.connect(self.remove_selected)
@@ -103,12 +110,14 @@ class BatchWidget(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.file_table.setWordWrap(False)
+        self.file_table.setMinimumHeight(
+            header.sizeHint().height()
+            + 2 * self.file_table.verticalHeader().defaultSectionSize()
+            + 2 * self.file_table.frameWidth()
+        )
 
         self.profile_combo = ScrollSafeComboBox()
         self.profile_combo.currentIndexChanged.connect(self._profile_changed)
-        profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel("Perfil:"))
-        profile_row.addWidget(self.profile_combo, stretch=1)
 
         self.output_field = QLineEdit()
         self.output_field.setPlaceholderText("Escolha ou informe a pasta de saída")
@@ -116,13 +125,17 @@ class BatchWidget(QWidget):
         self.choose_output_button = QPushButton("Escolher pasta")
         self.choose_output_button.clicked.connect(self._choose_output_directory)
         output_row = QHBoxLayout()
-        output_row.addWidget(QLabel("Pasta de saída:"))
         output_row.addWidget(self.output_field, stretch=1)
         output_row.addWidget(self.choose_output_button)
+        configuration = QFormLayout()
+        configuration.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        configuration.addRow("Perfil:", self.profile_combo)
+        configuration.addRow("Pasta de saída:", output_row)
 
         self.validate_button = QPushButton("Validar arquivos")
         self.validate_button.clicked.connect(self.validate_files)
         self.start_button = QPushButton("Iniciar anonimização")
+        set_button_role(self.start_button, "primary")
         self.start_button.clicked.connect(self.start_processing)
         self.cancel_button = QPushButton("Cancelar")
         self.cancel_button.clicked.connect(self.cancel)
@@ -146,25 +159,48 @@ class BatchWidget(QWidget):
             "O resumo do lote aparecerá aqui."
         )
         self.summary_output.setReadOnly(True)
-        self.summary_output.setMaximumHeight(125)
+        self.summary_output.setMinimumHeight(self.summary_output.minimumSizeHint().height())
+        configure_result_area(self.summary_output, 80)
         self.status_label = QLabel("Adicione arquivos CSV para começar.")
         self.status_label.setWordWrap(True)
         set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(file_actions)
         layout.addWidget(self.file_table, stretch=1)
-        layout.addLayout(profile_row)
-        layout.addLayout(output_row)
+        layout.addLayout(configuration)
         layout.addLayout(processing_actions)
         layout.addWidget(self.overall_progress)
         layout.addWidget(self.current_progress_label)
         layout.addWidget(self.summary_output)
         layout.addWidget(self.status_label)
+        layout.addStretch()
+        self.file_table.model().rowsInserted.connect(self._update_information_layout)
+        self.file_table.model().rowsRemoved.connect(self._update_information_layout)
+        self.summary_output.textChanged.connect(self._update_information_layout)
+        self._update_information_layout()
 
         self.refresh_profiles()
         self._update_actions()
+
+    def _update_information_layout(self) -> None:
+        has_files = self.file_table.rowCount() > 0
+        has_summary = bool(self.summary_output.toPlainText().strip())
+        self.file_table.setMaximumHeight(16_777_215 if has_files else 160)
+        # Populated views share spare space without forcing their preferred
+        # heights on the outer page. Empty views remain compact and visible.
+        for view, populated in ((self.file_table, has_files), (self.summary_output, has_summary)):
+            policy = view.sizePolicy()
+            policy.setVerticalPolicy(
+                QSizePolicy.Policy.Ignored if populated else QSizePolicy.Policy.Preferred
+            )
+            view.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(self.file_table), int(has_files))
+        layout.setStretch(layout.indexOf(self.summary_output), int(has_summary))
+        layout.setStretch(layout.count() - 1, int(not has_files and not has_summary))
 
     def refresh_profiles(self) -> None:
         selected = self.profile_combo.currentData()
@@ -240,7 +276,10 @@ class BatchWidget(QWidget):
         self._refresh_table()
         self.summary_output.clear()
         self.open_output_button.setEnabled(False)
-        set_feedback_state(self.status_label, "neutral")
+        self.overall_progress.setRange(0, 1)
+        self.overall_progress.setValue(0)
+        self.current_progress_label.setText("Nenhum processamento em andamento.")
+        self._set_status("Adicione arquivos CSV para começar.", is_error=False)
         self._update_actions()
 
     def _profile_changed(self) -> None:
@@ -400,6 +439,7 @@ class BatchWidget(QWidget):
         self._processing_worker = None
         if worker is not None:
             worker.deleteLater()
+        self.current_progress_label.clear()
         self._set_busy(False)
 
     def _worker_failed(self, error: Exception) -> None:
@@ -423,6 +463,10 @@ class BatchWidget(QWidget):
         self.cancel_button.setVisible(busy)
         self.cancel_button.setEnabled(busy)
         if busy:
+            self.current_progress_label.clear()
+            if validating:
+                self.overall_progress.setRange(0, 1)
+                self.overall_progress.setValue(0)
             self._set_status(
                 "Validando arquivos..." if validating else "Processando lote...",
                 is_error=False,

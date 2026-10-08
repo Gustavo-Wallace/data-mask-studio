@@ -331,7 +331,6 @@ class MainWindow(QMainWindow):
         for table in self.findChildren(QTableWidget):
             configure_table(table)
         for result_area, empty_height in (
-            (self.batch_widget.summary_output, 125),
             (self.restoration_widget.summary, 125),
             (self.html_restoration_widget.summary, 220),
             (self.batch_restoration_widget.summary_output, 110),
