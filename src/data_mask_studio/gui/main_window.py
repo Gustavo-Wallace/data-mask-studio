@@ -335,7 +335,6 @@ class MainWindow(QMainWindow):
             (self.restoration_widget.summary, 125),
             (self.html_restoration_widget.summary, 220),
             (self.batch_restoration_widget.summary_output, 110),
-            (self.backup_widget.restore_summary, 115),
         ):
             configure_result_area(result_area, empty_height)
 
