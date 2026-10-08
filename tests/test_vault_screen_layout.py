@@ -206,7 +206,8 @@ def test_result_sizing_of_other_pages_is_unchanged(page):
         (window.batch_widget.summary_output, 80),
         (window.restoration_widget.summary, 125),
         (window.html_restoration_widget.summary, 220),
-        (window.batch_restoration_widget.summary_output, 110),
+        (window.batch_restoration_widget.summary_output,
+         window.batch_restoration_widget.summary_output.minimumHeight()),
         (window.backup_widget.restore_summary, 80),
     ):
         assert output.maximumHeight() == empty_height

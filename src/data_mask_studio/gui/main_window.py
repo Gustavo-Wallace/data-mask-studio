@@ -333,7 +333,6 @@ class MainWindow(QMainWindow):
         for result_area, empty_height in (
             (self.restoration_widget.summary, 125),
             (self.html_restoration_widget.summary, 220),
-            (self.batch_restoration_widget.summary_output, 110),
         ):
             configure_result_area(result_area, empty_height)
 

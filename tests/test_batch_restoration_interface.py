@@ -105,6 +105,50 @@ def test_batch_restoration_worker_signals_are_available() -> None:
     assert BatchRestorationProcessingWorker.failed is not None
 
 
+def test_real_batch_completion_counts_six_restored_and_one_incompatible_file(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated"))
+    application = create_application([])
+    vault = repository(tmp_path)
+    sources = [tmp_path / f"synthetic-{index}.csv" for index in range(6)]
+    for source in sources:
+        source.write_text(f"CPF,Nome\n{CODE},Synthetic\n", encoding="utf-8")
+    incompatible = tmp_path / "synthetic-no-codes.html"
+    incompatible.write_text("<p>Synthetic text only</p>", encoding="utf-8")
+    sources.append(incompatible)
+    original_bytes = {source: source.read_bytes() for source in sources}
+    output = tmp_path / "output"
+    output.mkdir()
+    widget = BatchRestorationWidget(lambda: vault.as_read_only())
+    widget.add_paths(sources)
+    widget.analyze_files()
+    worker = widget._analysis_worker
+    assert worker is not None and worker.wait(5000)
+    application.processEvents()
+    assert widget.files[-1].status is BatchRestorationStatus.INCOMPATIBLE
+    for index in range(6):
+        widget.file_table.selectRow(index)
+        widget.select_candidate_columns()
+    widget.output_field.setText(str(output))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    widget.start_restoration()
+    worker = widget._processing_worker
+    assert worker is not None and worker.wait(5000)
+    application.processEvents()
+    assert widget._processing_worker is None and not widget.has_running_workers()
+    assert all(item.status is BatchRestorationStatus.COMPLETED for item in widget.files[:6])
+    assert widget.files[-1].status is BatchRestorationStatus.INCOMPATIBLE
+    assert widget.overall_progress.value() == widget.overall_progress.maximum() == 7
+    assert widget.current_progress.maximum() == 1 and widget.current_progress.value() == 0
+    assert widget.current_progress_label.text() == "Nenhum processamento em andamento."
+    assert widget.status_label.text() == "Lote concluído."
+    assert "Concluídos: 6" in widget.summary_output.toPlainText()
+    assert "Ignorados: 1" in widget.summary_output.toPlainText()
+    assert len(list(output.iterdir())) == 6
+    assert all(source.read_bytes() == content for source, content in original_bytes.items())
+
+
 def test_main_window_contains_batch_restoration_tab_and_global_block(
     tmp_path: Path,
 ) -> None:

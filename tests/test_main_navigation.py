@@ -327,10 +327,12 @@ def test_batch_restoration_footer_is_reachable_at_compact_sizes(
         application.processEvents()
         shell = window.page_shells[4]
         scrollbar = shell.scroll_area.verticalScrollBar()
-        assert window.batch_restoration_widget.splitter_panel.maximumHeight() == 455
-        assert window.batch_restoration_widget.splitter_panel.height() <= 455
-        assert window.batch_restoration_widget.file_table.height() <= 270
-        assert window.batch_restoration_widget.column_table.height() <= 210
+        widget = window.batch_restoration_widget
+        for table in (widget.file_table, widget.column_table):
+            assert table.rowCount() == 0
+            assert table.height() == table.minimumHeight() == table.maximumHeight()
+            assert table.viewport().height() >= 2 * table.verticalHeader().defaultSectionSize()
+        assert widget.splitter_panel.maximumHeight() == widget.splitter.minimumSizeHint().height()
         assert window.batch_restoration_widget.current_progress.height() >= 16
         assert window.batch_restoration_widget.overall_progress.height() >= 16
 

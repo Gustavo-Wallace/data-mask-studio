@@ -11,7 +11,7 @@ from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio.app import create_application
 from data_mask_studio.batch_restoration import (
     BatchCSVColumn, BatchRestorationError, BatchRestorationProgress,
-    BatchRestorationStatus, BatchRestorationSummary,
+    BatchRestorationStatus, BatchRestorationStructuralError, BatchRestorationSummary,
 )
 from data_mask_studio.gui.batch_restoration_widget import BatchRestorationWidget
 from data_mask_studio.gui.batch_restoration_worker import (
@@ -192,3 +192,103 @@ def test_finished_signal_alone_also_restores_idle_without_faking_completion(page
     app.processEvents()
     assert_idle(widget)
     assert overall_state(widget) == (0, 2, 0)
+
+
+def seven_file_batch(widget, tmp_path, *, incompatible=1):
+    sources = [tmp_path / f"synthetic-{index}.csv" for index in range(5)]
+    for source in sources:
+        source.write_text("CPF\nSYNTHETIC\n", encoding="utf-8")
+    widget.add_paths(sources)
+    mark_compatible(widget)
+    for item in widget.files[len(widget.files) - incompatible:]:
+        item.status = BatchRestorationStatus.INCOMPATIBLE
+
+
+def test_completed_batch_with_incompatible_file_does_not_retain_66_percent(page, tmp_path):
+    app, widget, output = page
+    seven_file_batch(widget, tmp_path)
+    widget.start_restoration()
+    worker = widget._processing_worker
+    assert worker is not None
+    # The throttled worker's last intermediate update need not be the last file.
+    worker.progress.emit(BatchRestorationProgress(5, 6, 4, 0, "synthetic.csv", 10, 0))
+    worker.completed.emit(BatchRestorationSummary(7, 6, 0, 1, 0, 6, 0, output, 0.1))
+    assert widget.status_label.text() == "Lote concluído."
+    assert overall_state(widget) == (0, 7, 7)
+    assert_idle(widget)
+    worker.finished.emit()
+    app.processEvents()
+    assert overall_state(widget) == (0, 7, 7)
+    assert_idle(widget)
+
+
+@pytest.mark.parametrize("outcome", ["completed", "incompatible", "errors", "cancelled", "structural_failure"])
+def test_restoration_overall_accounting_keeps_terminal_outcomes_distinct(page, tmp_path, outcome):
+    app, widget, output = page
+    ignored = 0 if outcome == "completed" else 1
+    seven_file_batch(widget, tmp_path, incompatible=ignored)
+    changes = []
+    widget.overall_progress.valueChanged.connect(
+        lambda _value: changes.append(overall_state(widget))
+    )
+    widget.start_restoration()
+    worker = widget._processing_worker
+    assert worker is not None
+    assert overall_state(widget) == (0, 7, ignored)
+    worker.progress.emit(BatchRestorationProgress(2, 7 - ignored, 1, 0, "synthetic.csv", 3, 0))
+    assert overall_state(widget) == (0, 7, ignored + 1)
+    if outcome == "structural_failure":
+        worker.failed.emit(BatchRestorationStructuralError("Falha estrutural ao acessar o cofre local."))
+        expected = (0, 7, 2)
+        state = "error"
+        assert widget.status_label.text() == "Falha estrutural ao acessar o cofre local."
+        assert not widget.summary_output.toPlainText()
+    else:
+        cancelled = outcome == "cancelled"
+        if cancelled:
+            widget.cancel()
+            assert worker._cancellation.is_set()
+        summary = BatchRestorationSummary(
+            7, 1 if cancelled else 5 if outcome == "errors" else 7 - ignored,
+            int(outcome == "errors"), 5 if cancelled else ignored,
+            int(cancelled), 3, 0, output, 0.1, cancelled=cancelled,
+        )
+        worker.completed.emit(summary)
+        expected = (0, 7, 2 if cancelled else 7)
+        state = "error" if outcome == "errors" else "warning" if ignored else "success"
+        assert f"Concluídos: {summary.completed_files}" in widget.summary_output.toPlainText()
+        assert f"Ignorados: {summary.skipped_files}" in widget.summary_output.toPlainText()
+        assert f"Cancelados: {summary.cancelled_files}" in widget.summary_output.toPlainText()
+        assert widget.status_label.text() == (
+            "Lote cancelado com segurança." if cancelled else "Lote concluído."
+        )
+    assert overall_state(widget) == expected
+    assert widget.status_label.property("feedbackState") == state
+    assert_idle(widget)
+    worker.finished.emit()
+    app.processEvents()
+    assert widget._processing_worker is None and not widget.has_running_workers()
+    assert overall_state(widget) == expected
+    assert all(minimum <= value <= maximum for minimum, maximum, value in changes)
+    assert_idle(widget)
+
+
+def test_new_restoration_does_not_reuse_previous_incompatible_file_offset(page, tmp_path):
+    app, widget, output = page
+    seven_file_batch(widget, tmp_path)
+    widget.start_restoration()
+    worker = widget._processing_worker
+    assert worker is not None
+    worker.completed.emit(BatchRestorationSummary(7, 6, 0, 1, 0, 6, 0, output, 0.1))
+    worker.finished.emit()
+    app.processEvents()
+    mark_compatible(widget)
+    widget.start_restoration()
+    worker = widget._processing_worker
+    assert worker is not None
+    assert overall_state(widget) == (0, 7, 0)
+    worker.progress.emit(BatchRestorationProgress(1, 7, 0, 0, "synthetic.csv", 0, 0))
+    assert overall_state(widget) == (0, 7, 0)
+    worker.finished.emit()
+    app.processEvents()
+    assert_idle(widget)
