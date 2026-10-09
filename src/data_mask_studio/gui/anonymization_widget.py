@@ -3,9 +3,10 @@ from pathlib import Path
 import time
 
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -64,6 +66,7 @@ from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComb
 from data_mask_studio.gui.components.presentation import (
     FeedbackState, confirm_destructive_action, set_feedback_state,
 )
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -139,6 +142,10 @@ class AnonymizationWidget(QWidget):
         self.path_field.setPlaceholderText("Nenhum arquivo selecionado")
 
         self.file_name_label = QLabel("—")
+        self.file_name_label.setWordWrap(True)
+        self.file_name_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
+        )
         self.encoding_label = QLabel("—")
         self.delimiter_label = QLabel("—")
         self.column_count_label = QLabel("—")
@@ -146,9 +153,21 @@ class AnonymizationWidget(QWidget):
         details_layout = QFormLayout()
         details_layout.addRow("Arquivo:", self.file_name_label)
         details_layout.addRow("Caminho completo:", self.path_field)
-        details_layout.addRow("Codificação:", self.encoding_label)
-        details_layout.addRow("Separador:", self.delimiter_label)
-        details_layout.addRow("Quantidade de colunas:", self.column_count_label)
+        metadata_layout = QHBoxLayout()
+        self._metadata_layout = metadata_layout
+        metadata_layout.setSpacing(METRICS["panel_spacing"])
+        for text, value in (
+            ("Codificação:", self.encoding_label),
+            ("Separador:", self.delimiter_label),
+            ("Quantidade de colunas:", self.column_count_label),
+        ):
+            detail = QHBoxLayout()
+            detail.setSpacing(METRICS["panel_spacing"])
+            detail.addWidget(QLabel(text))
+            detail.addWidget(value)
+            metadata_layout.addLayout(detail)
+        metadata_layout.addStretch()
+        details_layout.addRow(metadata_layout)
 
         configuration_label = QLabel("Configuração das colunas")
         configuration_label.setStyleSheet(section_title_stylesheet())
@@ -181,12 +200,15 @@ class AnonymizationWidget(QWidget):
         self.unselect_all_button.setEnabled(False)
 
         self.selected_count_label = QLabel("0 colunas para mascarar")
+        self.selected_count_label.setWordWrap(True)
+        self.selected_count_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
 
         selection_layout = QHBoxLayout()
         selection_layout.addWidget(self.select_all_button)
         selection_layout.addWidget(self.unselect_all_button)
-        selection_layout.addStretch()
-        selection_layout.addWidget(self.selected_count_label)
+        selection_layout.addWidget(self.selected_count_label, stretch=1)
 
         self.config_table = ColumnConfigurationTable()
 
@@ -248,11 +270,12 @@ class AnonymizationWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.processed_count_label = QLabel("0 registros processados")
+        self.processed_count_label.setWordWrap(True)
         self.processed_count_label.setVisible(False)
 
         progress_layout = QHBoxLayout()
-        progress_layout.addWidget(self.progress_bar, stretch=1)
-        progress_layout.addWidget(self.processed_count_label)
+        progress_layout.addWidget(self.progress_bar, stretch=2)
+        progress_layout.addWidget(self.processed_count_label, stretch=1)
 
         self.output_path_label = QLabel()
         self.output_path_label.setWordWrap(True)
@@ -271,7 +294,7 @@ class AnonymizationWidget(QWidget):
 
         layout = QVBoxLayout()
         layout.setContentsMargins(36, 24, 36, 24)
-        layout.setSpacing(10)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(button_layout)
         layout.addLayout(details_layout)
         layout.addWidget(self.profile_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -287,8 +310,12 @@ class AnonymizationWidget(QWidget):
         layout.addWidget(self.output_path_label)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
+        layout.addStretch()
 
         self.setLayout(layout)
+        self.config_table.model().rowsInserted.connect(self._update_configuration_layout)
+        self.config_table.model().rowsRemoved.connect(self._update_configuration_layout)
+        self._update_configuration_layout()
         profile_tab_order = (
             self.path_field, self.profile_toggle, self.profile_combo,
             self.apply_profile_button, self.save_profile_button, self.update_profile_button,
@@ -297,6 +324,45 @@ class AnonymizationWidget(QWidget):
         for previous, following in zip(profile_tab_order, profile_tab_order[1:]):
             QWidget.setTabOrder(previous, following)
         self._refresh_profiles()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        # Keep metadata together when it fits; narrow/DPI-scaled views can wrap
+        # the same three facts vertically instead of widening the whole page.
+        metadata = self._metadata_layout
+        groups = [metadata.itemAt(index) for index in range(metadata.count())
+                  if metadata.itemAt(index).layout() is not None]
+        natural_width = sum(group.minimumSize().width() for group in groups)
+        natural_width += (len(groups) - 1) * metadata.spacing()
+        margins = self.layout().contentsMargins()
+        available = self.width() - margins.left() - margins.right()
+        if self.parentWidget() is not None:
+            available = min(
+                available, self.parentWidget().width() - margins.left() - margins.right(),
+            )
+        metadata.setDirection(
+            QBoxLayout.Direction.LeftToRight if natural_width <= available
+            else QBoxLayout.Direction.TopToBottom
+        )
+
+    def _update_configuration_layout(self) -> None:
+        """Compact empty/small tables; let larger configurations use spare space."""
+        table = self.config_table
+        row_height = table.verticalHeader().defaultSectionSize()
+        frame = (
+            table.horizontalHeader().sizeHint().height()
+            + table.horizontalScrollBar().sizeHint().height()
+            + 2 * table.frameWidth()
+        )
+        table.setMinimumHeight(frame + 2 * row_height)
+        table.setMaximumHeight(frame + max(2, table.rowCount()) * row_height)
+        has_columns = table.rowCount() > 0
+        policy = table.sizePolicy()
+        policy.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        table.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(table), 4 if has_columns else 0)
+        layout.setStretch(layout.count() - 1, 1)
 
     def _update_profile_disclosure(self, *_args: object) -> None:
         """Recolhe apenas os controles de perfis, sem alterar o estado da página."""

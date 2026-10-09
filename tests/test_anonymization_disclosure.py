@@ -424,6 +424,8 @@ def test_expanded_optional_sections_keep_final_actions_and_status_reachable(page
     widget.transfer_controls.checkbox.setChecked(True)
     window.resize(*size)
     app.processEvents()
+    # Responsive metadata can post a second layout/scroll-range update.
+    app.processEvents()
     area = window.page_shells[0].scroll_area
     area.verticalScrollBar().setValue(area.verticalScrollBar().maximum())
     app.processEvents()
