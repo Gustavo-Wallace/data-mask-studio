@@ -275,6 +275,7 @@ class BatchWidget(QWidget):
         self.files.clear()
         self._refresh_table()
         self.summary_output.clear()
+        self._output_directory = None
         self.open_output_button.setEnabled(False)
         self.overall_progress.setRange(0, 1)
         self.overall_progress.setValue(0)
@@ -377,7 +378,9 @@ class BatchWidget(QWidget):
             self._set_status("A pasta de saída é inválida.", is_error=True)
             return
 
-        self._output_directory = output.absolute()
+        # A configured destination is not evidence that this run published files.
+        self._output_directory = None
+        self.open_output_button.setEnabled(False)
         self.summary_output.clear()
         compatible_count = sum(
             item.status is BatchFileStatus.COMPATIBLE for item in self.files
@@ -389,7 +392,7 @@ class BatchWidget(QWidget):
             self._service,
             self.files,
             profile,
-            str(self._output_directory),
+            str(output.absolute()),
             self._key_provider,
             self._vault_repository_factory,
         )
@@ -409,6 +412,11 @@ class BatchWidget(QWidget):
             self._set_status("Cancelamento solicitado...", is_error=False)
 
     def _file_changed(self, _item: BatchFile) -> None:
+        if (self._processing_worker is not None
+                and _item.status is BatchFileStatus.COMPLETED
+                and _item.output_path is not None):
+            self._output_directory = _item.output_path.parent
+            self.open_output_button.setEnabled(True)
         self._refresh_table()
 
     def _progress_changed(self, progress: BatchProgress) -> None:
@@ -426,7 +434,9 @@ class BatchWidget(QWidget):
             + summary.cancelled_or_skipped_files
         )
         self.summary_output.setPlainText(_render_summary(summary))
-        self.open_output_button.setEnabled(summary.completed_files > 0)
+        if summary.completed_files > 0:
+            self._output_directory = summary.output_directory
+        self.open_output_button.setEnabled(self._output_directory is not None)
         self._set_status(
             "Processamento em lote encerrado.", is_error=False,
             state="error" if summary.error_files else "warning"

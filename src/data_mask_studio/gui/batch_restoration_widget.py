@@ -387,12 +387,18 @@ class BatchRestorationWidget(QWidget):
         self._update_actions()
 
     def clear_files(self) -> None:
+        if self._analysis_worker is not None or self._processing_worker is not None:
+            return
         self.files.clear()
         self._refresh_file_table()
         self._refresh_column_table(None)
         self.summary_output.clear()
+        self._output_directory = None
         self.open_output_button.setEnabled(False)
-        set_feedback_state(self.status_label, "neutral")
+        self.overall_progress.setRange(0, 1)
+        self.overall_progress.setValue(0)
+        self._reset_current_progress()
+        self._set_status("Adicione arquivos CSV ou HTML para começar.", False)
         self._update_actions()
 
     def invalidate_analysis(self) -> None:
@@ -504,7 +510,9 @@ class BatchRestorationWidget(QWidget):
             QMessageBox.StandardButton.No,
         ) != QMessageBox.StandardButton.Yes:
             return
-        self._output_directory = output.absolute()
+        # A configured destination is not evidence that this run published files.
+        self._output_directory = None
+        self.open_output_button.setEnabled(False)
         options = BatchRestorationOptions(
             representation_policy=RepresentationPolicy(
                 self.representation_combo.currentData()
@@ -529,7 +537,7 @@ class BatchRestorationWidget(QWidget):
         self.overall_progress.setValue(self._restoration_ignored_files)
         self.summary_output.clear()
         worker = BatchRestorationProcessingWorker(
-            self._service, self.files, str(self._output_directory), options
+            self._service, self.files, str(output.absolute()), options
         )
         self._processing_worker = worker
         worker.file_changed.connect(self._file_changed)
@@ -572,7 +580,9 @@ class BatchRestorationWidget(QWidget):
         )
         self._reset_current_progress()
         self.summary_output.setPlainText(_render_summary(summary))
-        self.open_output_button.setEnabled(summary.completed_files > 0)
+        if summary.completed_files > 0:
+            self._output_directory = summary.output_directory
+        self.open_output_button.setEnabled(self._output_directory is not None)
         message = "Lote cancelado com segurança." if summary.cancelled else "Lote concluído."
         self._set_status(
             message, False,
@@ -599,6 +609,11 @@ class BatchRestorationWidget(QWidget):
         self._refresh_file_table()
 
     def _file_changed(self, _item: BatchRestorationFile) -> None:
+        if (self._processing_worker is not None
+                and _item.status is BatchRestorationStatus.COMPLETED
+                and _item.output_path is not None):
+            self._output_directory = _item.output_path.parent
+            self.open_output_button.setEnabled(True)
         selected_row = self.file_table.currentRow()
         self._refresh_file_table()
         if 0 <= selected_row < len(self.files):
