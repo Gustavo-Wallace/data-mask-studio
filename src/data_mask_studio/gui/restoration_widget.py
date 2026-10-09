@@ -1,8 +1,9 @@
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 import time
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -288,6 +289,10 @@ class RestorationWidget(QWidget):
         return self.source_combo.currentData() == "package"
 
     def _source_changed(self) -> None:
+        if self._worker is not None:
+            with QSignalBlocker(self.source_combo):
+                self.source_combo.setCurrentIndex(self._worker_source_index)
+            return
         self.package_controls.clear_password()
         if self._package_mode():
             self._local_missing_policy_index = self.missing_policy_combo.currentIndex()
@@ -298,9 +303,7 @@ class RestorationWidget(QWidget):
             self.missing_policy_combo.setCurrentIndex(getattr(self, "_local_missing_policy_index", 0))
         self.package_controls.setVisible(self._package_mode())
         self.package_controls.setEnabled(self._package_mode())
-        self.summary.clear()
-        self._last_output_path = None
-        self.open_folder_button.setVisible(False)
+        self._reset_operation_feedback()
         self._update_enabled_state(self._inspection is not None)
         self._update_options_summary()
         self._set_status(
@@ -326,7 +329,7 @@ class RestorationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._inspection = inspection
-        self._last_output_path = None
+        self._reset_operation_feedback()
         self.file_name_label.setText(inspection.path.name)
         self.path_field.setText(str(inspection.path))
         self.encoding_label.setText(inspection.encoding)
@@ -347,8 +350,6 @@ class RestorationWidget(QWidget):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 1, item)
             self._checkboxes.append(checkbox)
-        self.summary.clear()
-        self.open_folder_button.setVisible(False)
         self._update_selected_count()
         self._update_enabled_state(True)
         warning = format_header_replacement_warning(inspection.header_replacements)
@@ -362,17 +363,29 @@ class RestorationWidget(QWidget):
             return
         self.package_controls.clear_password()
         self._inspection = None
-        self._last_output_path = None
+        self._reset_operation_feedback()
         self.path_field.clear()
         for label in (self.file_name_label, self.encoding_label, self.delimiter_label):
             label.setText("—")
         self.table.setRowCount(0)
         self._checkboxes.clear()
-        self.summary.clear()
-        self.open_folder_button.setVisible(False)
         self._update_selected_count()
         self._update_enabled_state(False)
         self._set_status("Selecione um CSV anonimizado para começar.", is_error=False)
+
+    def _reset_operation_feedback(self) -> None:
+        """Invalidate feedback, not the selected file, columns or source inputs."""
+        self._operation_succeeded = False
+        self._last_output_path = None
+        self._last_error = None
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        self.progress_label.clear()
+        self.progress_label.setVisible(False)
+        self.summary.clear()
+        self.open_folder_button.setVisible(False)
+        self._set_status("", is_error=False)
 
     def select_all_columns(self) -> None:
         for checkbox in self._checkboxes:
@@ -424,8 +437,7 @@ class RestorationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         worker = RestorationAnalysisWorker(self._service, configuration)
-        worker.completed.connect(self._analysis_completed)
-        self._start_worker(worker, "Analisando códigos...")
+        self._start_worker(worker, "Analisando códigos...", self._analysis_completed)
 
     def _analysis_completed(self, result: AnalysisResult) -> None:
         self._operation_succeeded = True
@@ -519,20 +531,17 @@ class RestorationWidget(QWidget):
             **options,
         )
         self.package_controls.clear_password()
-        self._last_error = None
-        self._last_output_path = None
-        self.open_folder_button.setVisible(False)
-        self.summary.clear()
-        worker.completed.connect(self._restoration_completed)
-        self._start_worker(worker, "Gerando CSV restaurado...")
+        self._start_worker(worker, "Gerando CSV restaurado...", self._restoration_completed)
 
     def _start_worker(
         self,
         worker: RestorationAnalysisWorker | CSVRestorationWorker,
         status: str,
+        completed: Callable[..., None],
     ) -> None:
+        self._reset_operation_feedback()
         self._worker = worker
-        self._operation_succeeded = False
+        self._worker_source_index = self.source_combo.currentIndex()
         self._set_processing_state(True)
         self.progress_bar.reset()
         self.progress_bar.setRange(0, 0)
@@ -541,10 +550,21 @@ class RestorationWidget(QWidget):
         self.progress_label.setVisible(True)
         self._set_status(status, is_error=False)
         self._processing_started_at = time.perf_counter()
-        worker.progress.connect(self._progress_changed)
-        worker.cancelled.connect(self._cancelled)
-        worker.failed.connect(self._failed)
-        worker.finished.connect(self._worker_finished)
+
+        def deliver(callback: Callable[..., None], *args: object) -> None:
+            # A retired worker's queued callbacks must not affect a new context
+            # or finish a replacement worker. Keep normal Qt signal delivery.
+            if self._worker is worker:
+                callback(*args)
+
+        for signal, callback in (
+            (worker.progress, self._progress_changed),
+            (worker.completed, completed),
+            (worker.cancelled, self._cancelled),
+            (worker.failed, self._failed),
+            (worker.finished, self._worker_finished),
+        ):
+            signal.connect(partial(deliver, callback))
         worker.start()
 
     def _progress_changed(self, progress: RestorationProgress) -> None:
