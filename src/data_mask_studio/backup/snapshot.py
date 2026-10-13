@@ -21,12 +21,11 @@ def create_sqlite_snapshot(
         if not source.is_file():
             raise BackupError("O cofre local não foi encontrado.")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        has_wal_state = any(
-            Path(f"{source}{suffix}").exists() for suffix in ("-wal", "-shm")
-        )
-        immutable_option = "" if has_wal_state else "&immutable=1"
+        # A live writable vault can acquire WAL state after this connection opens.
+        # Keep SQLite locking/change detection so paged backup restarts safely
+        # when a concurrent commit or checkpoint changes the source.
         source_connection = sqlite3.connect(
-            f"{source.resolve().as_uri()}?mode=ro{immutable_option}",
+            f"{source.resolve().as_uri()}?mode=ro",
             uri=True,
         )
         source_connection.execute("PRAGMA busy_timeout = 30000")
@@ -59,6 +58,26 @@ def inspect_snapshot(path: str | Path) -> tuple[int, int]:
             mapping_count = int(
                 connection.execute("SELECT COUNT(*) FROM vault_mappings").fetchone()[0]
             )
+            # integrity_check validates SQLite structure, not this cross-table
+            # invariant enforced by vault decryption during staged restoration.
+            # Check counters only: no plaintext, per-record decryption or extra
+            # in-memory collection. Schema 1 has no separate variations table.
+            pairs = []
+            if schema_version in (2, 3, 4):
+                pairs.append(("vault_mappings", "vault_variations"))
+            if schema_version == 4:
+                pairs.append(("composite_mappings", "composite_variations"))
+            for mappings, variations in pairs:
+                inconsistent = connection.execute(f"""
+                    SELECT 1 FROM {mappings} AS m
+                    WHERE m.total_occurrences != COALESCE((
+                        SELECT SUM(v.occurrence_count) FROM {variations} AS v
+                        WHERE v.code = m.code
+                    ), 0)
+                    LIMIT 1
+                """).fetchone()
+                if inconsistent is not None:
+                    raise BackupError("O snapshot do cofre contém contagens inconsistentes.")
             return schema_version, mapping_count
         finally:
             connection.close()

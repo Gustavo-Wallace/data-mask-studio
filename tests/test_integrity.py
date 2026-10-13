@@ -94,7 +94,13 @@ def test_valid_environment_is_intact_and_audit_is_read_only(tmp_path: Path) -> N
     assert report.schema_version == 4
     assert check(report, "Integridade do SQLite").status is IntegrityStatus.INTACT
     assert check(report, "Recomputação dos tokens").failures == 0
-    assert database_hashes(paths) == before
+    after = database_hashes(paths)
+    assert {name: after[name] for name in before} == before
+    # A safe SQLite WAL reader may create coordination files. This fixture
+    # has no concurrent writer: no committed data may appear in that WAL.
+    assert after.keys() - before.keys() <= {"vault.db-wal", "vault.db-shm"}
+    wal = paths.vault_database_path.with_name("vault.db-wal")
+    assert not wal.exists() or wal.stat().st_size == 0
     assert progress[-1] == (12, 12)
 
 
