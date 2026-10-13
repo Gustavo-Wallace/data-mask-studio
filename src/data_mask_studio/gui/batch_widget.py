@@ -70,6 +70,8 @@ class BatchWidget(QWidget):
         self.files: list[BatchFile] = []
         self._validation_worker: BatchValidationWorker | None = None
         self._processing_worker: BatchProcessingWorker | None = None
+        self._profiles_refresh_pending = False
+        self._requires_revalidation = False
         self._output_directory: Path | None = None
 
         self.add_files_button = QPushButton("Adicionar arquivos")
@@ -203,6 +205,14 @@ class BatchWidget(QWidget):
         layout.setStretch(layout.count() - 1, int(not has_files and not has_summary))
 
     def refresh_profiles(self) -> None:
+        # Keep worker-owned files and the selected profile untouched until all
+        # queued result signals have been handled, including after run() returns.
+        if self._validation_worker is not None or self._processing_worker is not None:
+            self._profiles_refresh_pending = True
+            return
+        self._reload_profiles(preserve_results=False)
+
+    def _reload_profiles(self, *, preserve_results: bool) -> None:
         selected = self.profile_combo.currentData()
         previous_profile = self._selected_profile()
         try:
@@ -227,10 +237,20 @@ class BatchWidget(QWidget):
             current_profile is None
             or current_profile.identifier != previous_profile.identifier
             or current_profile.columns != previous_profile.columns
+            or current_profile.composites != previous_profile.composites
+            or current_profile.unknown_column_policy != previous_profile.unknown_column_policy
         ):
-            invalidate_files(self.files)
-            self._refresh_table()
+            self._requires_revalidation = True
+            if not preserve_results:
+                invalidate_files(self.files)
+                self._refresh_table()
         self._update_actions()
+
+    def _refresh_pending_profiles(self) -> None:
+        if self._profiles_refresh_pending:
+            self._profiles_refresh_pending = False
+            # Reload the selector, not the just-completed operation's results.
+            self._reload_profiles(preserve_results=True)
 
     def add_paths(self, paths: Iterable[str | Path]) -> int:
         added = add_files(self.files, paths)
@@ -284,6 +304,10 @@ class BatchWidget(QWidget):
         self._update_actions()
 
     def _profile_changed(self) -> None:
+        self._requires_revalidation = True
+        if self._validation_worker is not None or self._processing_worker is not None:
+            self._profiles_refresh_pending = True
+            return
         invalidate_files(self.files)
         self._refresh_table()
         self._set_status(
@@ -299,6 +323,8 @@ class BatchWidget(QWidget):
         )
 
     def validate_files(self) -> None:
+        if self._validation_worker is not None or self._processing_worker is not None:
+            return
         profile = self._selected_profile()
         if not self.files:
             self._set_status("Adicione ao menos um arquivo ao lote.", is_error=True)
@@ -306,6 +332,7 @@ class BatchWidget(QWidget):
         if profile is None or self._service is None:
             self._set_status("Selecione um perfil de configuração.", is_error=True)
             return
+        self._requires_revalidation = False
         self._set_busy(True, validating=True)
         worker = BatchValidationWorker(self._service, self.files, profile)
         self._validation_worker = worker
@@ -334,6 +361,7 @@ class BatchWidget(QWidget):
         self._validation_worker = None
         if worker is not None:
             worker.deleteLater()
+        self._refresh_pending_profiles()
         self._set_busy(False)
 
     def _choose_output_directory(self) -> None:
@@ -342,11 +370,13 @@ class BatchWidget(QWidget):
             self.output_field.setText(directory)
 
     def start_processing(self) -> None:
+        if self._validation_worker is not None or self._processing_worker is not None:
+            return
         profile = self._selected_profile()
         if profile is None or self._service is None:
             self._set_status("Selecione um perfil de configuração.", is_error=True)
             return
-        if not self.files or any(
+        if self._requires_revalidation or not self.files or any(
             item.status is BatchFileStatus.PENDING for item in self.files
         ):
             self._set_status("Valide todos os arquivos antes de iniciar.", is_error=True)
@@ -450,6 +480,7 @@ class BatchWidget(QWidget):
         if worker is not None:
             worker.deleteLater()
         self.current_progress_label.clear()
+        self._refresh_pending_profiles()
         self._set_busy(False)
 
     def _worker_failed(self, error: Exception) -> None:
@@ -496,6 +527,7 @@ class BatchWidget(QWidget):
         self.start_button.setEnabled(
             has_files
             and has_profile
+            and not self._requires_revalidation
             and bool(self.output_field.text().strip())
             and not any(item.status is BatchFileStatus.PENDING for item in self.files)
             and any(item.status is BatchFileStatus.COMPATIBLE for item in self.files)
