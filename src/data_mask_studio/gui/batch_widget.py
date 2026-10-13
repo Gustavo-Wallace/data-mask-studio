@@ -332,7 +332,12 @@ class BatchWidget(QWidget):
         if profile is None or self._service is None:
             self._set_status("Selecione um perfil de configuração.", is_error=True)
             return
-        self._requires_revalidation = False
+        # Start a fresh validation generation before the worker visits any file.
+        # Unvisited files must not retain results from an earlier batch.
+        self._requires_revalidation = True
+        invalidate_files(self.files)
+        self._refresh_table()
+        self.summary_output.clear()
         self._set_busy(True, validating=True)
         worker = BatchValidationWorker(self._service, self.files, profile)
         self._validation_worker = worker
@@ -349,6 +354,23 @@ class BatchWidget(QWidget):
         incompatible = sum(
             item.status is BatchFileStatus.INCOMPATIBLE for item in self.files
         )
+        incomplete = any(
+            item.status not in (BatchFileStatus.COMPATIBLE, BatchFileStatus.INCOMPATIBLE)
+            for item in self.files
+        )
+        # A busy selector change cannot reuse validation of the worker's profile.
+        self._requires_revalidation = incomplete or (
+            self._validation_worker is not None
+            and self._validation_worker._profile != self._selected_profile()
+        )
+        if incomplete:
+            self._set_status(
+                f"Validação interrompida: {compatible} compatível(is), "
+                f"{incompatible} incompatível(is). Valide novamente todos os arquivos.",
+                is_error=False,
+                state="warning",
+            )
+            return
         self._set_status(
             f"Validação concluída: {compatible} compatível(is), "
             f"{incompatible} incompatível(is).",
