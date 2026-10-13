@@ -28,6 +28,7 @@ from data_mask_studio.profiles.models import (
 )
 from data_mask_studio.processing.models import CompositeColumnConfig
 from data_mask_studio.profiles.repository import ProfileRepository
+from data_mask_studio.profiles.locking import profile_write_guarded
 from data_mask_studio.environment import guarded
 from data_mask_studio.profiles.validation import profile_name_key, validate_profile_name
 
@@ -69,6 +70,7 @@ class ProfileService:
         return build_processing_plan(inspection, configurations, composites)
 
     @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
+    @profile_write_guarded(lambda self, *args, **kwargs: self.repository.path)
     def create(
         self, name: str, configurations: Sequence[ColumnConfig], *,
         composites: Sequence[CompositeColumnConfig] = (),
@@ -94,6 +96,7 @@ class ProfileService:
         return profile
 
     @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
+    @profile_write_guarded(lambda self, *args, **kwargs: self.repository.path)
     def update(
         self,
         identifier: str,
@@ -119,6 +122,7 @@ class ProfileService:
         return updated
 
     @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
+    @profile_write_guarded(lambda self, *args, **kwargs: self.repository.path)
     def rename(self, identifier: str, name: str) -> ConfigurationProfile:
         profiles = self.repository.load()
         index = _profile_index(profiles, identifier)
@@ -134,6 +138,7 @@ class ProfileService:
         return renamed
 
     @guarded(lambda self, *args, **kwargs: self.repository.path.parent, error_type=ProfileStorageError)
+    @profile_write_guarded(lambda self, *args, **kwargs: self.repository.path)
     def delete(self, identifier: str) -> None:
         profiles = self.repository.load()
         index = _profile_index(profiles, identifier)

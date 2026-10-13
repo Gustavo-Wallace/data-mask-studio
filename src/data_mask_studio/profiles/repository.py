@@ -24,6 +24,7 @@ from data_mask_studio.profiles.models import (
 from data_mask_studio.profiles.composite_format import parse_composite, serialize_composite, require_fields
 from data_mask_studio.profiles.composite_format import parse_reference, serialize_reference
 from data_mask_studio.profiles.validation import validate_unique_names
+from data_mask_studio.profiles.locking import profile_write_guarded
 
 PROFILES_FILE_NAME = "profiles.json"
 LOGGER = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class ProfileRepository:
             raise ProfileFormatError("O arquivo de perfis possui formato inválido.") from error
 
     @guarded(lambda self, *args, **kwargs: self.path.parent, error_type=ProfileStorageError)
+    @profile_write_guarded(lambda self, *args, **kwargs: self.path)
     def save(self, profiles: list[ConfigurationProfile]) -> None:
         try:
             validate_unique_names(profiles)
