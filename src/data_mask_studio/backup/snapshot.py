@@ -49,7 +49,7 @@ def create_sqlite_snapshot(
 
 def inspect_snapshot(path: str | Path) -> tuple[int, int]:
     try:
-        connection = sqlite3.connect(f"file:{Path(path)}?mode=ro", uri=True)
+        connection = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
         try:
             integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
             if integrity.lower() != "ok":
