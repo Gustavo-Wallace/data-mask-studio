@@ -20,9 +20,11 @@
 
 ## Resumo
 
-O Data Mask Studio é uma aplicação desktop local-first para preparação e tratamento de dados, anonimização e mascaramento determinístico, com restauração controlada por meio de um cofre local criptografado. Os dados ficam locais; tokens individuais não contêm nem expõem diretamente o valor original.
+O Data Mask Studio é uma aplicação desktop local-first para preparação e tratamento de dados, anonimização e mascaramento determinístico, com restauração controlada por meio de um cofre local criptografado ou de um pacote seletivo criptografado de transferência. Os dados ficam locais; tokens individuais não contêm nem expõem diretamente o valor original.
 
 A versão atual permite restaurar seletivamente CSVs mascarados e também códigos em arquivos HTML e dashboards locais.
+
+A versão 1.3.0 está em preparação e ainda não foi publicada. O link de download abaixo aponta para a última release publicada.
 
 Site oficial: https://gustavo-wallace.github.io/data-mask-studio/pt-br/
 
@@ -43,10 +45,11 @@ A release contém o instalador por usuário para Windows (`DataMaskStudio-Setup-
 - Preparação e mascaramento de CSV, individualmente ou em lote com perfis salvos.
 - Preservar, mascarar ou excluir colunas; normalizar valores, renomear cabeçalhos de saída e compor colunas.
 - Detecção assistida de colunas.
-- Mascaramento determinístico com restauração controlada pelo cofre.
+- Mascaramento determinístico com restauração pelo cofre ou por pacote seletivo.
+- Pacotes de transferência criptografados (`.dmspackage`) opcionais, gerados junto ao CSV mascarado individual.
 - Restauração de CSV e HTML.
 - Cofre local criptografado.
-- Backup portátil protegido por senha.
+- Backup completo do ambiente protegido por senha (`.dmsbackup`).
 - Auditoria de integridade, diagnóstico e manutenção.
 - Processamento em fluxo para arquivos grandes.
 - Operação local sem telemetria.
@@ -59,14 +62,16 @@ No instalador, execute o arquivo Setup e siga o assistente. A instalação é fe
 
 1. Selecione um CSV e escolha as colunas que serão mascaradas.
 2. Configure prefixos e normalizações e valide a configuração.
-3. Gere o CSV mascarado ou utilize um perfil no processamento em lote.
-4. Para recuperar dados tabulares, use a aba “Restaurar CSV”.
-5. Para arquivos HTML e dashboards locais, use a aba “Restaurar HTML”.
+3. Gere o CSV mascarado, opcionalmente com um pacote de transferência protegido por senha, ou utilize um perfil no processamento em lote.
+4. Para recuperar dados tabulares, use a aba “Restaurar CSV” com o cofre local ou com o pacote correspondente e sua senha.
+5. Para arquivos HTML e dashboards locais, use a aba “Restaurar HTML” com o cofre local.
 6. Consulte códigos específicos pelo consultor local quando necessário.
 
 ## Segurança e privacidade
 
 O processamento ocorre localmente; arquivos e dados não são enviados automaticamente. As chaves locais são protegidas pelo Windows DPAPI. Consulte a [política de segurança](SECURITY.md) e a [política de privacidade](PRIVACY.md). Isso não representa garantia de segurança absoluta.
+
+O mascaramento determinístico é pseudonimização, não anonimização irreversível. Trate pacotes de transferência e backups como sensíveis: suas senhas permitem recuperar os dados incluídos. A criptografia de pacotes e backups usa AES-256-GCM com chaves derivadas de senha.
 
 Os executáveis ainda não possuem assinatura digital, portanto o Windows pode apresentar um aviso do SmartScreen.
 
@@ -76,7 +81,11 @@ A interface desktop em PySide6 coordena serviços separados de processamento de 
 
 ## Compatibilidade e recuperação
 
-A série 1.0.x preserva a compatibilidade dos tokens, o schema 3 e backups válidos. Cofres antigos suportados são migrados de forma transacional. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para o contrato de estabilidade e as orientações de recuperação.
+A preparação da 1.3.0 mantém o schema 4 do cofre e os formatos existentes dos tokens. Cofres antigos suportados são migrados usando as chaves originais. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para os limites dos formatos e as orientações de recuperação.
+
+- **Cofre local:** a restauração exige o cofre e suas chaves locais originais, protegidas pelo Windows DPAPI.
+- **Pacote seletivo de transferência:** contém apenas os mapeamentos de restauração do CSV vinculado, não o ambiente completo. O destinatário precisa do CSV mascarado sem alterações, do `.dmspackage`, da senha e de uma versão do DMS com suporte ao formato v1 do pacote; não precisa do cofre nem das chaves DPAPI do remetente. A criação exige ao menos uma ação Mascarar e senha de no mínimo 8 caracteres. Mapeamentos ausentes interrompem a restauração; não há fallback para o cofre local.
+- **Backup completo do ambiente:** o `.dmsbackup` contém as chaves locais, o cofre e os perfis salvos quando presentes, não arquivos CSV ou HTML. Usa uma política separada de senha (mínimo de 12 caracteres) e restaura o ambiente local, não valores selecionados de um CSV.
 
 ## Execução pelo código-fonte
 
@@ -95,6 +104,7 @@ python -m data_mask_studio
 ## Limitações
 
 - A distribuição atual é destinada ao Windows por depender do Windows DPAPI.
+- A geração e a restauração de pacotes estão disponíveis para CSVs individuais, não para HTML ou operações em lote. Os pacotes exigem os mesmos bytes do CSV vinculado e têm limite padrão de 64 MiB de payload descriptografado.
 - Não há sincronização, telemetria, atualização automática ou recuperação remota de chaves.
 - Os executáveis não possuem assinatura digital.
 

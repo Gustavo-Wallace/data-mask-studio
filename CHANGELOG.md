@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0 — Selective Transfer Update (em preparação)
+
+Esta versão ainda não foi publicada.
+
+- Pacotes seletivos `.dmspackage` criptografados por senha e vinculados ao CSV.
+- Restauração de CSV por pacote na interface sem cofre ou chaves locais do destinatário.
+- Refinamentos de navegação, tabelas e aproveitamento de espaço.
+- Controles recolhíveis, seletores protegidos contra rolagem e diálogos padronizados.
+- Feedback, progresso e ações de saída aprimorados em operações individuais e em lote.
+- Snapshots SQLite consistentes durante gravações concorrentes.
+- Validação de contadores e suporte a caminhos especiais em backups.
+- Proteção de perfis contra gravações concorrentes e revalidações inseguras.
+- Preservação do snapshot quando compactação e rollback falham.
+
 ## 1.2.0 — Data Preparation Update
 
 - Ações por coluna Preservar, Mascarar e Excluir.

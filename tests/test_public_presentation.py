@@ -1,6 +1,7 @@
 import hashlib
 from pathlib import Path
 
+import pytest
 from PySide6.QtGui import QImage
 
 
@@ -34,9 +35,8 @@ def test_bilingual_readmes_have_navigation_branding_and_public_links() -> None:
     assert "DataMaskStudio-Portable-<version>.zip" in english
     assert "DataMaskStudio-Setup-<versão>.exe" in portuguese
     assert "DataMaskStudio-Portable-<versão>.zip" in portuguese
-    public_text = f"{english}\n{portuguese}".casefold()
-    assert "pseudonymization" not in public_text
-    assert "pseudonimização" not in public_text
+    assert "pseudonymization, not irreversible anonymization" in english
+    assert "pseudonimização, não anonimização irreversível" in portuguese
     assert "data masking" in english.casefold()
     assert "mascaramento" in portuguese.casefold()
 
@@ -50,6 +50,77 @@ def test_readme_capture_is_safe_sized_and_dimensioned() -> None:
     assert not image.isNull()
     assert 1200 <= image.width() <= 1320
     assert 740 <= image.height() <= 840
+
+
+@pytest.mark.parametrize(
+    ("filename", "required"),
+    (
+        (
+            "README.md",
+            (
+                "Version 1.3.0 is in preparation and has not been published",
+                "**Local vault:**",
+                "**Selective transfer package:**",
+                "**Full environment backup:**",
+                "unchanged masked CSV",
+                "8-character minimum password",
+                "minimum 12 characters",
+                "no fallback to the local vault",
+                "not HTML or batch operations",
+                "64 MiB",
+            ),
+        ),
+        (
+            "README.pt-BR.md",
+            (
+                "A versão 1.3.0 está em preparação e ainda não foi publicada",
+                "**Cofre local:**",
+                "**Pacote seletivo de transferência:**",
+                "**Backup completo do ambiente:**",
+                "CSV mascarado sem alterações",
+                "senha de no mínimo 8 caracteres",
+                "mínimo de 12 caracteres",
+                "não há fallback para o cofre local",
+                "não para HTML ou operações em lote",
+                "64 MiB",
+            ),
+        ),
+    ),
+)
+def test_readmes_describe_release_preparation_and_restoration_requirements(
+    filename: str, required: tuple[str, ...]
+) -> None:
+    content = (ROOT / filename).read_text(encoding="utf-8")
+
+    for phrase in required:
+        assert phrase in content
+    for contract in (".dmspackage", ".dmsbackup", "AES-256-GCM", "Windows DPAPI"):
+        assert contract in content
+
+
+def test_changelog_marks_1_3_0_as_unpublished_without_replacing_1_2_0() -> None:
+    content = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    current, historical = content.split("## 1.2.0 — Data Preparation Update", 1)
+
+    assert "## 1.3.0 — Selective Transfer Update (em preparação)" in current
+    assert "Esta versão ainda não foi publicada." in current
+    assert ".dmspackage" in current
+    assert "## 1.1.0" in historical
+
+
+def test_compatibility_distinguishes_transfer_and_backup_format_contracts() -> None:
+    content = (ROOT / "COMPATIBILITY.md").read_text(encoding="utf-8")
+
+    for contract in (
+        "A versão 1.3.0 ainda não foi publicada",
+        "schema 4", "Profile Format v2", "perfis v1 válidos",
+        "formato v1 de backup `.dmsbackup`", "`.dmspackage` tem formato v1 próprio",
+        "SHA-256 dos bytes", "não há substituição silenciosa da fonte",
+        "64 MiB", "até 1 GiB", "a interface não oferece esse ajuste",
+        "não garante que versões antigas consigam abrir um cofre já migrado",
+        "dms-vault-compaction-*",
+    ):
+        assert contract in content
 
 
 def test_repository_declares_gpl_3_0_only_and_includes_official_license() -> None:
