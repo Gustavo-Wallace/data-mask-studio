@@ -3,6 +3,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from qt_lifecycle import qt_widget_lifecycle
+
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.normalization import NormalizationRule

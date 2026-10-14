@@ -1,8 +1,9 @@
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QResizeEvent
-from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QStyle
+from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QLineEdit, QStyle
 
 from data_mask_studio.gui.components.empty_state_table import EmptyStateTable
+from data_mask_studio.gui.components.presentation import TruncatedTextToolTipDelegate
 
 PREFIX_PLACEHOLDER = "Disponível ao mascarar"
 
@@ -22,6 +23,7 @@ class ColumnConfigurationTable(EmptyStateTable):
         )
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.setItemDelegateForColumn(1, TruncatedTextToolTipDelegate(self))
         self.verticalHeader().setVisible(False)
         header = self.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -96,6 +98,15 @@ class ColumnConfigurationTable(EmptyStateTable):
         remaining = max(available_width, minimum_width) - output_width
         header_width = max(header_minimum, round(remaining * 0.55))
         prefix_width = max(prefix_minimum, remaining - header_width)
+        prefix_field = self.cellWidget(0, 3)
+        if isinstance(prefix_field, QLineEdit):
+            # O editor já limita o prefixo; largura extra favorece o cabeçalho.
+            prefix_limit = (
+                prefix_field.fontMetrics().horizontalAdvance("W" * prefix_field.maxLength())
+                + text_padding
+                + frame_width
+            )
+            prefix_width = min(prefix_width, max(prefix_minimum, prefix_limit))
         header_width = remaining - prefix_width
 
         self._resizing_flexible_sections = True

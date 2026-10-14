@@ -3,6 +3,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout, QWidget
 
 from data_mask_studio.metadata import application_version
+from data_mask_studio.gui.components.presentation import configure_dialog_layout
 from data_mask_studio.vault.database import SCHEMA_VERSION
 
 
@@ -63,8 +64,7 @@ class AboutDialog(QDialog):
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 20)
-        layout.setSpacing(14)
+        configure_dialog_layout(layout)
         layout.addWidget(title)
         layout.addWidget(details)
         layout.addWidget(links)

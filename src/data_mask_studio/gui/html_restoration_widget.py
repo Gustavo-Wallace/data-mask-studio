@@ -6,6 +6,7 @@ from PySide6.QtGui import QDesktopServices
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -24,6 +26,10 @@ from data_mask_studio.gui.html_restoration_worker import (
     HTMLRestorationWorker,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, configure_result_area, confirm_destructive_action, set_button_role, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from data_mask_studio.html_restoration import (
     HTMLAnalysisResult,
     HTMLInspectionResult,
@@ -70,6 +76,7 @@ class HTMLRestorationWidget(QWidget):
         details.addRow("Codificação:", self.encoding_label)
 
         self.missing_policy_combo = ScrollSafeComboBox()
+        self.missing_policy_combo.setAccessibleName("Códigos não encontrados")
         self.missing_policy_combo.addItem(
             "Manter código original", HTMLMissingCodePolicy.KEEP.value
         )
@@ -77,6 +84,7 @@ class HTMLRestorationWidget(QWidget):
             "Interromper restauração", HTMLMissingCodePolicy.ABORT.value
         )
         self.representation_combo = ScrollSafeComboBox()
+        self.representation_combo.setAccessibleName("Valor restaurado")
         self.representation_combo.addItem(
             "Primeira representação original",
             RepresentationPolicy.FIRST_ORIGINAL.value,
@@ -84,14 +92,31 @@ class HTMLRestorationWidget(QWidget):
         self.representation_combo.addItem(
             "Valor canônico normalizado", RepresentationPolicy.CANONICAL.value
         )
-        policies = QFormLayout()
+        self.options_controls = QWidget()
+        policies = QFormLayout(self.options_controls)
+        policies.setContentsMargins(0, 0, 0, 0)
         policies.addRow("Códigos não encontrados:", self.missing_policy_combo)
         policies.addRow("Valor restaurado:", self.representation_combo)
+        self.options_toggle = QPushButton("Opções de restauração")
+        self.options_toggle.setCheckable(True)
+        self.options_toggle.setAccessibleName("Mostrar ou ocultar opções de restauração")
+        self.options_toggle.toggled.connect(self._update_options_disclosure)
+        self.options_summary = QLabel()
+        self.options_summary.setWordWrap(True)
+        self.options_summary.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.options_summary.setStyleSheet(
+            f"color: {COLORS['muted_text']}; font-size: {METRICS['description_font_size']}px;"
+        )
+        self.missing_policy_combo.currentIndexChanged.connect(self._update_options_summary)
+        self.representation_combo.currentIndexChanged.connect(self._update_options_summary)
+        set_button_role(self.options_toggle, "secondary")
 
         self.analyze_button = QPushButton("Analisar códigos")
         self.analyze_button.clicked.connect(self.start_analysis)
         self.generate_button = QPushButton("Gerar HTML restaurado")
         self.generate_button.clicked.connect(self._choose_output)
+        set_button_role(self.analyze_button, "secondary")
+        set_button_role(self.generate_button, "primary")
         self.cancel_button = QPushButton("Cancelar")
         self.cancel_button.clicked.connect(self.cancel_processing)
         self.cancel_button.setVisible(False)
@@ -104,6 +129,7 @@ class HTMLRestorationWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_label = QLabel()
+        self.progress_label.setWordWrap(True)
         self.progress_label.setVisible(False)
         progress = QHBoxLayout()
         progress.addWidget(self.progress_bar, stretch=1)
@@ -113,25 +139,69 @@ class HTMLRestorationWidget(QWidget):
             "O resumo da análise aparecerá aqui."
         )
         self.summary.setReadOnly(True)
+        self.summary.setMinimumHeight(self.summary.minimumSizeHint().height())
+        configure_result_area(self.summary, self.summary.minimumHeight())
         self.open_folder_button = QPushButton("Abrir pasta do resultado")
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.open_folder_button.setVisible(False)
         self.status_label = QLabel("Selecione um arquivo HTML para começar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 24, 36, 24)
-        layout.setSpacing(10)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(select_layout)
         layout.addLayout(details)
-        layout.addLayout(policies)
+        layout.addWidget(self.options_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.options_summary)
+        layout.addWidget(self.options_controls)
         layout.addLayout(actions)
         layout.addLayout(progress)
         layout.addWidget(self.summary)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
         layout.addStretch()
+        self.summary.textChanged.connect(self._update_information_layout)
+        self._update_information_layout()
+        option_tab_order = (
+            self.path_field, self.options_toggle, self.missing_policy_combo,
+            self.representation_combo, self.analyze_button, self.generate_button,
+        )
+        for previous, following in zip(option_tab_order, option_tab_order[1:]):
+            QWidget.setTabOrder(previous, following)
+        self._update_options_summary()
+        self._update_options_disclosure()
         self._set_file_controls_enabled(False)
+
+    def _update_information_layout(self) -> None:
+        has_summary = bool(self.summary.toPlainText().strip())
+        policy = self.summary.sizePolicy()
+        policy.setVerticalPolicy(
+            QSizePolicy.Policy.Ignored if has_summary else QSizePolicy.Policy.Preferred
+        )
+        self.summary.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(self.summary), int(has_summary))
+        layout.setStretch(layout.count() - 1, int(not has_summary))
+
+    def _update_options_disclosure(self, *_args: object) -> None:
+        focused = QApplication.focusWidget()
+        options_have_focus = focused is not None and self.options_controls.isAncestorOf(focused)
+        expanded = self.options_toggle.isChecked()
+        self.options_controls.setVisible(expanded)
+        self.options_summary.setVisible(not expanded)
+        self.options_toggle.setText(
+            "Ocultar opções de restauração" if expanded else "Opções de restauração"
+        )
+        if options_have_focus and not expanded and self.isVisible():
+            self.options_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _update_options_summary(self, *_args: object) -> None:
+        self.options_summary.setText(
+            f"Não encontrados: {self.missing_policy_combo.currentText()}. "
+            f"Valor: {self.representation_combo.currentText()}."
+        )
 
     def _select_html(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -158,7 +228,7 @@ class HTMLRestorationWidget(QWidget):
         self.summary.clear()
         self.open_folder_button.setVisible(False)
         self._set_file_controls_enabled(True)
-        self._set_status("Arquivo HTML inspecionado com sucesso.", is_error=False)
+        self._set_status("Arquivo HTML inspecionado com sucesso.", is_error=False, state="success")
 
     def start_analysis(self) -> None:
         if self._inspection is None or self._worker is not None:
@@ -177,7 +247,10 @@ class HTMLRestorationWidget(QWidget):
             f"Formatos semelhantes inválidos: {result.invalid_similar_codes}\n"
             f"Prefixos encontrados: {prefixes}"
         )
-        self._set_status("Análise concluída sem modificar o arquivo ou o cofre.", False)
+        self._set_status(
+            "Análise concluída sem modificar o arquivo ou o cofre.", False,
+            state="warning" if result.missing_codes or result.invalid_similar_codes else "success",
+        )
 
     def _choose_output(self) -> None:
         if self._inspection is None:
@@ -210,12 +283,10 @@ class HTMLRestorationWidget(QWidget):
             return
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Confirmar substituição",
                 "O arquivo de saída já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -291,11 +362,14 @@ class HTMLRestorationWidget(QWidget):
             f"Representação: {representation}"
         )
         self.open_folder_button.setVisible(True)
-        self._set_status("HTML restaurado gerado com sucesso.", False)
+        self._set_status(
+            "HTML restaurado gerado com sucesso.", False,
+            state="warning" if result.missing_occurrences else "success",
+        )
 
     def _cancelled(self) -> None:
         self._reset_progress()
-        self._set_status("A operação foi cancelada com segurança.", False)
+        self._set_status("A operação foi cancelada com segurança.", False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         self._reset_progress()
@@ -332,6 +406,7 @@ class HTMLRestorationWidget(QWidget):
         return self._worker.wait(5000)
 
     def _set_processing_state(self, processing: bool) -> None:
+        self.options_toggle.setEnabled(not processing)
         self.select_button.setEnabled(not processing)
         has_file = self._inspection is not None
         for widget in (
@@ -369,8 +444,8 @@ class HTMLRestorationWidget(QWidget):
         if not opened:
             self._set_status("Não foi possível abrir a pasta do resultado.", True)
 
-    def _set_status(self, message: str, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, is_error: bool, *, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)

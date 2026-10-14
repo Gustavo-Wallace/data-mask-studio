@@ -1,17 +1,105 @@
-from PySide6.QtCore import Qt
+from typing import Literal
+
+from PySide6.QtCore import QEvent, QModelIndex, Qt
+from PySide6.QtGui import QHelpEvent, Qt as GuiQt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QLabel,
     QLineEdit,
+    QLayout,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTextEdit,
+    QToolTip,
+    QWidget,
 )
+
+from data_mask_studio.gui.visual_tokens import METRICS
+
+
+FeedbackState = Literal["neutral", "success", "warning", "error"]
+
+
+def set_feedback_state(label: QLabel, state: FeedbackState) -> None:
+    """Estiliza somente feedback explícito, sem mudar texto, layout ou foco."""
+    if label.property("feedbackState") == state:
+        return
+    label.setProperty("feedbackState", state)
+    label.style().unpolish(label)
+    label.style().polish(label)
+    label.update()
+
+
+class TruncatedTextToolTipDelegate(QStyledItemDelegate):
+    """Opt-in para colunas de texto: revela só o valor já exibido quando cortado."""
+
+    def helpEvent(
+        self,
+        event: QHelpEvent,
+        view: QAbstractItemView,
+        option: QStyleOptionViewItem,
+        index: QModelIndex,
+    ) -> bool:
+        if event.type() != QEvent.Type.ToolTip:
+            return super().helpEvent(event, view, option, index)
+        if not index.isValid():
+            return False
+        styled = QStyleOptionViewItem(option)
+        self.initStyleOption(styled, index)
+        rect = view.style().subElementRect(
+            QStyle.SubElement.SE_ItemViewItemText, styled, view,
+        )
+        rect = rect.intersected(view.viewport().rect())
+        if styled.features & QStyleOptionViewItem.ViewItemFeature.WrapText:
+            bounds = styled.fontMetrics.boundingRect(
+                rect, Qt.TextFlag.TextWordWrap.value, styled.text,
+            )
+            fits = bounds.width() <= rect.width() and bounds.height() <= rect.height()
+        else:
+            fits = styled.fontMetrics.horizontalAdvance(styled.text) <= rect.width()
+        if not styled.text or fits:
+            QToolTip.hideText()
+        else:
+            QToolTip.showText(
+                event.globalPos(),
+                GuiQt.convertFromPlainText(styled.text),
+                view.viewport(),
+                option.rect,
+            )
+        return True
 
 
 def set_button_role(button: QPushButton, role: str) -> None:
     button.setProperty("role", role)
     button.style().unpolish(button)
     button.style().polish(button)
+
+
+def configure_dialog_layout(layout: QLayout) -> None:
+    """Espaçamento de diálogos próprios; layouts nativos do Qt ficam intactos."""
+    margin = METRICS["dialog_margin"]
+    layout.setContentsMargins(margin, margin, margin, margin)
+    layout.setSpacing(METRICS["panel_spacing"])
+
+
+def confirm_destructive_action(parent: QWidget, title: str, text: str) -> int:
+    """QMessageBox padrão, com a mesma resposta segura Não/Enter/Escape."""
+    message = QMessageBox(
+        QMessageBox.Icon.Warning, title, text,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, parent,
+    )
+    message.setDefaultButton(QMessageBox.StandardButton.No)
+    message.setEscapeButton(QMessageBox.StandardButton.No)
+    set_button_role(message.button(QMessageBox.StandardButton.Yes), "destructive")
+    try:
+        return message.exec()
+    finally:
+        message.deleteLater()
 
 
 def configure_path_field(field: QLineEdit, accessible_name: str) -> None:

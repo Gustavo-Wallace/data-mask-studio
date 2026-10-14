@@ -8,6 +8,7 @@ from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComb
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -37,6 +39,10 @@ from data_mask_studio.gui.batch_worker import (
     BatchValidationWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, configure_result_area, set_button_role, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.profiles import (
     ConfigurationProfile,
     ProfileError,
@@ -64,11 +70,15 @@ class BatchWidget(QWidget):
         self.files: list[BatchFile] = []
         self._validation_worker: BatchValidationWorker | None = None
         self._processing_worker: BatchProcessingWorker | None = None
+        self._profiles_refresh_pending = False
+        self._requires_revalidation = False
         self._output_directory: Path | None = None
 
         self.add_files_button = QPushButton("Adicionar arquivos")
+        set_button_role(self.add_files_button, "primary")
         self.add_files_button.clicked.connect(self._choose_files)
         self.add_folder_button = QPushButton("Adicionar pasta")
+        set_button_role(self.add_folder_button, "primary")
         self.add_folder_button.clicked.connect(self._choose_folder)
         self.remove_button = QPushButton("Remover selecionados")
         self.remove_button.clicked.connect(self.remove_selected)
@@ -96,17 +106,20 @@ class BatchWidget(QWidget):
         self.file_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.file_table.verticalHeader().setVisible(False)
         header = self.file_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.file_table.setWordWrap(False)
+        self.file_table.setMinimumHeight(
+            header.sizeHint().height()
+            + 2 * self.file_table.verticalHeader().defaultSectionSize()
+            + 2 * self.file_table.frameWidth()
+        )
 
         self.profile_combo = ScrollSafeComboBox()
         self.profile_combo.currentIndexChanged.connect(self._profile_changed)
-        profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel("Perfil:"))
-        profile_row.addWidget(self.profile_combo, stretch=1)
 
         self.output_field = QLineEdit()
         self.output_field.setPlaceholderText("Escolha ou informe a pasta de saída")
@@ -114,13 +127,17 @@ class BatchWidget(QWidget):
         self.choose_output_button = QPushButton("Escolher pasta")
         self.choose_output_button.clicked.connect(self._choose_output_directory)
         output_row = QHBoxLayout()
-        output_row.addWidget(QLabel("Pasta de saída:"))
         output_row.addWidget(self.output_field, stretch=1)
         output_row.addWidget(self.choose_output_button)
+        configuration = QFormLayout()
+        configuration.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        configuration.addRow("Perfil:", self.profile_combo)
+        configuration.addRow("Pasta de saída:", output_row)
 
         self.validate_button = QPushButton("Validar arquivos")
         self.validate_button.clicked.connect(self.validate_files)
         self.start_button = QPushButton("Iniciar anonimização")
+        set_button_role(self.start_button, "primary")
         self.start_button.clicked.connect(self.start_processing)
         self.cancel_button = QPushButton("Cancelar")
         self.cancel_button.clicked.connect(self.cancel)
@@ -144,26 +161,58 @@ class BatchWidget(QWidget):
             "O resumo do lote aparecerá aqui."
         )
         self.summary_output.setReadOnly(True)
-        self.summary_output.setMaximumHeight(125)
+        self.summary_output.setMinimumHeight(self.summary_output.minimumSizeHint().height())
+        configure_result_area(self.summary_output, 80)
         self.status_label = QLabel("Adicione arquivos CSV para começar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(file_actions)
         layout.addWidget(self.file_table, stretch=1)
-        layout.addLayout(profile_row)
-        layout.addLayout(output_row)
+        layout.addLayout(configuration)
         layout.addLayout(processing_actions)
         layout.addWidget(self.overall_progress)
         layout.addWidget(self.current_progress_label)
         layout.addWidget(self.summary_output)
         layout.addWidget(self.status_label)
+        layout.addStretch()
+        self.file_table.model().rowsInserted.connect(self._update_information_layout)
+        self.file_table.model().rowsRemoved.connect(self._update_information_layout)
+        self.summary_output.textChanged.connect(self._update_information_layout)
+        self._update_information_layout()
 
         self.refresh_profiles()
         self._update_actions()
 
+    def _update_information_layout(self) -> None:
+        has_files = self.file_table.rowCount() > 0
+        has_summary = bool(self.summary_output.toPlainText().strip())
+        self.file_table.setMaximumHeight(16_777_215 if has_files else 160)
+        # Populated views share spare space without forcing their preferred
+        # heights on the outer page. Empty views remain compact and visible.
+        for view, populated in ((self.file_table, has_files), (self.summary_output, has_summary)):
+            policy = view.sizePolicy()
+            policy.setVerticalPolicy(
+                QSizePolicy.Policy.Ignored if populated else QSizePolicy.Policy.Preferred
+            )
+            view.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(self.file_table), int(has_files))
+        layout.setStretch(layout.indexOf(self.summary_output), int(has_summary))
+        layout.setStretch(layout.count() - 1, int(not has_files and not has_summary))
+
     def refresh_profiles(self) -> None:
+        # Keep worker-owned files and the selected profile untouched until all
+        # queued result signals have been handled, including after run() returns.
+        if self._validation_worker is not None or self._processing_worker is not None:
+            self._profiles_refresh_pending = True
+            return
+        self._reload_profiles(preserve_results=False)
+
+    def _reload_profiles(self, *, preserve_results: bool) -> None:
         selected = self.profile_combo.currentData()
         previous_profile = self._selected_profile()
         try:
@@ -188,10 +237,20 @@ class BatchWidget(QWidget):
             current_profile is None
             or current_profile.identifier != previous_profile.identifier
             or current_profile.columns != previous_profile.columns
+            or current_profile.composites != previous_profile.composites
+            or current_profile.unknown_column_policy != previous_profile.unknown_column_policy
         ):
-            invalidate_files(self.files)
-            self._refresh_table()
+            self._requires_revalidation = True
+            if not preserve_results:
+                invalidate_files(self.files)
+                self._refresh_table()
         self._update_actions()
+
+    def _refresh_pending_profiles(self) -> None:
+        if self._profiles_refresh_pending:
+            self._profiles_refresh_pending = False
+            # Reload the selector, not the just-completed operation's results.
+            self._reload_profiles(preserve_results=True)
 
     def add_paths(self, paths: Iterable[str | Path]) -> int:
         added = add_files(self.files, paths)
@@ -236,10 +295,19 @@ class BatchWidget(QWidget):
         self.files.clear()
         self._refresh_table()
         self.summary_output.clear()
+        self._output_directory = None
         self.open_output_button.setEnabled(False)
+        self.overall_progress.setRange(0, 1)
+        self.overall_progress.setValue(0)
+        self.current_progress_label.setText("Nenhum processamento em andamento.")
+        self._set_status("Adicione arquivos CSV para começar.", is_error=False)
         self._update_actions()
 
     def _profile_changed(self) -> None:
+        self._requires_revalidation = True
+        if self._validation_worker is not None or self._processing_worker is not None:
+            self._profiles_refresh_pending = True
+            return
         invalidate_files(self.files)
         self._refresh_table()
         self._set_status(
@@ -255,6 +323,8 @@ class BatchWidget(QWidget):
         )
 
     def validate_files(self) -> None:
+        if self._validation_worker is not None or self._processing_worker is not None:
+            return
         profile = self._selected_profile()
         if not self.files:
             self._set_status("Adicione ao menos um arquivo ao lote.", is_error=True)
@@ -262,6 +332,12 @@ class BatchWidget(QWidget):
         if profile is None or self._service is None:
             self._set_status("Selecione um perfil de configuração.", is_error=True)
             return
+        # Start a fresh validation generation before the worker visits any file.
+        # Unvisited files must not retain results from an earlier batch.
+        self._requires_revalidation = True
+        invalidate_files(self.files)
+        self._refresh_table()
+        self.summary_output.clear()
         self._set_busy(True, validating=True)
         worker = BatchValidationWorker(self._service, self.files, profile)
         self._validation_worker = worker
@@ -278,10 +354,28 @@ class BatchWidget(QWidget):
         incompatible = sum(
             item.status is BatchFileStatus.INCOMPATIBLE for item in self.files
         )
+        incomplete = any(
+            item.status not in (BatchFileStatus.COMPATIBLE, BatchFileStatus.INCOMPATIBLE)
+            for item in self.files
+        )
+        # A busy selector change cannot reuse validation of the worker's profile.
+        self._requires_revalidation = incomplete or (
+            self._validation_worker is not None
+            and self._validation_worker._profile != self._selected_profile()
+        )
+        if incomplete:
+            self._set_status(
+                f"Validação interrompida: {compatible} compatível(is), "
+                f"{incompatible} incompatível(is). Valide novamente todos os arquivos.",
+                is_error=False,
+                state="warning",
+            )
+            return
         self._set_status(
             f"Validação concluída: {compatible} compatível(is), "
             f"{incompatible} incompatível(is).",
             is_error=compatible == 0,
+            state="warning" if incompatible else "success",
         )
 
     def _validation_finished(self) -> None:
@@ -289,6 +383,7 @@ class BatchWidget(QWidget):
         self._validation_worker = None
         if worker is not None:
             worker.deleteLater()
+        self._refresh_pending_profiles()
         self._set_busy(False)
 
     def _choose_output_directory(self) -> None:
@@ -297,11 +392,13 @@ class BatchWidget(QWidget):
             self.output_field.setText(directory)
 
     def start_processing(self) -> None:
+        if self._validation_worker is not None or self._processing_worker is not None:
+            return
         profile = self._selected_profile()
         if profile is None or self._service is None:
             self._set_status("Selecione um perfil de configuração.", is_error=True)
             return
-        if not self.files or any(
+        if self._requires_revalidation or not self.files or any(
             item.status is BatchFileStatus.PENDING for item in self.files
         ):
             self._set_status("Valide todos os arquivos antes de iniciar.", is_error=True)
@@ -333,7 +430,9 @@ class BatchWidget(QWidget):
             self._set_status("A pasta de saída é inválida.", is_error=True)
             return
 
-        self._output_directory = output.absolute()
+        # A configured destination is not evidence that this run published files.
+        self._output_directory = None
+        self.open_output_button.setEnabled(False)
         self.summary_output.clear()
         compatible_count = sum(
             item.status is BatchFileStatus.COMPATIBLE for item in self.files
@@ -345,7 +444,7 @@ class BatchWidget(QWidget):
             self._service,
             self.files,
             profile,
-            str(self._output_directory),
+            str(output.absolute()),
             self._key_provider,
             self._vault_repository_factory,
         )
@@ -365,6 +464,11 @@ class BatchWidget(QWidget):
             self._set_status("Cancelamento solicitado...", is_error=False)
 
     def _file_changed(self, _item: BatchFile) -> None:
+        if (self._processing_worker is not None
+                and _item.status is BatchFileStatus.COMPLETED
+                and _item.output_path is not None):
+            self._output_directory = _item.output_path.parent
+            self.open_output_button.setEnabled(True)
         self._refresh_table()
 
     def _progress_changed(self, progress: BatchProgress) -> None:
@@ -382,14 +486,23 @@ class BatchWidget(QWidget):
             + summary.cancelled_or_skipped_files
         )
         self.summary_output.setPlainText(_render_summary(summary))
-        self.open_output_button.setEnabled(summary.completed_files > 0)
-        self._set_status("Processamento em lote encerrado.", is_error=False)
+        if summary.completed_files > 0:
+            self._output_directory = summary.output_directory
+        self.open_output_button.setEnabled(self._output_directory is not None)
+        self._set_status(
+            "Processamento em lote encerrado.", is_error=False,
+            state="error" if summary.error_files else "warning"
+            if summary.incompatible_files or summary.cancelled_or_skipped_files
+            or summary.normalization_fallbacks else "success",
+        )
 
     def _processing_finished(self) -> None:
         worker = self._processing_worker
         self._processing_worker = None
         if worker is not None:
             worker.deleteLater()
+        self.current_progress_label.clear()
+        self._refresh_pending_profiles()
         self._set_busy(False)
 
     def _worker_failed(self, error: Exception) -> None:
@@ -413,6 +526,10 @@ class BatchWidget(QWidget):
         self.cancel_button.setVisible(busy)
         self.cancel_button.setEnabled(busy)
         if busy:
+            self.current_progress_label.clear()
+            if validating:
+                self.overall_progress.setRange(0, 1)
+                self.overall_progress.setValue(0)
             self._set_status(
                 "Validando arquivos..." if validating else "Processando lote...",
                 is_error=False,
@@ -432,6 +549,7 @@ class BatchWidget(QWidget):
         self.start_button.setEnabled(
             has_files
             and has_profile
+            and not self._requires_revalidation
             and bool(self.output_field.text().strip())
             and not any(item.status is BatchFileStatus.PENDING for item in self.files)
             and any(item.status is BatchFileStatus.COMPATIBLE for item in self.files)
@@ -476,11 +594,11 @@ class BatchWidget(QWidget):
             for worker in (self._validation_worker, self._processing_worker)
         )
 
-    def _set_status(self, message: str, *, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)
 
 
 def _render_summary(summary: BatchSummary) -> str:

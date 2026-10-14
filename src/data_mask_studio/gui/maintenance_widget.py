@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QThread, QUrl, Signal
@@ -34,6 +35,11 @@ from data_mask_studio.gui.maintenance_worker import (
     TemporaryScanWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, configure_result_area, confirm_destructive_action,
+    set_button_role, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.integrity import AuditReport
 from data_mask_studio.maintenance import (
     STATUS_LABELS,
@@ -47,6 +53,15 @@ from data_mask_studio.maintenance import (
     safe_diagnostic_report,
 )
 from data_mask_studio.security import KeyProvider
+
+
+@dataclass(frozen=True)
+class _SectionFeedback:
+    message: str
+    state: FeedbackState
+    minimum: int
+    maximum: int
+    value: int
 
 
 class MaintenanceWidget(QWidget):
@@ -90,15 +105,74 @@ class MaintenanceWidget(QWidget):
         self.cancel_button.setVisible(False)
         self.status_label = QLabel("Pronto para diagnosticar o ambiente local.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
+        self._feedback_section = 0
+        self._section_feedback: dict[int, _SectionFeedback] = {}
+        # Keep cancellation outside the disabled tab content while a worker runs.
+        self._feedback_area = QWidget()
+        feedback_layout = QVBoxLayout(self._feedback_area)
+        feedback_layout.setContentsMargins(0, 0, 0, 0)
+        feedback_layout.setSpacing(METRICS["panel_spacing"])
         operation_row = QHBoxLayout()
         operation_row.addWidget(self.progress, stretch=1)
         operation_row.addWidget(self.cancel_button)
+        feedback_layout.addLayout(operation_row)
+        feedback_layout.addWidget(self.status_label)
+        self._remember_feedback()
+        self.sections.currentChanged.connect(self._section_changed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addWidget(self.sections, stretch=1)
-        layout.addLayout(operation_row)
-        layout.addWidget(self.status_label)
+        layout.addWidget(self._feedback_area)
+        layout.addStretch()
+        for output in (self.overview_output, self.backup_result, self.compaction_result):
+            configure_result_area(output, 160)
+            output.textChanged.connect(self._update_result_layout)
+        self.temporary_table.model().rowsInserted.connect(self._update_result_layout)
+        self.temporary_table.model().rowsRemoved.connect(self._update_result_layout)
+        self._update_result_layout()
+
+    def _remember_feedback(self) -> None:
+        self._section_feedback[self._feedback_section] = _SectionFeedback(
+            self.status_label.text(), self.status_label.property("feedbackState"),
+            self.progress.minimum(), self.progress.maximum(), self.progress.value(),
+        )
+
+    def _select_feedback_section(self, section: int) -> None:
+        if section != self._feedback_section:
+            if self._feedback_section in self._section_feedback:
+                self._remember_feedback()
+            self._feedback_section = section
+            saved = self._section_feedback.get(section)
+            self.progress.setRange(saved.minimum if saved else 0, saved.maximum if saved else 1)
+            self.progress.setValue(saved.value if saved else 0)
+            self.status_label.setText(saved.message if saved else "")
+            set_feedback_state(self.status_label, saved.state if saved else "neutral")
+        self._update_feedback_visibility()
+
+    def _section_changed(self, section: int) -> None:
+        if self._worker is None:
+            self._select_feedback_section(section)
+        else:
+            self._update_feedback_visibility()
+
+    def _update_feedback_visibility(self) -> None:
+        self._feedback_area.setVisible(
+            self.sections.currentIndex() == self._feedback_section
+            and self._feedback_section in self._section_feedback
+        )
+
+    def _update_result_layout(self) -> None:
+        # Só a prioridade de expansão muda; abas e controles permanecem visíveis.
+        has_results = self.temporary_table.rowCount() > 0 or any(
+            output.toPlainText().strip()
+            for output in (self.overview_output, self.backup_result, self.compaction_result)
+        )
+        layout = self.layout()
+        layout.setStretch(0, int(has_results))
+        layout.setStretch(layout.count() - 1, int(not has_results))
 
     def _build_overview(self) -> QWidget:
         widget = QWidget()
@@ -114,14 +188,16 @@ class MaintenanceWidget(QWidget):
         self.last_audit_label = QLabel(
             "Última auditoria nesta sessão: ainda não executada"
         )
+        self.last_audit_label.setWordWrap(True)
         self.overview_output = EmptyStateTextEdit(
             "Somente estatísticas agregadas serão exibidas aqui."
         )
         self.overview_output.setReadOnly(True)
         layout = QVBoxLayout(widget)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(actions)
         layout.addWidget(self.last_audit_label)
-        layout.addWidget(self.overview_output)
+        layout.addWidget(self.overview_output, stretch=1)
         layout.addStretch()
         return widget
 
@@ -146,18 +222,23 @@ class MaintenanceWidget(QWidget):
         )
         self.validate_backup_button = QPushButton("Validar backup")
         self.validate_backup_button.clicked.connect(self.start_backup_validation)
+        set_button_role(self.validate_backup_button, "primary")
+        actions = QHBoxLayout()
+        actions.addWidget(self.validate_backup_button)
+        actions.addStretch()
         self.backup_result = EmptyStateTextEdit(
             "A validação não restaura nem modifica arquivos locais."
         )
         self.backup_result.setReadOnly(True)
         layout = QVBoxLayout(widget)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addWidget(QLabel("Arquivo de backup:"))
         layout.addLayout(file_row)
         layout.addWidget(QLabel("Senha:"))
         layout.addWidget(self.backup_password_field)
         layout.addWidget(self.show_backup_password)
-        layout.addWidget(self.validate_backup_button)
-        layout.addWidget(self.backup_result)
+        layout.addLayout(actions)
+        layout.addWidget(self.backup_result, stretch=1)
         layout.addStretch()
         return widget
 
@@ -165,6 +246,7 @@ class MaintenanceWidget(QWidget):
         widget = QWidget()
         self.locate_button = QPushButton("Localizar temporários")
         self.locate_button.clicked.connect(self.start_temporary_scan)
+        set_button_role(self.locate_button, "primary")
         self.cleanup_button = QPushButton("Excluir selecionados")
         self.cleanup_button.clicked.connect(self.start_cleanup)
         self.cleanup_button.setEnabled(False)
@@ -188,6 +270,7 @@ class MaintenanceWidget(QWidget):
         for column in range(2, 5):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         layout = QVBoxLayout(widget)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addWidget(
             QLabel(
                 "A busca é limitada às pastas controladas da aplicação e da sessão."
@@ -204,21 +287,27 @@ class MaintenanceWidget(QWidget):
             ".dmsbackup, embora ele não seja obrigatório."
         )
         self.compaction_info.setWordWrap(True)
+        set_feedback_state(self.compaction_info, "warning")
         self.compact_button = QPushButton("Compactar cofre")
         self.compact_button.clicked.connect(self.start_compaction)
+        set_button_role(self.compact_button, "attention")
+        actions = QHBoxLayout()
+        actions.addWidget(self.compact_button)
+        actions.addStretch()
         self.compaction_result = EmptyStateTextEdit(
             "O resultado seguro da compactação aparecerá aqui."
         )
         self.compaction_result.setReadOnly(True)
         layout = QVBoxLayout(widget)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addWidget(self.compaction_info)
-        layout.addWidget(self.compact_button)
-        layout.addWidget(self.compaction_result)
+        layout.addLayout(actions)
+        layout.addWidget(self.compaction_result, stretch=1)
         layout.addStretch()
         return widget
 
     def start_diagnostic(self) -> None:
-        if not self._begin_allowed():
+        if not self._begin_allowed(0):
             return
         worker = DiagnosticWorker(self._diagnostics)
         worker.progress.connect(self._diagnostic_progress)
@@ -226,10 +315,12 @@ class MaintenanceWidget(QWidget):
         self._start_worker(worker, "Atualizando diagnóstico...")
 
     def _diagnostic_progress(self, completed: int, total: int) -> None:
+        self._select_feedback_section(0)
         self.progress.setRange(0, total)
         self.progress.setValue(completed)
 
     def _diagnostic_completed(self, result: DiagnosticResult) -> None:
+        self._select_feedback_section(0)
         self._last_diagnostic = result
         self.set_last_audit(result.audit)
         self.overview_output.setPlainText(_render_diagnostic(result))
@@ -237,6 +328,7 @@ class MaintenanceWidget(QWidget):
         self._set_status(
             f"Diagnóstico concluído: {STATUS_LABELS[result.status]}.",
             result.status.value == "failure",
+            state="warning" if result.status.value == "attention" else "success",
         )
 
     def copy_report(self) -> None:
@@ -261,7 +353,12 @@ class MaintenanceWidget(QWidget):
             self.backup_result.clear()
 
     def start_backup_validation(self) -> None:
-        if not self.backup_path_field.text() or not self._begin_allowed():
+        if not self.backup_path_field.text():
+            if self._worker is None:
+                self._select_feedback_section(1)
+            self._set_status("Selecione um backup e informe sua senha.", True)
+            return
+        if not self._begin_allowed(1):
             self._set_status("Selecione um backup e informe sua senha.", True)
             return
         worker = BackupValidationWorker(
@@ -271,11 +368,12 @@ class MaintenanceWidget(QWidget):
         self._start_worker(worker, "Validando backup sem restaurá-lo...")
 
     def _backup_completed(self, result: BackupValidationResult) -> None:
+        self._select_feedback_section(1)
         self.backup_result.setPlainText(_render_backup(result))
-        self._set_status("Backup válido.", False)
+        self._set_status("Backup válido.", False, state="success" if result.is_compatible else "warning")
 
     def start_temporary_scan(self) -> None:
-        if not self._begin_allowed():
+        if not self._begin_allowed(2):
             return
         worker = TemporaryScanWorker(
             self._paths.directory, tuple(self._session_directories())
@@ -284,9 +382,10 @@ class MaintenanceWidget(QWidget):
         self._start_worker(worker, "Localizando temporários conhecidos...")
 
     def _temporaries_completed(self, items: list[TemporaryItem]) -> None:
+        self._select_feedback_section(2)
         self.temporary_items = items
         self._refresh_temporary_table()
-        self._set_status(f"{len(items)} temporário(s) conhecido(s) localizado(s).", False)
+        self._set_status(f"{len(items)} temporário(s) conhecido(s) localizado(s).", False, state="success")
 
     def _temporary_toggled(self, row: int, checked: bool) -> None:
         if row < len(self.temporary_items):
@@ -299,14 +398,12 @@ class MaintenanceWidget(QWidget):
         selected = [
             item for item in self.temporary_items if item.selected and item.removable
         ]
-        if not selected or not self._begin_allowed():
+        if not selected or not self._begin_allowed(2):
             return
-        answer = QMessageBox.warning(
+        answer = confirm_destructive_action(
             self,
             "Confirmar limpeza",
             f"Excluir {len(selected)} temporário(s) antigo(s) selecionado(s)?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -319,18 +416,22 @@ class MaintenanceWidget(QWidget):
         self._start_worker(worker, "Removendo temporários selecionados...")
 
     def _cleanup_completed(self, result: CleanupResult) -> None:
+        self._select_feedback_section(2)
         self._refresh_temporary_table()
         self._set_status(
             f"Limpeza concluída: {result.removed} removido(s), "
             f"{result.preserved} preservado(s), {result.failed} falha(s).",
             result.failed > 0,
+            state="warning" if result.preserved else "success",
         )
 
     def start_compaction(self) -> None:
+        if self._worker is None:
+            self._select_feedback_section(3)
         if not self._paths.vault_database_path.is_file():
             self._set_status("O cofre local ainda não existe.", True)
             return
-        if not self._begin_allowed():
+        if not self._begin_allowed(3):
             return
         size = self._paths.vault_database_path.stat().st_size
         answer = QMessageBox.warning(
@@ -349,11 +450,13 @@ class MaintenanceWidget(QWidget):
         self._start_worker(worker, "Preparando compactação segura...")
 
     def _compaction_phase(self, stage: str, cancellation_allowed: bool) -> None:
+        self._select_feedback_section(3)
         self.progress.setRange(0, 0)
         self.cancel_button.setEnabled(cancellation_allowed)
         self._set_status(stage, False)
 
     def _compaction_completed(self, result: CompactionResult) -> None:
+        self._select_feedback_section(3)
         self.set_last_audit(result.audit)
         self.compaction_result.setPlainText(
             "\n".join(
@@ -366,11 +469,12 @@ class MaintenanceWidget(QWidget):
             )
         )
         self.environment_changed.emit()
-        self._set_status("Compactação concluída com segurança.", False)
+        self._set_status("Compactação concluída com segurança.", False, state="success")
 
-    def _begin_allowed(self) -> bool:
+    def _begin_allowed(self, section: int) -> bool:
         if self._worker is not None:
             return False
+        self._select_feedback_section(section)
         if not self._prepare_operation():
             self._set_status("Finalize as outras operações antes da manutenção.", True)
             return False
@@ -396,7 +500,7 @@ class MaintenanceWidget(QWidget):
             self._set_status("Cancelamento solicitado...", False)
 
     def _cancelled(self) -> None:
-        self._set_status("Operação cancelada com segurança.", False)
+        self._set_status("Operação cancelada com segurança.", False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         message = (
@@ -416,6 +520,7 @@ class MaintenanceWidget(QWidget):
         if worker is not None:
             worker.deleteLater()
         self._set_busy(False)
+        self._remember_feedback()
 
     def _set_busy(self, busy: bool) -> None:
         self.sections.setEnabled(not busy)
@@ -468,11 +573,13 @@ class MaintenanceWidget(QWidget):
             any(item.selected and item.removable for item in self.temporary_items)
         )
 
-    def _set_status(self, message: str, error: bool) -> None:
+    def _set_status(
+        self, message: str, error: bool, *, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if error else state)
+        self._remember_feedback()
+        self._update_feedback_visibility()
 
 
 def _render_diagnostic(result: DiagnosticResult) -> str:

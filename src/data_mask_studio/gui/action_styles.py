@@ -1,8 +1,18 @@
 """Indicadores compartilhados pelas tabelas de configuração."""
 from data_mask_studio.anonymization.models import ColumnAction
+from data_mask_studio.gui.visual_tokens import COLORS
 
 ACTION_INDICATOR_STYLES = {
-    ColumnAction.PRESERVE: "QComboBox { background-color: #18202a; border-color: #465569; }",
-    ColumnAction.MASK: "QComboBox { background-color: #1d3449; border-color: #347db8; }",
-    ColumnAction.EXCLUDE: "QComboBox { background-color: #352322; border-color: #854842; }",
+    ColumnAction.PRESERVE: (
+        f"QComboBox {{ background-color: {COLORS['action_preserve']}; "
+        f"border-color: {COLORS['neutral_indicator']}; }}"
+    ),
+    ColumnAction.MASK: (
+        f"QComboBox {{ background-color: {COLORS['action_mask']}; "
+        f"border-color: {COLORS['accent']}; }}"
+    ),
+    ColumnAction.EXCLUDE: (
+        f"QComboBox {{ background-color: {COLORS['danger_surface']}; "
+        f"border-color: {COLORS['danger_border']}; }}"
+    ),
 }

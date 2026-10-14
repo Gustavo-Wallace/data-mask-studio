@@ -1,11 +1,13 @@
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 import time
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QFileDialog,
     QFormLayout,
@@ -16,12 +18,18 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 from data_mask_studio.performance import calculate_metrics
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, TruncatedTextToolTipDelegate, configure_result_area, confirm_destructive_action,
+    set_button_role, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 
 from data_mask_studio.csv_tools import (
     CSVInspectionError,
@@ -106,6 +114,7 @@ class RestorationWidget(QWidget):
         )
         self.table.setHorizontalHeaderLabels(["Restaurar", "Cabeçalho"])
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.table.setItemDelegateForColumn(1, TruncatedTextToolTipDelegate(self.table))
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
@@ -126,6 +135,7 @@ class RestorationWidget(QWidget):
         selection.addWidget(self.selected_count_label)
 
         self.missing_policy_combo = ScrollSafeComboBox()
+        self.missing_policy_combo.setAccessibleName("Códigos não encontrados")
         self.missing_policy_combo.addItem(
             "Manter código original", MissingCodePolicy.KEEP.value
         )
@@ -136,6 +146,7 @@ class RestorationWidget(QWidget):
             "Interromper restauração", MissingCodePolicy.ABORT.value
         )
         self.representation_combo = ScrollSafeComboBox()
+        self.representation_combo.setAccessibleName("Valor restaurado")
         self.representation_combo.addItem(
             "Primeira representação original",
             RepresentationPolicy.FIRST_ORIGINAL.value,
@@ -143,14 +154,31 @@ class RestorationWidget(QWidget):
         self.representation_combo.addItem(
             "Preferir valor canônico", RepresentationPolicy.CANONICAL.value
         )
-        policies = QFormLayout()
+        self.options_controls = QWidget()
+        policies = QFormLayout(self.options_controls)
+        policies.setContentsMargins(0, 0, 0, 0)
         policies.addRow("Códigos não encontrados:", self.missing_policy_combo)
         policies.addRow("Valor restaurado:", self.representation_combo)
+        self.options_toggle = QPushButton("Opções de restauração")
+        self.options_toggle.setCheckable(True)
+        self.options_toggle.setAccessibleName("Mostrar ou ocultar opções de restauração")
+        self.options_toggle.toggled.connect(self._update_options_disclosure)
+        self.options_summary = QLabel()
+        self.options_summary.setWordWrap(True)
+        self.options_summary.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.options_summary.setStyleSheet(
+            f"color: {COLORS['muted_text']}; font-size: {METRICS['description_font_size']}px;"
+        )
+        self.missing_policy_combo.currentIndexChanged.connect(self._update_options_summary)
+        self.representation_combo.currentIndexChanged.connect(self._update_options_summary)
+        set_button_role(self.options_toggle, "secondary")
 
         self.analyze_button = QPushButton("Analisar códigos")
         self.analyze_button.clicked.connect(self.start_analysis)
         self.generate_button = QPushButton("Gerar CSV restaurado")
         self.generate_button.clicked.connect(self._choose_output)
+        set_button_role(self.analyze_button, "secondary")
+        set_button_role(self.generate_button, "primary")
         self.cancel_button = QPushButton("Cancelar")
         self.cancel_button.clicked.connect(self.cancel_processing)
         self.cancel_button.setVisible(False)
@@ -163,6 +191,7 @@ class RestorationWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_label = QLabel()
+        self.progress_label.setWordWrap(True)
         self.progress_label.setVisible(False)
         progress = QHBoxLayout()
         progress.addWidget(self.progress_bar, stretch=1)
@@ -172,12 +201,14 @@ class RestorationWidget(QWidget):
             "O resumo da análise ou restauração aparecerá aqui."
         )
         self.summary.setReadOnly(True)
-        self.summary.setMaximumHeight(125)
+        self.summary.setMinimumHeight(self.summary.minimumSizeHint().height())
+        configure_result_area(self.summary, self.summary.minimumHeight())
         self.open_folder_button = QPushButton("Abrir pasta do arquivo")
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.open_folder_button.setVisible(False)
         self.status_label = QLabel("Selecione um CSV anonimizado para comecar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 20, 36, 20)
@@ -188,20 +219,80 @@ class RestorationWidget(QWidget):
         layout.addLayout(details)
         layout.addLayout(selection)
         layout.addWidget(self.table, stretch=1)
-        layout.addLayout(policies)
+        layout.addWidget(self.options_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.options_summary)
+        layout.addWidget(self.options_controls)
         layout.addLayout(actions)
         layout.addLayout(progress)
         layout.addWidget(self.summary)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
         layout.addStretch()
+        self.table.model().rowsInserted.connect(self._update_information_layout)
+        self.table.model().rowsRemoved.connect(self._update_information_layout)
+        self.summary.textChanged.connect(self._update_information_layout)
+        self._update_information_layout()
+        option_tab_order = (
+            self.table, self.options_toggle, self.missing_policy_combo,
+            self.representation_combo, self.analyze_button, self.generate_button,
+        )
+        for previous, following in zip(option_tab_order, option_tab_order[1:]):
+            QWidget.setTabOrder(previous, following)
+        self._update_options_summary()
+        self._update_options_disclosure()
         self._update_enabled_state(False)
         self.source_combo.currentIndexChanged.connect(self._source_changed)
+
+    def _update_information_layout(self) -> None:
+        has_columns = self.table.rowCount() > 0
+        has_summary = bool(self.summary.toPlainText().strip())
+        minimum = (
+            self.table.horizontalHeader().sizeHint().height()
+            + 2 * self.table.verticalHeader().defaultSectionSize()
+            + 2 * self.table.frameWidth()
+        )
+        self.table.setMinimumHeight(minimum)
+        self.table.setMaximumHeight(16_777_215 if has_columns else minimum)
+        # Explicit minima keep each view readable without imposing its preferred
+        # height on the enclosing scroll area. Populated views share spare space.
+        for view, populated in ((self.table, has_columns), (self.summary, has_summary)):
+            policy = view.sizePolicy()
+            policy.setVerticalPolicy(
+                QSizePolicy.Policy.Ignored if populated else QSizePolicy.Policy.Preferred
+            )
+            view.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(self.table), int(has_columns))
+        layout.setStretch(layout.indexOf(self.summary), int(has_summary))
+        layout.setStretch(layout.count() - 1, int(not (has_columns or has_summary)))
+
+    def _update_options_disclosure(self, *_args: object) -> None:
+        focused = QApplication.focusWidget()
+        options_have_focus = focused is not None and self.options_controls.isAncestorOf(focused)
+        expanded = self.options_toggle.isChecked()
+        self.options_controls.setVisible(expanded)
+        self.options_summary.setVisible(not expanded)
+        self.options_toggle.setText(
+            "Ocultar opções de restauração" if expanded else "Opções de restauração"
+        )
+        if options_have_focus and not expanded and self.isVisible():
+            self.options_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _update_options_summary(self, *_args: object) -> None:
+        restriction = " (obrigatório no pacote)" if self._package_mode() else ""
+        self.options_summary.setText(
+            f"Não encontrados: {self.missing_policy_combo.currentText()}{restriction}. "
+            f"Valor: {self.representation_combo.currentText()}."
+        )
 
     def _package_mode(self) -> bool:
         return self.source_combo.currentData() == "package"
 
     def _source_changed(self) -> None:
+        if self._worker is not None:
+            with QSignalBlocker(self.source_combo):
+                self.source_combo.setCurrentIndex(self._worker_source_index)
+            return
         self.package_controls.clear_password()
         if self._package_mode():
             self._local_missing_policy_index = self.missing_policy_combo.currentIndex()
@@ -212,10 +303,9 @@ class RestorationWidget(QWidget):
             self.missing_policy_combo.setCurrentIndex(getattr(self, "_local_missing_policy_index", 0))
         self.package_controls.setVisible(self._package_mode())
         self.package_controls.setEnabled(self._package_mode())
-        self.summary.clear()
-        self._last_output_path = None
-        self.open_folder_button.setVisible(False)
+        self._reset_operation_feedback()
         self._update_enabled_state(self._inspection is not None)
+        self._update_options_summary()
         self._set_status(
             "O pacote e o vínculo com o CSV serão verificados durante a restauração."
             if self._package_mode() else "Restauração pelo cofre local selecionada.",
@@ -239,7 +329,7 @@ class RestorationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._inspection = inspection
-        self._last_output_path = None
+        self._reset_operation_feedback()
         self.file_name_label.setText(inspection.path.name)
         self.path_field.setText(str(inspection.path))
         self.encoding_label.setText(inspection.encoding)
@@ -260,32 +350,42 @@ class RestorationWidget(QWidget):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 1, item)
             self._checkboxes.append(checkbox)
-        self.summary.clear()
-        self.open_folder_button.setVisible(False)
         self._update_selected_count()
         self._update_enabled_state(True)
         warning = format_header_replacement_warning(inspection.header_replacements)
         status = "Cabecalhos lidos com sucesso."
         if warning:
             status = f"{status} {warning}"
-        self._set_status(status, is_error=False)
+        self._set_status(status, is_error=False, state="warning" if warning else "success")
 
     def clear_selection(self) -> None:
         if self._worker is not None:
             return
         self.package_controls.clear_password()
         self._inspection = None
-        self._last_output_path = None
+        self._reset_operation_feedback()
         self.path_field.clear()
         for label in (self.file_name_label, self.encoding_label, self.delimiter_label):
             label.setText("—")
         self.table.setRowCount(0)
         self._checkboxes.clear()
-        self.summary.clear()
-        self.open_folder_button.setVisible(False)
         self._update_selected_count()
         self._update_enabled_state(False)
         self._set_status("Selecione um CSV anonimizado para começar.", is_error=False)
+
+    def _reset_operation_feedback(self) -> None:
+        """Invalidate feedback, not the selected file, columns or source inputs."""
+        self._operation_succeeded = False
+        self._last_output_path = None
+        self._last_error = None
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        self.progress_label.clear()
+        self.progress_label.setVisible(False)
+        self.summary.clear()
+        self.open_folder_button.setVisible(False)
+        self._set_status("", is_error=False)
 
     def select_all_columns(self) -> None:
         for checkbox in self._checkboxes:
@@ -337,8 +437,7 @@ class RestorationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         worker = RestorationAnalysisWorker(self._service, configuration)
-        worker.completed.connect(self._analysis_completed)
-        self._start_worker(worker, "Analisando códigos...")
+        self._start_worker(worker, "Analisando códigos...", self._analysis_completed)
 
     def _analysis_completed(self, result: AnalysisResult) -> None:
         self._operation_succeeded = True
@@ -357,7 +456,11 @@ class RestorationWidget(QWidget):
             f"Prefixos: {prefixes}\n"
             f"Possíveis incompatibilidades: {incompatibilities}"
         )
-        self._set_status("Análise concluída sem alterar o cofre.", is_error=False)
+        self._set_status(
+            "Análise concluída sem alterar o cofre.", is_error=False,
+            state="warning" if result.missing_codes or result.invalid_formats
+            or result.possible_incompatibilities else "success",
+        )
 
     def _choose_output(self) -> None:
         try:
@@ -394,12 +497,10 @@ class RestorationWidget(QWidget):
             return
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Confirmar substituição",
                 "O arquivo de saída já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -430,20 +531,17 @@ class RestorationWidget(QWidget):
             **options,
         )
         self.package_controls.clear_password()
-        self._last_error = None
-        self._last_output_path = None
-        self.open_folder_button.setVisible(False)
-        self.summary.clear()
-        worker.completed.connect(self._restoration_completed)
-        self._start_worker(worker, "Gerando CSV restaurado...")
+        self._start_worker(worker, "Gerando CSV restaurado...", self._restoration_completed)
 
     def _start_worker(
         self,
         worker: RestorationAnalysisWorker | CSVRestorationWorker,
         status: str,
+        completed: Callable[..., None],
     ) -> None:
+        self._reset_operation_feedback()
         self._worker = worker
-        self._operation_succeeded = False
+        self._worker_source_index = self.source_combo.currentIndex()
         self._set_processing_state(True)
         self.progress_bar.reset()
         self.progress_bar.setRange(0, 0)
@@ -452,10 +550,21 @@ class RestorationWidget(QWidget):
         self.progress_label.setVisible(True)
         self._set_status(status, is_error=False)
         self._processing_started_at = time.perf_counter()
-        worker.progress.connect(self._progress_changed)
-        worker.cancelled.connect(self._cancelled)
-        worker.failed.connect(self._failed)
-        worker.finished.connect(self._worker_finished)
+
+        def deliver(callback: Callable[..., None], *args: object) -> None:
+            # A retired worker's queued callbacks must not affect a new context
+            # or finish a replacement worker. Keep normal Qt signal delivery.
+            if self._worker is worker:
+                callback(*args)
+
+        for signal, callback in (
+            (worker.progress, self._progress_changed),
+            (worker.completed, completed),
+            (worker.cancelled, self._cancelled),
+            (worker.failed, self._failed),
+            (worker.finished, self._worker_finished),
+        ):
+            signal.connect(partial(deliver, callback))
         worker.start()
 
     def _progress_changed(self, progress: RestorationProgress) -> None:
@@ -497,12 +606,15 @@ class RestorationWidget(QWidget):
             f"Representação: {representation}"
         )
         self.open_folder_button.setVisible(True)
-        self._set_status("CSV restaurado gerado com sucesso.", is_error=False)
+        self._set_status(
+            "CSV restaurado gerado com sucesso.", is_error=False,
+            state="warning" if result.missing_codes else "success",
+        )
 
     def _cancelled(self) -> None:
         self._operation_succeeded = False
         self.package_controls.clear_password()
-        self._set_status("A operacao foi cancelada com seguranca.", is_error=False)
+        self._set_status("A operacao foi cancelada com seguranca.", is_error=False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         self._operation_succeeded = False
@@ -543,6 +655,7 @@ class RestorationWidget(QWidget):
         return self._worker.wait(5000)
 
     def _set_processing_state(self, processing: bool) -> None:
+        self.options_toggle.setEnabled(not processing)
         self.source_combo.setEnabled(not processing)
         self.package_controls.setEnabled(not processing and self._package_mode())
         self.select_button.setEnabled(not processing)
@@ -585,8 +698,8 @@ class RestorationWidget(QWidget):
         ):
             self._set_status("Nao foi possivel abrir a pasta do arquivo.", is_error=True)
 
-    def _set_status(self, message: str, *, is_error: bool) -> None:
+    def _set_status(
+        self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            f"color: {'#b42318' if is_error else '#276749'};"
-        )
+        set_feedback_state(self.status_label, "error" if is_error else state)

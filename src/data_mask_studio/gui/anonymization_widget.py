@@ -3,8 +3,10 @@ from pathlib import Path
 import time
 
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QResizeEvent
 from PySide6.QtWidgets import (
+    QApplication,
+    QBoxLayout,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -15,12 +17,14 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
+from data_mask_studio.gui.styles import section_title_stylesheet
 from data_mask_studio.anonymization import (
     AnonymizationResult,
     ColumnAction,
@@ -59,6 +63,10 @@ from data_mask_studio.gui.detection_dialog import DetectionDialog
 from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, confirm_destructive_action, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -134,6 +142,10 @@ class AnonymizationWidget(QWidget):
         self.path_field.setPlaceholderText("Nenhum arquivo selecionado")
 
         self.file_name_label = QLabel("—")
+        self.file_name_label.setWordWrap(True)
+        self.file_name_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
+        )
         self.encoding_label = QLabel("—")
         self.delimiter_label = QLabel("—")
         self.column_count_label = QLabel("—")
@@ -141,12 +153,24 @@ class AnonymizationWidget(QWidget):
         details_layout = QFormLayout()
         details_layout.addRow("Arquivo:", self.file_name_label)
         details_layout.addRow("Caminho completo:", self.path_field)
-        details_layout.addRow("Codificação:", self.encoding_label)
-        details_layout.addRow("Separador:", self.delimiter_label)
-        details_layout.addRow("Quantidade de colunas:", self.column_count_label)
+        metadata_layout = QHBoxLayout()
+        self._metadata_layout = metadata_layout
+        metadata_layout.setSpacing(METRICS["panel_spacing"])
+        for text, value in (
+            ("Codificação:", self.encoding_label),
+            ("Separador:", self.delimiter_label),
+            ("Quantidade de colunas:", self.column_count_label),
+        ):
+            detail = QHBoxLayout()
+            detail.setSpacing(METRICS["panel_spacing"])
+            detail.addWidget(QLabel(text))
+            detail.addWidget(value)
+            metadata_layout.addLayout(detail)
+        metadata_layout.addStretch()
+        details_layout.addRow(metadata_layout)
 
         configuration_label = QLabel("Configuração das colunas")
-        configuration_label.setStyleSheet("font-size: 16px; font-weight: 600;")
+        configuration_label.setStyleSheet(section_title_stylesheet())
 
         self.profile_controls = ProfileControls(
             apply_profile=self.apply_selected_profile,
@@ -162,6 +186,10 @@ class AnonymizationWidget(QWidget):
         self.update_profile_button = self.profile_controls.update_button
         self.rename_profile_button = self.profile_controls.rename_button
         self.delete_profile_button = self.profile_controls.delete_button
+        self.profile_toggle = QPushButton("Perfis de configuração (opcional)")
+        self.profile_toggle.setCheckable(True)
+        self.profile_toggle.setAccessibleName("Mostrar ou ocultar perfis de configuração")
+        self.profile_toggle.toggled.connect(self._update_profile_disclosure)
 
         self.select_all_button = QPushButton("Mascarar todas")
         self.select_all_button.clicked.connect(self.select_all_columns)
@@ -172,12 +200,15 @@ class AnonymizationWidget(QWidget):
         self.unselect_all_button.setEnabled(False)
 
         self.selected_count_label = QLabel("0 colunas para mascarar")
+        self.selected_count_label.setWordWrap(True)
+        self.selected_count_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
 
         selection_layout = QHBoxLayout()
         selection_layout.addWidget(self.select_all_button)
         selection_layout.addWidget(self.unselect_all_button)
-        selection_layout.addStretch()
-        selection_layout.addWidget(self.selected_count_label)
+        selection_layout.addWidget(self.selected_count_label, stretch=1)
 
         self.config_table = ColumnConfigurationTable()
 
@@ -239,11 +270,12 @@ class AnonymizationWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.processed_count_label = QLabel("0 registros processados")
+        self.processed_count_label.setWordWrap(True)
         self.processed_count_label.setVisible(False)
 
         progress_layout = QHBoxLayout()
-        progress_layout.addWidget(self.progress_bar, stretch=1)
-        progress_layout.addWidget(self.processed_count_label)
+        progress_layout.addWidget(self.progress_bar, stretch=2)
+        progress_layout.addWidget(self.processed_count_label, stretch=1)
 
         self.output_path_label = QLabel()
         self.output_path_label.setWordWrap(True)
@@ -258,12 +290,14 @@ class AnonymizationWidget(QWidget):
 
         self.status_label = QLabel("Selecione um arquivo CSV para começar.")
         self.status_label.setWordWrap(True)
+        set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout()
         layout.setContentsMargins(36, 24, 36, 24)
-        layout.setSpacing(10)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addLayout(button_layout)
         layout.addLayout(details_layout)
+        layout.addWidget(self.profile_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.profile_controls)
         layout.addWidget(configuration_label)
         layout.addLayout(selection_layout)
@@ -276,9 +310,71 @@ class AnonymizationWidget(QWidget):
         layout.addWidget(self.output_path_label)
         layout.addWidget(self.open_folder_button)
         layout.addWidget(self.status_label)
+        layout.addStretch()
 
         self.setLayout(layout)
+        self.config_table.model().rowsInserted.connect(self._update_configuration_layout)
+        self.config_table.model().rowsRemoved.connect(self._update_configuration_layout)
+        self._update_configuration_layout()
+        profile_tab_order = (
+            self.path_field, self.profile_toggle, self.profile_combo,
+            self.apply_profile_button, self.save_profile_button, self.update_profile_button,
+            self.rename_profile_button, self.delete_profile_button, self.select_all_button,
+        )
+        for previous, following in zip(profile_tab_order, profile_tab_order[1:]):
+            QWidget.setTabOrder(previous, following)
         self._refresh_profiles()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        # Keep metadata together when it fits; narrow/DPI-scaled views can wrap
+        # the same three facts vertically instead of widening the whole page.
+        metadata = self._metadata_layout
+        groups = [metadata.itemAt(index) for index in range(metadata.count())
+                  if metadata.itemAt(index).layout() is not None]
+        natural_width = sum(group.minimumSize().width() for group in groups)
+        natural_width += (len(groups) - 1) * metadata.spacing()
+        margins = self.layout().contentsMargins()
+        available = self.width() - margins.left() - margins.right()
+        if self.parentWidget() is not None:
+            available = min(
+                available, self.parentWidget().width() - margins.left() - margins.right(),
+            )
+        metadata.setDirection(
+            QBoxLayout.Direction.LeftToRight if natural_width <= available
+            else QBoxLayout.Direction.TopToBottom
+        )
+
+    def _update_configuration_layout(self) -> None:
+        """Compact empty/small tables; let larger configurations use spare space."""
+        table = self.config_table
+        row_height = table.verticalHeader().defaultSectionSize()
+        frame = (
+            table.horizontalHeader().sizeHint().height()
+            + table.horizontalScrollBar().sizeHint().height()
+            + 2 * table.frameWidth()
+        )
+        table.setMinimumHeight(frame + 2 * row_height)
+        table.setMaximumHeight(frame + max(2, table.rowCount()) * row_height)
+        has_columns = table.rowCount() > 0
+        policy = table.sizePolicy()
+        policy.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        table.setSizePolicy(policy)
+        layout = self.layout()
+        layout.setStretch(layout.indexOf(table), 4 if has_columns else 0)
+        layout.setStretch(layout.count() - 1, 1)
+
+    def _update_profile_disclosure(self, *_args: object) -> None:
+        """Recolhe apenas os controles de perfis, sem alterar o estado da página."""
+        focused = QApplication.focusWidget()
+        profile_has_focus = focused is not None and self.profile_controls.isAncestorOf(focused)
+        expanded = self.profile_toggle.isChecked()
+        self.profile_controls.setVisible(expanded)
+        self.profile_toggle.setText(
+            "Ocultar perfis" if expanded else "Perfis de configuração (opcional)"
+        )
+        if profile_has_focus and not expanded and self.isVisible():
+            self.profile_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -303,6 +399,7 @@ class AnonymizationWidget(QWidget):
         self._show_result(result)
 
     def _show_result(self, result: CSVInspectionResult) -> None:
+        self.profile_toggle.setChecked(False)
         self.transfer_controls.reset()
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(True)
@@ -327,7 +424,7 @@ class AnonymizationWidget(QWidget):
         status = "Cabeçalhos lidos com sucesso."
         if warning:
             status = f"{status} {warning}"
-        self._set_status(status, is_error=False)
+        self._set_status(status, is_error=False, state="warning" if warning else "success")
 
     def _show_error(self, file_path: str, message: str) -> None:
         selected_path = Path(file_path).expanduser().absolute()
@@ -348,6 +445,7 @@ class AnonymizationWidget(QWidget):
         self._set_status(status, is_error=is_error)
 
     def _reset_details(self) -> None:
+        self.profile_toggle.setChecked(False)
         self.transfer_controls.reset()
         self.composite_section.set_configurations(())
         self.composite_section.setEnabled(False)
@@ -589,6 +687,7 @@ class AnonymizationWidget(QWidget):
                 f"{result.selected_count} para mascarar, "
                 f"{preserved} para preservar e {excluded} para excluir.",
                 is_error=False,
+                state="success",
             )
 
     def _build_current_plan(self, composites=None):
@@ -644,13 +743,14 @@ class AnonymizationWidget(QWidget):
         self._set_status(
             "Análise concluída. Revise as sugestões antes de aplicá-las.",
             is_error=False,
+            state="success",
         )
 
     def _detection_cancelled(self) -> None:
         self._set_detection_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        self._set_status("A análise das colunas foi cancelada.", is_error=False)
+        self._set_status("A análise das colunas foi cancelada.", is_error=False, state="warning")
 
     def _detection_failed(self, error: Exception) -> None:
         self._set_detection_state(False)
@@ -683,6 +783,7 @@ class AnonymizationWidget(QWidget):
             not analyzing and has_file and self._configuration_validated
         )
         self.profile_combo.setEnabled(not analyzing)
+        self.profile_toggle.setEnabled(not analyzing)
         self.analyze_button.setText("Cancelar análise" if analyzing else "Analisar colunas")
         self.analyze_button.setEnabled(has_file)
         if analyzing:
@@ -810,6 +911,7 @@ class AnonymizationWidget(QWidget):
         self._set_status(
             "Sugestões removidas. A configuração atual foi preservada.",
             is_error=False,
+            state="success",
         )
 
     def _clear_detection_suggestions(self) -> None:
@@ -873,6 +975,7 @@ class AnonymizationWidget(QWidget):
         self.update_profile_button.setEnabled(has_profile and has_csv)
         self.rename_profile_button.setEnabled(has_profile)
         self.delete_profile_button.setEnabled(has_profile)
+        self._update_profile_disclosure()
 
     def save_as_profile(self) -> None:
         if (
@@ -898,7 +1001,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(profile.identifier)
-        self._set_status(f"Perfil “{profile.name}” salvo com sucesso.", is_error=False)
+        self._set_status(f"Perfil “{profile.name}” salvo com sucesso.", is_error=False, state="success")
 
     def update_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -932,7 +1035,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(updated.identifier)
-        self._set_status(f"Perfil “{updated.name}” atualizado.", is_error=False)
+        self._set_status(f"Perfil “{updated.name}” atualizado.", is_error=False, state="success")
 
     def apply_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -970,7 +1073,7 @@ class AnonymizationWidget(QWidget):
         self._configuration_dirty = False
         self.validate_current_configuration()
         if self._configuration_validated:
-            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False)
+            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False, state="success")
         else:
             details = self.status_label.text()
             scalar_validation = validate_configuration(self._column_configs)
@@ -1035,18 +1138,16 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(renamed.identifier)
-        self._set_status(f"Perfil renomeado para “{renamed.name}”.", is_error=False)
+        self._set_status(f"Perfil renomeado para “{renamed.name}”.", is_error=False, state="success")
 
     def delete_selected_profile(self) -> None:
         profile = self._selected_profile()
         if profile is None or self._profile_service is None:
             return
-        answer = QMessageBox.question(
+        answer = confirm_destructive_action(
             self,
             "Excluir perfil",
             f"Excluir somente o perfil “{profile.name}”?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -1056,7 +1157,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles()
-        self._set_status(f"Perfil “{profile.name}” excluído.", is_error=False)
+        self._set_status(f"Perfil “{profile.name}” excluído.", is_error=False, state="success")
 
     def _choose_output_file(self) -> None:
         if self._inspection_result is None or not self._configuration_validated:
@@ -1090,12 +1191,10 @@ class AnonymizationWidget(QWidget):
 
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Confirmar substituição",
                 "O arquivo de saída já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 self._set_status("O arquivo existente não foi alterado.", is_error=False)
@@ -1194,13 +1293,14 @@ class AnonymizationWidget(QWidget):
             f"{result.updated_mappings} mapeamentos existentes atualizados. "
             f"{vault_notice}{fallback_notice}",
             is_error=False,
+            state="warning" if result.normalization_fallbacks else "success",
         )
 
     def _processing_cancelled(self) -> None:
         self._set_processing_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        self._set_status("A geração do CSV foi cancelada.", is_error=False)
+        self._set_status("A geração do CSV foi cancelada.", is_error=False, state="warning")
 
     def _processing_failed(self, error: Exception) -> None:
         self._last_processing_error = error
@@ -1243,6 +1343,7 @@ class AnonymizationWidget(QWidget):
             not processing and has_file and self._configuration_validated
         )
         self.profile_combo.setEnabled(not processing)
+        self.profile_toggle.setEnabled(not processing)
         if processing:
             for button in (
                 self.apply_profile_button,
@@ -1293,7 +1394,8 @@ class AnonymizationWidget(QWidget):
             worker.request_cancel()
         return all(worker.wait(5000) for worker in workers)
 
-    def _set_status(self, message: str, *, is_error: bool) -> None:
-        color = "#b42318" if is_error else "#276749"
+    def _set_status(
+        self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
+    ) -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(f"color: {color};")
+        set_feedback_state(self.status_label, "error" if is_error else state)

@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QUrl, Signal
+from PySide6.QtCore import QThread, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -33,6 +34,11 @@ from data_mask_studio.gui.backup_worker import (
     BackupValidationWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTextEdit
+from data_mask_studio.gui.components.presentation import (
+    FeedbackState, configure_result_area, confirm_destructive_action,
+    set_button_role, set_feedback_state,
+)
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.security import DataProtector, KeyProvider
 
 
@@ -78,8 +84,11 @@ class BackupWidget(QWidget):
             )
         )
         recommendation = QLabel("Use uma frase-senha longa, única e bem guardada.")
-        recommendation.setStyleSheet("color: #555;")
+        recommendation.setWordWrap(True)
+        recommendation.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        set_feedback_state(recommendation, "neutral")
         self.create_button = QPushButton("Criar backup")
+        set_button_role(self.create_button, "primary")
         self.create_button.clicked.connect(self.start_creation)
         self.create_cancel_button = QPushButton("Cancelar")
         self.create_cancel_button.clicked.connect(self.cancel)
@@ -89,6 +98,7 @@ class BackupWidget(QWidget):
         self.create_progress.setValue(0)
         self.create_status = QLabel("Escolha o destino e informe uma senha.")
         self.create_status.setWordWrap(True)
+        set_feedback_state(self.create_status, "neutral")
         self.open_folder_button = QPushButton("Abrir pasta do backup")
         self.open_folder_button.clicked.connect(self.open_backup_folder)
         self.open_folder_button.setEnabled(False)
@@ -125,9 +135,11 @@ class BackupWidget(QWidget):
             )
         )
         self.validate_backup_button = QPushButton("Validar backup")
+        set_button_role(self.validate_backup_button, "primary")
         self.validate_backup_button.clicked.connect(self.start_validation)
         self.validate_backup_button.setEnabled(False)
         self.restore_button = QPushButton("Restaurar backup…")
+        set_button_role(self.restore_button, "attention")
         self.restore_button.clicked.connect(self.start_restore)
         self.restore_button.setEnabled(False)
         self.restore_cancel_button = QPushButton("Cancelar")
@@ -140,10 +152,15 @@ class BackupWidget(QWidget):
             "Valide um backup para exibir o resumo técnico."
         )
         self.restore_summary.setReadOnly(True)
-        self.restore_summary.setMaximumHeight(115)
+        # Let the scrollable page use the editor's Qt minimum, not its large
+        # preferred height, while the result row receives the available space.
+        self.restore_summary.setMinimumHeight(self.restore_summary.minimumSizeHint().height())
+        self.restore_summary.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        configure_result_area(self.restore_summary, 80)
         self.restore_status = QLabel("Selecione um arquivo .dmsbackup.")
         self.restore_status.setWordWrap(True)
-        restore_form = QFormLayout(restore_group)
+        set_feedback_state(self.restore_status, "neutral")
+        restore_form = QFormLayout()
         restore_form.addRow("Arquivo:", restore_file_row)
         restore_form.addRow("Senha:", self.restore_password_field)
         restore_form.addRow("", self.show_restore_password)
@@ -153,15 +170,45 @@ class BackupWidget(QWidget):
         restore_actions.addWidget(self.restore_cancel_button)
         restore_actions.addStretch()
         restore_form.addRow("", restore_actions)
-        restore_form.addRow("Resumo técnico:", self.restore_summary)
-        restore_form.addRow("Progresso:", self.restore_progress)
-        restore_form.addRow("Status:", self.restore_status)
+        summary_label = QLabel("Resumo técnico:")
+        summary_label.setBuddy(self.restore_summary)
+        summary_row = QHBoxLayout()
+        summary_row.addWidget(summary_label, alignment=Qt.AlignmentFlag.AlignTop)
+        summary_row.addWidget(self.restore_summary, stretch=1)
+        restore_feedback = QFormLayout()
+        restore_feedback.addRow("Progresso:", self.restore_progress)
+        restore_feedback.addRow("Status:", self.restore_status)
+        # Align the existing captions using their font-dependent size hints.
+        labels = (
+            restore_form.labelForField(restore_file_row),
+            restore_form.labelForField(self.restore_password_field),
+            summary_label,
+            restore_feedback.labelForField(self.restore_progress),
+            restore_feedback.labelForField(self.restore_status),
+        )
+        label_width = max(label.sizeHint().width() for label in labels)
+        for label in labels:
+            label.setMinimumWidth(label_width)
+        restore_layout = QVBoxLayout(restore_group)
+        restore_layout.addLayout(restore_form)
+        restore_layout.addLayout(summary_row, stretch=1)
+        restore_layout.addLayout(restore_feedback)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
+        layout.setSpacing(METRICS["panel_spacing"])
         layout.addWidget(create_group)
         layout.addWidget(restore_group)
         layout.addStretch()
+        self.restore_summary.textChanged.connect(self._update_summary_layout)
+        self._update_summary_layout()
+
+    def _update_summary_layout(self) -> None:
+        # Creation keeps its natural size; only populated restore results expand.
+        has_summary = bool(self.restore_summary.toPlainText().strip())
+        layout = self.layout()
+        layout.setStretch(1, int(has_summary))
+        layout.setStretch(layout.count() - 1, int(not has_summary))
 
     def choose_destination(self) -> None:
         selected, _ = QFileDialog.getSaveFileName(
@@ -201,12 +248,10 @@ class BackupWidget(QWidget):
             return
         overwrite = destination.exists()
         if overwrite:
-            answer = QMessageBox.question(
+            answer = confirm_destructive_action(
                 self,
                 "Substituir backup",
                 "O arquivo de backup já existe. Deseja substituí-lo?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -250,12 +295,10 @@ class BackupWidget(QWidget):
                 True,
             )
             return
-        answer = QMessageBox.question(
+        answer = confirm_destructive_action(
             self,
             "Confirmar restauração",
             "A restauração substituirá o cofre, as chaves e os perfis locais atuais.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -292,7 +335,7 @@ class BackupWidget(QWidget):
         self.create_progress.setRange(0, 1)
         self.create_progress.setValue(1)
         self.open_folder_button.setEnabled(True)
-        self._status(self.create_status, "Backup criado com sucesso.", False)
+        self._status(self.create_status, "Backup criado com sucesso.", False, state="success")
         self._clear_create_passwords()
 
     def _validation_completed(self, result: BackupValidationResult) -> None:
@@ -302,7 +345,7 @@ class BackupWidget(QWidget):
         self.restore_progress.setValue(1)
         self.restore_summary.setPlainText(_render_validation(result))
         message = "Backup validado com sucesso." if result.is_compatible else "Backup incompatível."
-        self._status(self.restore_status, message, not result.is_compatible)
+        self._status(self.restore_status, message, not result.is_compatible, state="success")
 
     def _restore_completed(self, result: RestoreResult) -> None:
         self.restore_progress.setRange(0, 1)
@@ -311,6 +354,7 @@ class BackupWidget(QWidget):
             self.restore_status,
             f"Ambiente restaurado com sucesso: {result.mapping_count} mapeamento(s).",
             False,
+            state="success",
         )
         self.restore_password_field.clear()
         self._validated_result = None
@@ -319,8 +363,8 @@ class BackupWidget(QWidget):
 
     def _cancelled(self) -> None:
         self._clear_all_passwords()
-        self._status(self.create_status, "Operação cancelada.", False)
-        self._status(self.restore_status, "Operação cancelada.", False)
+        self._status(self.create_status, "Operação cancelada.", False, state="warning")
+        self._status(self.restore_status, "Operação cancelada.", False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         message = str(error) if isinstance(error, BackupError) else "A operação de backup falhou."
@@ -357,6 +401,8 @@ class BackupWidget(QWidget):
         self._validated_result = None
         self.restore_button.setEnabled(False)
         self.restore_summary.clear()
+        if self._worker is None:
+            set_feedback_state(self.restore_status, "neutral")
         self.validate_backup_button.setEnabled(
             bool(self.restore_file_field.text() and self.restore_password_field.text())
             and self._worker is None
@@ -402,9 +448,11 @@ class BackupWidget(QWidget):
         self.restore_password_field.clear()
 
     @staticmethod
-    def _status(label: QLabel, message: str, error: bool) -> None:
+    def _status(
+        label: QLabel, message: str, error: bool, *, state: FeedbackState = "neutral"
+    ) -> None:
         label.setText(message)
-        label.setStyleSheet(f"color: {'#b42318' if error else '#276749'};")
+        set_feedback_state(label, "error" if error else state)
 
 
 def _password_field() -> QLineEdit:

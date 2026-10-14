@@ -44,10 +44,15 @@ class VaultCompactor:
         database = self._paths.vault_database_path
         if not database.is_file():
             raise MaintenanceError("O cofre local não foi encontrado.")
-        temporary_root = Path(tempfile.mkdtemp(prefix="dms-vault-compaction-"))
+        # Keep encrypted recovery evidence under the per-user DMS environment,
+        # not in the general OS temp directory that may be cleaned independently.
+        temporary_root = Path(tempfile.mkdtemp(
+            prefix="dms-vault-compaction-", dir=self._paths.directory,
+        ))
         snapshot = temporary_root / "vault-snapshot.db"
         compacted = temporary_root / "vault-compacted.db"
         replaced = False
+        retain_evidence = False
         size_before = database.stat().st_size
         expected_digest: bytes | None = None
         try:
@@ -103,20 +108,29 @@ class VaultCompactor:
             )
         except MaintenanceCancelled:
             raise
-        except MaintenanceError:
-            if replaced:
-                _restore_snapshot(database, snapshot)
-                replaced = False
-            raise
         except Exception as error:
             if replaced:
-                _restore_snapshot(database, snapshot)
+                try:
+                    _restore_snapshot(database, snapshot)
+                except Exception:
+                    retain_evidence = True
+                    # The explicit cause preserves the original error; Python's
+                    # exception context preserves the rollback failure as well.
+                    raise MaintenanceError(
+                        "A compactação falhou e a restauração do original também falhou. "
+                        "Não utilize o cofre até revisão manual. A pasta de recuperação "
+                        "foi preservada no diretório local do aplicativo: "
+                        f"{temporary_root.name} (snapshot: vault-snapshot.db)."
+                    ) from error
                 replaced = False
+            if isinstance(error, MaintenanceError):
+                raise
             raise MaintenanceError(
                 "Não foi possível compactar o cofre com segurança."
             ) from error
         finally:
-            shutil.rmtree(temporary_root, ignore_errors=True)
+            if not retain_evidence:
+                shutil.rmtree(temporary_root, ignore_errors=True)
 
 
 def _checkpoint(database: Path) -> None:

@@ -12,6 +12,9 @@ from data_mask_studio.csv_tools.models import CSVInspectionResult
 from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.csv_tools.source_binding import SourceBindingError, bind_source, source_ref_at
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.presentation import (
+    configure_dialog_layout, set_button_role, set_feedback_state,
+)
 from data_mask_studio.normalization import NORMALIZATION_OPTIONS, NormalizationRule
 from data_mask_studio.processing.models import CompositeColumnConfig, CompositeSource
 from data_mask_studio.processing.planner import PlanningError
@@ -97,12 +100,15 @@ class CompositeDialog(QDialog):
         self.error_label.setTextFormat(Qt.TextFormat.PlainText)
         self.error_label.setWordWrap(True)
         self.error_label.setAccessibleName("Erro de configuração composta")
+        set_feedback_state(self.error_label, "error")
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.button(QDialogButtonBox.StandardButton.Save).setText("Salvar" if composite else "Criar")
         self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
+        set_button_role(self.buttons.button(QDialogButtonBox.StandardButton.Save), "primary")
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
+        configure_dialog_layout(layout)
         layout.addLayout(form)
         layout.addWidget(QLabel("Componentes"))
         layout.addWidget(self.scroll, 1)

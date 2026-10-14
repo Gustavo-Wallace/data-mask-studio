@@ -103,6 +103,7 @@ def test_restoration_consecutive_outcomes_reset_progress(tmp_path, monkeypatch, 
         assert worker is not None
         assert widget.progress_bar.maximum() == 0
         assert widget.progress_label.text() == "0 linhas processadas"
+        assert widget.status_label.property("feedbackState") == "neutral"
         if outcome != "failure":
             worker.progress.emit(RestorationProgress(list(RestorationStage)[0], 3, 2))
         counters = widget.progress_label.text()
@@ -118,4 +119,7 @@ def test_restoration_consecutive_outcomes_reset_progress(tmp_path, monkeypatch, 
         assert widget.progress_bar.value() == (1 if outcome == "success" else 0)
         assert widget.progress_label.text() == counters
         assert widget.status_label.text() == status
+        assert widget.status_label.property("feedbackState") == {
+            "success": "success", "failure": "error", "cancel": "warning",
+        }[outcome]
     app.processEvents()

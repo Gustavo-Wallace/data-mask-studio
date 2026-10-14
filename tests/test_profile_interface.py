@@ -282,6 +282,9 @@ def test_save_rename_update_and_delete_profile_from_interface(
     assert updated.name == "Perfil final"
     assert updated.columns[0].prefix == "NOVO"
 
+    monkeypatch.setattr(
+        QMessageBox, "exec", lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
     window.delete_profile_button.click()
 
     assert service.list_profiles() == []

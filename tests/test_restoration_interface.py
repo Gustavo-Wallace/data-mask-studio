@@ -120,7 +120,7 @@ def test_existing_output_requires_overwrite_confirmation(
     )
     monkeypatch.setattr(
         QMessageBox,
-        "question",
+        "exec",
         lambda *args, **kwargs: QMessageBox.StandardButton.No,
     )
 

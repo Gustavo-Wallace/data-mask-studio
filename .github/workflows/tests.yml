@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - "ui/**"
   pull_request:
     branches:
       - main

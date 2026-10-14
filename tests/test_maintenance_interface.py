@@ -3,6 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
 from qt_lifecycle import qt_widget_lifecycle
 
 from PySide6.QtWidgets import QMessageBox
@@ -19,6 +20,7 @@ from data_mask_studio.gui.maintenance_worker import (
     TemporaryScanWorker,
 )
 from data_mask_studio.normalization import NormalizationRule
+from data_mask_studio.maintenance.temporary_cleanup import locate_temporaries
 from data_mask_studio.profiles import ProfileRepository, ProfileService
 from data_mask_studio.vault import MappingCandidate, VaultCipher, VaultRepository
 
@@ -165,6 +167,42 @@ def test_workers_expose_required_signals() -> None:
     assert TemporaryCleanupWorker.completed is not None
     assert CompactionWorker.phase_changed is not None
     assert CompactionWorker.completed is not None
+
+
+@pytest.mark.parametrize("answer", [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes])
+def test_cleanup_confirmation_preserves_safe_default_and_selected_file_contract(
+    tmp_path: Path, monkeypatch, answer,
+) -> None:
+    application = create_application([])
+    paths = paths_for(tmp_path)
+    temporary = paths.directory / ".dms-write-abcdefgh"
+    temporary.write_bytes(b"synthetic temporary")
+    os.utime(temporary, (0, 0))
+    widget = widget_for(paths)
+    widget.temporary_items = locate_temporaries(paths.directory)
+    assert len(widget.temporary_items) == 1
+    widget.temporary_items[0].selected = True
+    observed = []
+
+    def confirm(box):
+        observed.append(box)
+        assert box.icon() == QMessageBox.Icon.Warning
+        assert box.standardButtons() == QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        assert box.standardButton(box.defaultButton()) == QMessageBox.StandardButton.No
+        assert box.standardButton(box.escapeButton()) == QMessageBox.StandardButton.No
+        assert box.button(QMessageBox.StandardButton.Yes).property("role") == "destructive"
+        assert "1 temporário(s)" in box.text()
+        return answer
+
+    monkeypatch.setattr(QMessageBox, "exec", confirm)
+    widget.start_cleanup()
+    assert len(observed) == 1
+    if answer == QMessageBox.StandardButton.Yes:
+        wait(application, widget)
+        assert not temporary.exists()
+        assert "1 removido(s)" in widget.status_label.text()
+    else:
+        assert widget._worker is None and temporary.read_bytes() == b"synthetic temporary"
 
 
 def test_main_window_has_maintenance_tab_and_blocks_other_operations(

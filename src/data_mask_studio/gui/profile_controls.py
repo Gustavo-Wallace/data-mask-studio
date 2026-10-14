@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.styles import section_title_stylesheet
 
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -27,7 +28,7 @@ class ProfileControls(QWidget):
     ) -> None:
         super().__init__(parent)
         label = QLabel("Perfil de configuração")
-        label.setStyleSheet("font-size: 16px; font-weight: 600;")
+        label.setStyleSheet(section_title_stylesheet())
 
         self.profile_combo = ScrollSafeComboBox()
         self.profile_combo.setMinimumWidth(180)

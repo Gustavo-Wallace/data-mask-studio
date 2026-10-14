@@ -27,7 +27,6 @@ from data_mask_studio.gui.components import (
     PageShell,
     SidebarNavigation,
     configure_path_field,
-    configure_result_area,
     configure_table,
     set_button_role,
 )
@@ -330,19 +329,6 @@ class MainWindow(QMainWindow):
             configure_path_field(field, accessible_name)
         for table in self.findChildren(QTableWidget):
             configure_table(table)
-        for result_area, empty_height in (
-            (self.batch_widget.summary_output, 125),
-            (self.restoration_widget.summary, 125),
-            (self.html_restoration_widget.summary, 220),
-            (self.batch_restoration_widget.summary_output, 110),
-            (self.consultant_widget.results_output, 240),
-            (self.backup_widget.restore_summary, 115),
-            (self.integrity_widget.report_view, 240),
-            (self.maintenance_widget.overview_output, 280),
-            (self.maintenance_widget.backup_result, 220),
-            (self.maintenance_widget.compaction_result, 220),
-        ):
-            configure_result_area(result_area, empty_height)
 
     def _prepare_restore(self) -> bool:
         if (
