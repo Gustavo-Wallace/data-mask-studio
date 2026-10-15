@@ -81,7 +81,7 @@ function Assert-DataMaskStudioBuildIsSafe {
         '.ruff_cache', '.git', '.github', 'tests', 'fixtures', 'benchmarks'
     )
     $forbiddenExtensions = @(
-        '.dmsbackup', '.dpapi', '.csv', '.html', '.htm', '.pyc',
+        '.dmsbackup', '.dmspackage', '.dpapi', '.csv', '.html', '.htm', '.pyc',
         '.ps1', '.spec', '.iss', '.toml', '.yaml', '.yml'
     )
     $textExtensionsToAudit = @('.txt', '.json', '.pth', '.ini', '.cfg', '.py')

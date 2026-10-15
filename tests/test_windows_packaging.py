@@ -109,14 +109,15 @@ def test_inno_setup_is_per_user_upgradeable_and_preserves_local_data() -> None:
     assert "%LOCALAPPDATA%\\DataMaskStudio" in script
 
 
+@pytest.mark.parametrize("filename", ["secret.key", "transfer.dmspackage", "transfer.DMSPACKAGE"])
 def test_build_audit_rejects_sensitive_file_without_exposing_content(
-    tmp_path: Path,
+    tmp_path: Path, filename: str,
 ) -> None:
     build_root = tmp_path / "DataMaskStudio"
     build_root.mkdir()
     (build_root / "DataMaskStudio.exe").write_bytes(b"exe")
     secret = "do-not-display-this-secret"
-    (build_root / "secret.key").write_text(secret, encoding="utf-8")
+    (build_root / filename).write_text(secret, encoding="utf-8")
     destination = tmp_path / "portable.zip"
     command = (
         f". {ps_quote(HELPERS)}; "
@@ -128,7 +129,7 @@ def test_build_audit_rejects_sensitive_file_without_exposing_content(
 
     visible_output = result.stdout + result.stderr
     assert result.returncode != 0
-    assert "secret.key" in visible_output
+    assert filename in visible_output
     assert secret not in visible_output
     assert not destination.exists()
 
