@@ -26,6 +26,7 @@ class PageInspector(HTMLParser):
         self.title_parts: list[str] = []
         self.heading_levels: list[int] = []
         self.json_ld_parts: list[str] = []
+        self.text_parts: list[str] = []
         self._inside_title = False
         self._inside_json_ld = False
 
@@ -50,6 +51,7 @@ class PageInspector(HTMLParser):
             self._inside_json_ld = False
 
     def handle_data(self, data: str) -> None:
+        self.text_parts.append(data)
         if self._inside_title:
             self.title_parts.append(data)
         if self._inside_json_ld:
@@ -328,7 +330,7 @@ def test_site_does_not_change_application_version() -> None:
 
 
 @pytest.mark.parametrize("page,language,title,canonical", PAGES)
-def test_preview_screenshots_are_shared_local_assets_with_full_size_links(
+def test_versioned_screenshots_are_shared_local_assets_with_full_size_links(
     page: Path, language: str, title: str, canonical: str
 ) -> None:
     _, inspector = inspect_page(page)
@@ -351,21 +353,54 @@ def test_preview_screenshots_are_shared_local_assets_with_full_size_links(
 
 
 @pytest.mark.parametrize("page,language,title,canonical", PAGES)
-def test_upcoming_release_does_not_claim_available_1_3_0_artifacts(
+def test_downloads_use_latest_published_release_without_claiming_1_3_0_artifacts(
     page: Path, language: str, title: str, canonical: str
 ) -> None:
     content, inspector = inspect_page(page)
-    preparation = "1.3.0 is in preparation" if language == "en" else "1.3.0 está em preparação"
-    assert preparation in content
     downloads = [anchor for anchor in inspector.attributes_for("a")
                  if "button-primary" in anchor.get("class", "").split()]
     assert len(downloads) == 1
     assert downloads[0]["href"] == RELEASES_URL
-    assert downloads[0]["aria-describedby"] == "release-status"
-    assert "release-status" in inspector.ids
+    assert "release-status" not in inspector.ids
+    for _tag, attributes in inspector.tags:
+        for referenced_id in attributes.get("aria-describedby", "").split():
+            assert referenced_id in inspector.ids
     assert "/releases/download/" not in content
     assert "DataMaskStudio-Setup-1.3.0.exe" not in content
     assert "DataMaskStudio-Portable-1.3.0.zip" not in content
+
+
+@pytest.mark.parametrize("page,language,title,canonical", PAGES)
+def test_pages_present_versioned_capabilities_without_prerelease_labels(
+    page: Path, language: str, title: str, canonical: str
+) -> None:
+    _, inspector = inspect_page(page)
+    public_text = " ".join(inspector.text_parts + [
+        attributes[key]
+        for _tag, attributes in inspector.tags
+        for key in ("alt", "aria-label", "content")
+        if key in attributes
+    ]).casefold()
+
+    for phrase in (
+        "em preparação", "ainda não foi publicada", "ainda não publicada",
+        "futura 1.3.0", "prévia", "coming soon", "coming in 1.3.0",
+        "upcoming", "in preparation", "not yet released", "not been published",
+        "preview", "unreleased",
+    ):
+        assert phrase not in public_text
+    assert not re.search(
+        r"1\.3\.0\s+(?:is\s+(?:now\s+)?(?:published|released|the latest)|"
+        r"has been (?:published|released)|(?:já )?foi publicada|"
+        r"(?:já )?está (?:publicada|disponível))",
+        public_text,
+    )
+    required = (
+        "DMS 1.3.0 supports password-protected"
+        if language == "en" else
+        "O DMS 1.3.0 suporta arquivos"
+    )
+    assert required in " ".join(inspector.text_parts)
 
 
 @pytest.mark.parametrize("page,language,title,canonical", PAGES)

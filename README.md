@@ -22,9 +22,7 @@ English | [Português (Brasil)](README.pt-BR.md)
 
 Data Mask Studio is a local-first desktop application for data preparation, anonymization and deterministic data masking, with controlled restoration through an encrypted local vault or a selective encrypted transfer package. Data stays local; individual tokens do not contain or directly expose the original value.
 
-The current version can selectively restore masked CSV files and codes found in local HTML files and dashboards.
-
-Version 1.3.0 is in preparation and has not been published. The download link below points to the latest published release.
+The application can selectively restore masked CSV files and codes found in local HTML files and dashboards.
 
 Official website: https://gustavo-wallace.github.io/data-mask-studio/
 
@@ -37,10 +35,10 @@ Each release provides a per-user Windows installer (`DataMaskStudio-Setup-<versi
 ## Interface
 
 <p align="center">
-  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0 preview: CSV column actions, output headers, prefixes and normalization, with synthetic data" width="900"></a>
+  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0: CSV column actions, output headers, prefixes and normalization, with synthetic data" width="900"></a>
 </p>
 
-Preview of the upcoming 1.3.0, using isolated synthetic data. The Windows interface is shown in Portuguese. Open an image for full-resolution detail.
+Data Mask Studio 1.3.0 with isolated synthetic data. The Windows interface is shown in Portuguese. Open an image for full-resolution detail.
 
 <details>
 <summary>Batch processing and transfer-package restoration</summary>
@@ -51,7 +49,7 @@ Three synthetic CSVs successfully processed with a saved profile:
 
 Selective restoration from a matching encrypted `.dmspackage`, with the password cleared after completion:
 
-<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0 preview: successful CSV restoration from a transfer package with synthetic data" width="900"></a>
+<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0: successful CSV restoration from a transfer package with synthetic data" width="900"></a>
 
 </details>
 
@@ -96,10 +94,10 @@ The PySide6 desktop interface coordinates separate services for CSV and HTML pro
 
 ## Compatibility and recovery
 
-The 1.3.0 preparation retains vault schema 4 and the existing token formats. Supported older vaults are migrated using the original keys. See [COMPATIBILITY.md](COMPATIBILITY.md) for format limits and recovery guidance.
+Version 1.3.0 retains vault schema 4 and the existing token formats. Supported older vaults are migrated using the original keys. See [COMPATIBILITY.md](COMPATIBILITY.md) for format limits and recovery guidance.
 
 - **Local vault:** restoration needs the vault and its original local keys, protected by Windows DPAPI.
-- **Selective transfer package:** contains only the restoration mappings for its linked CSV, not the full environment. The recipient needs the unchanged masked CSV, the `.dmspackage`, its password and a DMS version supporting package format v1; no sender vault or DPAPI keys are needed. Creation requires at least one Mask action and an 8-character minimum password. Missing mappings abort restoration; there is no fallback to the local vault.
+- **Selective transfer package:** contains only the restoration mappings for its linked CSV, not the full environment. The recipient needs the unchanged masked CSV, the `.dmspackage`, its password and a DMS version supporting package format v1, introduced in 1.3.0; no sender vault or DPAPI keys are needed. Creation requires at least one Mask action and an 8-character minimum password. Missing mappings abort restoration; there is no fallback to the local vault.
 - **Full environment backup:** `.dmsbackup` contains the local keys, vault and saved profiles when present, not CSV or HTML files. It uses a separate password policy (minimum 12 characters) and restores the local environment rather than selected CSV values.
 
 ## Run from source

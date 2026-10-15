@@ -1,8 +1,6 @@
 # Changelog
 
-## 1.3.0 — Selective Transfer Update (em preparação)
-
-Esta versão ainda não foi publicada.
+## 1.3.0 — Selective Transfer Update
 
 - Pacotes seletivos `.dmspackage` criptografados por senha e vinculados ao CSV.
 - Restauração de CSV por pacote na interface sem cofre ou chaves locais do destinatário.

@@ -1,8 +1,8 @@
 # Compatibilidade e recuperação
 
-## Preparação da versão 1.3.0
+## Versão 1.3.0
 
-A versão 1.3.0 ainda não foi publicada. Mantém o schema 4 do cofre, o Profile Format v2 (com leitura de perfis v1 válidos), o formato v1 de backup `.dmsbackup` e os formatos existentes de tokens. O novo `.dmspackage` tem formato v1 próprio, independente do schema do cofre e do formato de backup.
+A versão 1.3.0 mantém o schema 4 do cofre, o Profile Format v2 (com leitura de perfis v1 válidos), o formato v1 de backup `.dmsbackup` e os formatos existentes de tokens. O `.dmspackage` tem formato v1 próprio, independente do schema do cofre e do formato de backup.
 
 Cofres dos schemas 1, 2 e 3 continuam com migrações suportadas até o schema 4, desde que as chaves originais estejam disponíveis. Isso não garante que versões antigas consigam abrir um cofre já migrado. Backups com schemas suportados são verificados e migrados no ambiente de preparação antes da instalação; backups produzidos por versões do aplicativo posteriores à instalada são considerados incompatíveis.
 

@@ -22,9 +22,7 @@
 
 O Data Mask Studio é uma aplicação desktop local-first para preparação e tratamento de dados, anonimização e mascaramento determinístico, com restauração controlada por meio de um cofre local criptografado ou de um pacote seletivo criptografado de transferência. Os dados ficam locais; tokens individuais não contêm nem expõem diretamente o valor original.
 
-A versão atual permite restaurar seletivamente CSVs mascarados e também códigos em arquivos HTML e dashboards locais.
-
-A versão 1.3.0 está em preparação e ainda não foi publicada. O link de download abaixo aponta para a última release publicada.
+A aplicação permite restaurar seletivamente CSVs mascarados e também códigos em arquivos HTML e dashboards locais.
 
 Site oficial: https://gustavo-wallace.github.io/data-mask-studio/pt-br/
 
@@ -37,10 +35,10 @@ A release contém o instalador por usuário para Windows (`DataMaskStudio-Setup-
 ## Captura da interface
 
 <p align="center">
-  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Prévia do Data Mask Studio 1.3.0: ações por coluna, cabeçalhos de saída, prefixos e normalização de CSV, com dados sintéticos" width="900"></a>
+  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0: ações por coluna, cabeçalhos de saída, prefixos e normalização de CSV, com dados sintéticos" width="900"></a>
 </p>
 
-Prévia da futura 1.3.0, com dados sintéticos isolados e interface Windows em português. Abra uma imagem para ver os detalhes na resolução original.
+Data Mask Studio 1.3.0 com dados sintéticos isolados e interface Windows em português. Abra uma imagem para ver os detalhes na resolução original.
 
 <details>
 <summary>Processamento em lote e restauração por pacote de transferência</summary>
@@ -51,7 +49,7 @@ Três CSVs sintéticos processados com sucesso usando um perfil salvo:
 
 Restauração seletiva com o `.dmspackage` criptografado correspondente, com a senha limpa após a conclusão:
 
-<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Prévia do Data Mask Studio 1.3.0: restauração de CSV por pacote de transferência concluída com dados sintéticos" width="900"></a>
+<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0: restauração de CSV por pacote de transferência concluída com dados sintéticos" width="900"></a>
 
 </details>
 
@@ -96,10 +94,10 @@ A interface desktop em PySide6 coordena serviços separados de processamento de 
 
 ## Compatibilidade e recuperação
 
-A preparação da 1.3.0 mantém o schema 4 do cofre e os formatos existentes dos tokens. Cofres antigos suportados são migrados usando as chaves originais. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para os limites dos formatos e as orientações de recuperação.
+A versão 1.3.0 mantém o schema 4 do cofre e os formatos existentes dos tokens. Cofres antigos suportados são migrados usando as chaves originais. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para os limites dos formatos e as orientações de recuperação.
 
 - **Cofre local:** a restauração exige o cofre e suas chaves locais originais, protegidas pelo Windows DPAPI.
-- **Pacote seletivo de transferência:** contém apenas os mapeamentos de restauração do CSV vinculado, não o ambiente completo. O destinatário precisa do CSV mascarado sem alterações, do `.dmspackage`, da senha e de uma versão do DMS com suporte ao formato v1 do pacote; não precisa do cofre nem das chaves DPAPI do remetente. A criação exige ao menos uma ação Mascarar e senha de no mínimo 8 caracteres. Mapeamentos ausentes interrompem a restauração; não há fallback para o cofre local.
+- **Pacote seletivo de transferência:** contém apenas os mapeamentos de restauração do CSV vinculado, não o ambiente completo. O destinatário precisa do CSV mascarado sem alterações, do `.dmspackage`, da senha e de uma versão do DMS com suporte ao formato v1 do pacote, introduzido na 1.3.0; não precisa do cofre nem das chaves DPAPI do remetente. A criação exige ao menos uma ação Mascarar e senha de no mínimo 8 caracteres. Mapeamentos ausentes interrompem a restauração; não há fallback para o cofre local.
 - **Backup completo do ambiente:** o `.dmsbackup` contém as chaves locais, o cofre e os perfis salvos quando presentes, não arquivos CSV ou HTML. Usa uma política separada de senha (mínimo de 12 caracteres) e restaura o ambiente local, não valores selecionados de um CSV.
 
 ## Execução pelo código-fonte

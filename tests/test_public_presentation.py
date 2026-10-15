@@ -56,7 +56,7 @@ def test_readme_capture_is_safe_sized_and_dimensioned(filename: str) -> None:
 
 
 @pytest.mark.parametrize("filename", ["README.md", "README.pt-BR.md"])
-def test_readmes_share_three_preview_screenshots_without_obsolete_variants(filename: str) -> None:
+def test_readmes_share_three_versioned_screenshots_without_obsolete_variants(filename: str) -> None:
     content = (ROOT / filename).read_text(encoding="utf-8")
     screenshots = re.findall(r'<img src="(docs/images/[^"]+)" alt="([^"]+)"', content)
 
@@ -79,7 +79,8 @@ def test_readmes_share_three_preview_screenshots_without_obsolete_variants(filen
         (
             "README.md",
             (
-                "Version 1.3.0 is in preparation and has not been published",
+                "Version 1.3.0 retains vault schema 4",
+                "package format v1, introduced in 1.3.0",
                 "**Local vault:**",
                 "**Selective transfer package:**",
                 "**Full environment backup:**",
@@ -94,7 +95,8 @@ def test_readmes_share_three_preview_screenshots_without_obsolete_variants(filen
         (
             "README.pt-BR.md",
             (
-                "A versão 1.3.0 está em preparação e ainda não foi publicada",
+                "A versão 1.3.0 mantém o schema 4",
+                "formato v1 do pacote, introduzido na 1.3.0",
                 "**Cofre local:**",
                 "**Pacote seletivo de transferência:**",
                 "**Backup completo do ambiente:**",
@@ -108,7 +110,7 @@ def test_readmes_share_three_preview_screenshots_without_obsolete_variants(filen
         ),
     ),
 )
-def test_readmes_describe_release_preparation_and_restoration_requirements(
+def test_readmes_describe_versioned_capabilities_and_restoration_requirements(
     filename: str, required: tuple[str, ...]
 ) -> None:
     content = (ROOT / filename).read_text(encoding="utf-8")
@@ -117,15 +119,28 @@ def test_readmes_describe_release_preparation_and_restoration_requirements(
         assert phrase in content
     for contract in (".dmspackage", ".dmsbackup", "AES-256-GCM", "Windows DPAPI"):
         assert contract in content
+    assert "/releases/latest" in content
+    assert "/releases/download/" not in content
+    assert "DataMaskStudio-Setup-1.3.0.exe" not in content
+    assert "DataMaskStudio-Portable-1.3.0.zip" not in content
 
 
-def test_changelog_marks_1_3_0_as_unpublished_without_replacing_1_2_0() -> None:
+def test_changelog_keeps_concise_1_3_0_notes_and_historical_releases() -> None:
     content = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     current, historical = content.split("## 1.2.0 — Data Preparation Update", 1)
 
-    assert "## 1.3.0 — Selective Transfer Update (em preparação)" in current
-    assert "Esta versão ainda não foi publicada." in current
-    assert ".dmspackage" in current
+    assert current.startswith("# Changelog\n\n## 1.3.0 — Selective Transfer Update\n\n")
+    assert [line for line in current.splitlines() if line.startswith("- ")] == [
+        "- Pacotes seletivos `.dmspackage` criptografados por senha e vinculados ao CSV.",
+        "- Restauração de CSV por pacote na interface sem cofre ou chaves locais do destinatário.",
+        "- Refinamentos de navegação, tabelas e aproveitamento de espaço.",
+        "- Controles recolhíveis, seletores protegidos contra rolagem e diálogos padronizados.",
+        "- Feedback, progresso e ações de saída aprimorados em operações individuais e em lote.",
+        "- Snapshots SQLite consistentes durante gravações concorrentes.",
+        "- Validação de contadores e suporte a caminhos especiais em backups.",
+        "- Proteção de perfis contra gravações concorrentes e revalidações inseguras.",
+        "- Preservação do snapshot quando compactação e rollback falham.",
+    ]
     assert "## 1.1.0" in historical
 
 
@@ -133,7 +148,8 @@ def test_compatibility_distinguishes_transfer_and_backup_format_contracts() -> N
     content = (ROOT / "COMPATIBILITY.md").read_text(encoding="utf-8")
 
     for contract in (
-        "A versão 1.3.0 ainda não foi publicada",
+        "## Versão 1.3.0",
+        "A versão 1.3.0 mantém",
         "schema 4", "Profile Format v2", "perfis v1 válidos",
         "formato v1 de backup `.dmsbackup`", "`.dmspackage` tem formato v1 próprio",
         "SHA-256 dos bytes", "não há substituição silenciosa da fonte",
@@ -142,6 +158,44 @@ def test_compatibility_distinguishes_transfer_and_backup_format_contracts() -> N
         "dms-vault-compaction-*",
     ):
         assert contract in content
+
+
+@pytest.mark.parametrize("filename", [
+    "README.md", "README.pt-BR.md", "CHANGELOG.md", "COMPATIBILITY.md",
+    "PRIVACY.md", "SECURITY.md",
+])
+def test_public_documentation_uses_neutral_release_wording(filename: str) -> None:
+    content = (ROOT / filename).read_text(encoding="utf-8").casefold()
+
+    for phrase in (
+        "em preparação", "ainda não foi publicada", "ainda não publicada",
+        "futura 1.3.0", "prévia", "coming soon", "coming in 1.3.0",
+        "upcoming", "in preparation", "not yet released", "not been published",
+        "preview", "unreleased",
+    ):
+        assert phrase not in content
+    assert not re.search(
+        r"1\.3\.0\s+(?:is\s+(?:now\s+)?(?:published|released|the latest)|"
+        r"has been (?:published|released)|(?:já )?foi publicada|"
+        r"(?:já )?está (?:publicada|disponível))",
+        content,
+    )
+
+
+def test_security_policy_tracks_published_stable_releases_and_private_reports() -> None:
+    content = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+
+    assert "versão estável mais recente efetivamente publicada no GitHub Releases" in content
+    assert "Séries anteriores não têm garantia de receber essas correções retroativamente" in content
+    assert "1.0.x" not in content
+    assert "1.3.0" not in content
+    assert "Não abra uma issue pública" in content
+    assert "de forma privada" in content
+    assert "Security Advisories" in content
+    assert "Nunca envie cofres, chaves, arquivos CSV ou HTML reais" in content
+    assert "backups `.dmsbackup` ou pacotes `.dmspackage`" in content
+    assert "dados sintéticos" in content
+    assert "sem incluir dados sensíveis" in content
 
 
 def test_repository_declares_gpl_3_0_only_and_includes_official_license() -> None:

@@ -78,10 +78,9 @@
             <div class="hero-details">
               <p class="hero-summary">Prepare useful datasets without sending sensitive content away. Keep analytical correlations and choose what to preserve, mask or exclude.</p>
               <div class="button-row">
-                <a class="button button-primary" href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest" aria-describedby="release-status">Download latest release</a>
+                <a class="button button-primary" href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest">Download latest release</a>
                 <a class="button button-secondary" href="https://github.com/Gustavo-Wallace/data-mask-studio">View on GitHub</a>
               </div>
-              <p class="release-note" id="release-status"><strong>1.3.0 is in preparation.</strong> Downloads point to the latest published release, not this preview.</p>
               <ul class="trust-list" aria-label="Key privacy characteristics">
                 <li>Local processing</li>
                 <li>No telemetry</li>
@@ -90,8 +89,8 @@
             </div>
           </div>
           <figure class="product-preview">
-            <a href="images/data-mask-studio-main.png" aria-label="View full-size screenshot"><img src="images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0 preview with synthetic data: Preserve, Mask and Exclude actions, output headers, prefixes and normalization" width="1280" height="820" fetchpriority="high"></a>
-            <figcaption><span>Upcoming 1.3.0 · Actual Windows application · Synthetic data</span><a href="images/data-mask-studio-main.png">View full-size screenshot</a></figcaption>
+            <a href="images/data-mask-studio-main.png" aria-label="View full-size screenshot"><img src="images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0 with synthetic data: Preserve, Mask and Exclude actions, output headers, prefixes and normalization" width="1280" height="820" fetchpriority="high"></a>
+            <figcaption><span>DMS 1.3.0 · Windows application · Synthetic data</span><a href="images/data-mask-studio-main.png">View full-size screenshot</a></figcaption>
           </figure>
         </div>
       </section>
@@ -104,7 +103,7 @@
           </div>
           <div class="prose-panel">
             <p>Data Mask Studio is a local-first Windows desktop application for data preparation and anonymization. Deterministic data masking keeps repeated values correlated during analysis, with controlled restoration of CSV data and codes in local HTML.</p>
-            <p>Restoration is controlled through recovery mappings, not through an individually reversible token. Use the local vault or, in the upcoming 1.3.0, a selective encrypted package paired with its matching CSV.</p>
+            <p>Restoration is controlled through recovery mappings, not through an individually reversible token. Use the local vault or a selective encrypted package paired with its matching CSV.</p>
           </div>
         </div>
       </section>
@@ -130,12 +129,12 @@
             <article class="feature-card">
               <span class="feature-number">03</span>
               <h3>Selective transfer packages</h3>
-              <p>Coming in 1.3.0: password-protected <code>.dmspackage</code> files contain only the restoration mappings for their linked CSV.</p>
+              <p>DMS 1.3.0 supports password-protected <code>.dmspackage</code> files containing only the restoration mappings for their linked CSV.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">04</span>
               <h3>Controlled restoration</h3>
-              <p>Restore selected CSV columns or known codes in local HTML. Package-based restoration covers individual CSVs in the 1.3.0 preview.</p>
+              <p>Restore selected CSV columns or known codes in local HTML. Package-based restoration covers individual CSVs.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">05</span>
@@ -165,7 +164,7 @@
               <p>Restore using the corresponding local vault and its original Windows DPAPI-protected keys. CSV and HTML workflows stay local.</p>
             </article>
             <article class="recovery-card recovery-highlight">
-              <p class="card-label">Selective transfer · Upcoming 1.3.0</p>
+              <p class="card-label">Selective transfer · DMS 1.3.0</p>
               <h3><code>.dmspackage</code></h3>
               <p>The recipient needs the unchanged matching masked CSV, its package, the password and a DMS version supporting the package format. No sender vault or DPAPI keys are needed.</p>
               <p>Individual CSVs only. Missing mappings stop restoration; there is no fallback to the local vault.</p>
@@ -185,7 +184,7 @@
           <div class="section-heading">
             <p class="eyebrow">Inside the application</p>
             <h2>From configuration to controlled recovery</h2>
-            <p class="section-intro">Actual 1.3.0 preview screens in Portuguese, captured with isolated synthetic data. Open any screenshot for readable, full-resolution detail.</p>
+            <p class="section-intro">DMS 1.3.0 screens in Portuguese, captured with isolated synthetic data. Open any screenshot for readable, full-resolution detail.</p>
           </div>
           <div class="showcase">
             <div class="showcase-heading">
@@ -204,7 +203,7 @@
             </div>
           <figure class="product-preview">
             <a href="images/data-mask-studio-package.png" aria-label="View full-size screenshot"><img src="images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0 package restoration: transfer-package source selected, three CSV columns selected and successful restoration with the password cleared" width="1280" height="820" loading="lazy" decoding="async"></a>
-            <figcaption><span>Selective package restoration · Upcoming 1.3.0</span><a href="images/data-mask-studio-package.png">View full-size screenshot</a></figcaption>
+            <figcaption><span>Selective package restoration · DMS 1.3.0</span><a href="images/data-mask-studio-package.png">View full-size screenshot</a></figcaption>
           </figure>
           </div>
         </div>
@@ -227,7 +226,7 @@
             <span class="workflow-arrow" aria-hidden="true">→</span>
             <div class="workflow-step">Controlled restoration</div>
           </div>
-          <p class="workflow-note">The same effective value, prefix and cryptographic environment produce consistent identifiers across records and files. Restore through the corresponding local vault or, in 1.3.0, a selective package bound to the exact masked CSV.</p>
+          <p class="workflow-note">The same effective value, prefix and cryptographic environment produce consistent identifiers across records and files. Restore through the corresponding local vault or a selective package bound to the exact masked CSV.</p>
         </div>
       </section>
 
