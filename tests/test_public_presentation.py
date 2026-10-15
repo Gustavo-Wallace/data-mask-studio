@@ -1,5 +1,6 @@
 import hashlib
 from pathlib import Path
+import re
 
 import pytest
 from PySide6.QtGui import QImage
@@ -41,15 +42,35 @@ def test_bilingual_readmes_have_navigation_branding_and_public_links() -> None:
     assert "mascaramento" in portuguese.casefold()
 
 
-def test_readme_capture_is_safe_sized_and_dimensioned() -> None:
-    capture = ROOT / "docs" / "images" / "data-mask-studio-main.png"
+@pytest.mark.parametrize("filename", [
+    "data-mask-studio-main.png", "data-mask-studio-batch.png", "data-mask-studio-package.png",
+])
+def test_readme_capture_is_safe_sized_and_dimensioned(filename: str) -> None:
+    capture = ROOT / "docs" / "images" / filename
 
     assert capture.is_file()
     assert capture.stat().st_size < 600 * 1024
     image = QImage(str(capture))
     assert not image.isNull()
-    assert 1200 <= image.width() <= 1320
-    assert 740 <= image.height() <= 840
+    assert (image.width(), image.height()) == (1280, 820)
+
+
+@pytest.mark.parametrize("filename", ["README.md", "README.pt-BR.md"])
+def test_readmes_share_three_preview_screenshots_without_obsolete_variants(filename: str) -> None:
+    content = (ROOT / filename).read_text(encoding="utf-8")
+    screenshots = re.findall(r'<img src="(docs/images/[^"]+)" alt="([^"]+)"', content)
+
+    assert {path for path, _alt in screenshots} == {
+        "docs/images/data-mask-studio-main.png",
+        "docs/images/data-mask-studio-batch.png",
+        "docs/images/data-mask-studio-package.png",
+    }
+    assert len(screenshots) == 3
+    for path, alt in screenshots:
+        assert (ROOT / path).is_file()
+        assert alt
+    assert "<details>" in content and "</details>" in content
+    assert "1.3.0" in content
 
 
 @pytest.mark.parametrize(

@@ -69,23 +69,28 @@
       <section class="hero">
         <div class="container">
           <div class="hero-copy">
-            <p class="eyebrow">Open source · Windows · Processamento local</p>
-            <h1>Data Mask Studio <span>DMS</span></h1>
-            <p class="hero-lead">Preparação e mascaramento local de dados para Windows, em código aberto.</p>
-            <p class="hero-summary">Trabalhe com conjuntos de dados sensíveis preservando correlações analíticas sem expor diretamente os valores originais. O processamento e a restauração controlada permanecem no seu ambiente local.</p>
-            <div class="button-row">
-              <a class="button button-primary" href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest">Download</a>
-              <a class="button" href="https://github.com/Gustavo-Wallace/data-mask-studio">Ver no GitHub</a>
+            <div class="hero-heading">
+              <p class="eyebrow">Open source · Windows · Processamento local</p>
+              <h1>Data Mask Studio <span>DMS</span></h1>
+              <p class="hero-lead">Preparação e mascaramento local de dados para Windows, em código aberto.</p>
             </div>
-            <ul class="trust-list" aria-label="Principais características de privacidade">
-              <li>Processamento local</li>
-              <li>Sem telemetria</li>
-              <li>Restauração controlada</li>
-            </ul>
+            <div class="hero-details">
+              <p class="hero-summary">Prepare dados úteis sem enviar conteúdo sensível para fora do computador. Mantenha correlações analíticas e escolha o que preservar, mascarar ou excluir.</p>
+              <div class="button-row">
+                <a class="button button-primary" href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest" aria-describedby="release-status">Baixar última release</a>
+                <a class="button button-secondary" href="https://github.com/Gustavo-Wallace/data-mask-studio">Ver no GitHub</a>
+              </div>
+              <p class="release-note" id="release-status"><strong>A 1.3.0 está em preparação.</strong> O download aponta para a última release publicada, não para esta prévia.</p>
+              <ul class="trust-list" aria-label="Principais características de privacidade">
+                <li>Processamento local</li>
+                <li>Sem telemetria</li>
+                <li>Restauração controlada</li>
+              </ul>
+            </div>
           </div>
           <figure class="product-preview">
-            <img src="../assets/data-mask-studio-main.png" alt="Interface desktop do Data Mask Studio exibindo a configuração do mascaramento de CSV" width="1280" height="800">
-            <figcaption>Interface desktop oficial do Data Mask Studio.</figcaption>
+            <a href="../images/data-mask-studio-main.png" aria-label="Ver captura em tamanho original"><img src="../images/data-mask-studio-main.png" alt="Prévia do Data Mask Studio 1.3.0 com dados sintéticos: ações Preservar, Mascarar e Excluir, cabeçalhos de saída, prefixos e normalização" width="1280" height="820" fetchpriority="high"></a>
+            <figcaption><span>Futura 1.3.0 · Aplicação real no Windows · Dados sintéticos</span><a href="../images/data-mask-studio-main.png">Ver captura em tamanho original</a></figcaption>
           </figure>
         </div>
       </section>
@@ -98,7 +103,7 @@
           </div>
           <div class="prose-panel">
             <p>O Data Mask Studio é uma aplicação desktop local-first para Windows de preparação, tratamento e anonimização de dados. O mascaramento determinístico mantém valores repetidos correlacionados durante análises, com restauração controlada de dados CSV e códigos em HTML local.</p>
-            <p>As informações originais ficam em um cofre local criptografado. A reversibilidade é controlada por meio desse cofre e de suas chaves protegidas, em vez de ser uma propriedade exposta por cada token.</p>
+            <p>A restauração é controlada por mapeamentos de recuperação, não por um token individualmente reversível. Use o cofre local ou, na futura 1.3.0, um pacote seletivo criptografado junto ao CSV correspondente.</p>
           </div>
         </div>
       </section>
@@ -113,44 +118,93 @@
           <div class="feature-grid">
             <article class="feature-card">
               <span class="feature-number">01</span>
-              <h3>Mascaramento determinístico</h3>
-              <p>Tokens consistentes preservam correlações úteis entre valores repetidos.</p>
+              <h3>Prepare cada coluna</h3>
+              <p>Preserve, mascare ou exclua colunas. Configure normalizações, cabeçalhos de saída e colunas compostas antes de gerar o CSV.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">02</span>
-              <h3>Cofre local criptografado</h3>
-              <p>Mapeamentos e representações originais permanecem criptografados na máquina local.</p>
+              <h3>Fluxos individual e em lote</h3>
+              <p>Processe um CSV ou reutilize perfis salvos em um lote. O mascaramento determinístico preserva correlações entre valores repetidos.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">03</span>
-              <h3>Preparação de dados</h3>
-              <p>Preserve, mascare ou exclua colunas; normalize valores, renomeie cabeçalhos e componha colunas. Reutilize perfis no processamento em lote.</p>
+              <h3>Pacotes seletivos de transferência</h3>
+              <p>Na futura 1.3.0: arquivos <code>.dmspackage</code> protegidos por senha contêm apenas os mapeamentos de restauração do CSV vinculado.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">04</span>
-              <h3>Restauração de HTML</h3>
-              <p>Restaure códigos conhecidos em arquivos HTML locais preservando a marcação do documento.</p>
+              <h3>Restauração controlada</h3>
+              <p>Restaure colunas selecionadas de CSV ou códigos conhecidos em HTML local. A restauração por pacote atende CSVs individuais na prévia da 1.3.0.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">05</span>
-              <h3>Backups portáteis criptografados</h3>
-              <p>Proteja backups de cofre, chaves e perfis com senha para recuperação controlada.</p>
+              <h3>Backups completos do ambiente</h3>
+              <p>Arquivos <code>.dmsbackup</code> protegidos por senha levam cofre, chaves e perfis salvos para recuperação do ambiente.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">06</span>
-              <h3>Verificação de integridade</h3>
-              <p>Audite o cofre local e identifique com segurança problemas estruturais ou de autenticação.</p>
+              <h3>Integridade e manutenção</h3>
+              <p>Inspecione o cofre, execute verificações de integridade e diagnóstico e gerencie temporários e compactação localmente.</p>
             </article>
-            <article class="feature-card">
-              <span class="feature-number">07</span>
-              <h3>Ferramentas de manutenção</h3>
-              <p>Use diagnósticos, limpeza de arquivos temporários e compactação controlada do cofre.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-quiet" id="restauracao">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">Três necessidades de recuperação</p>
+            <h2>Seu cofre. Uma transferência seletiva. Um backup completo.</h2>
+            <p class="section-intro">Escolha a fonte de recuperação conscientemente. Esses arquivos têm finalidades diferentes e não são intercambiáveis.</p>
+          </div>
+          <div class="recovery-grid">
+            <article class="recovery-card">
+              <p class="card-label">Restauração local</p>
+              <h3>Cofre criptografado</h3>
+              <p>Restaure usando o cofre local correspondente e suas chaves originais protegidas pelo Windows DPAPI. Os fluxos de CSV e HTML permanecem locais.</p>
             </article>
-            <article class="feature-card">
-              <span class="feature-number">08</span>
-              <h3>Local desde a concepção</h3>
-              <p>Sem telemetria e sem sincronização automática de informações sensíveis.</p>
+            <article class="recovery-card recovery-highlight">
+              <p class="card-label">Transferência seletiva · Futura 1.3.0</p>
+              <h3><code>.dmspackage</code></h3>
+              <p>O destinatário precisa do CSV mascarado correspondente sem alterações, do pacote, da senha e de uma versão do DMS que suporte o formato. Não precisa do cofre nem das chaves DPAPI do remetente.</p>
+              <p>Apenas CSVs individuais. Mapeamentos ausentes interrompem a restauração; não há fallback para o cofre local.</p>
             </article>
+            <article class="recovery-card">
+              <p class="card-label">Recuperação do ambiente</p>
+              <h3><code>.dmsbackup</code></h3>
+              <p>Recupere cofre, chaves e perfis salvos com a senha do backup. Isso substitui o ambiente local; não é restauração seletiva de CSV e não inclui arquivos CSV ou HTML.</p>
+            </article>
+          </div>
+          <p class="section-note">Pacotes e backups contêm dados sensíveis de recuperação. Mantenha suas senhas separadas. Consulte os requisitos e limites no <a href="https://github.com/Gustavo-Wallace/data-mask-studio/blob/main/COMPATIBILITY.md">guia de compatibilidade e recuperação</a>.</p>
+        </div>
+      </section>
+
+      <section class="section" id="na-pratica">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">Por dentro da aplicação</p>
+            <h2>Da configuração à recuperação controlada</h2>
+            <p class="section-intro">Telas reais da prévia da 1.3.0 em português, capturadas com dados sintéticos isolados. Abra qualquer captura para ver os detalhes na resolução original.</p>
+          </div>
+          <div class="showcase">
+            <div class="showcase-heading">
+              <h3>Reutilize um perfil em um lote</h3>
+              <p>Três CSVs sintéticos processados com sucesso, com resultados por arquivo e resumo final.</p>
+            </div>
+          <figure class="product-preview">
+            <a href="../images/data-mask-studio-batch.png" aria-label="Ver captura em tamanho original"><img src="../images/data-mask-studio-batch.png" alt="Mascaramento de CSV em lote no Data Mask Studio: três arquivos concluídos, perfil salvo, progresso de 100 por cento e 360 registros processados" width="1280" height="820" loading="lazy" decoding="async"></a>
+            <figcaption><span>Mascaramento em lote · Dados sintéticos</span><a href="../images/data-mask-studio-batch.png">Ver captura em tamanho original</a></figcaption>
+          </figure>
+          </div>
+          <div class="showcase">
+            <div class="showcase-heading">
+              <h3>Restaure com o pacote de transferência correspondente</h3>
+              <p>O fluxo real de pacote restaurou 120 linhas sintéticas. O campo de senha é limpo após o processamento.</p>
+            </div>
+          <figure class="product-preview">
+            <a href="../images/data-mask-studio-package.png" aria-label="Ver captura em tamanho original"><img src="../images/data-mask-studio-package.png" alt="Restauração por pacote no Data Mask Studio 1.3.0: fonte Pacote de transferência, três colunas de CSV selecionadas e restauração concluída com a senha limpa" width="1280" height="820" loading="lazy" decoding="async"></a>
+            <figcaption><span>Restauração por pacote seletivo · Futura 1.3.0</span><a href="../images/data-mask-studio-package.png">Ver captura em tamanho original</a></figcaption>
+          </figure>
           </div>
         </div>
       </section>
@@ -172,7 +226,7 @@
             <span class="workflow-arrow" aria-hidden="true">→</span>
             <div class="workflow-step">Restauração controlada</div>
           </div>
-          <p class="workflow-note">Os identificadores permanecem consistentes quando gerados com o mesmo prefixo e ambiente criptográfico, permitindo correlacionar registros e arquivos. A restauração exige acesso ao cofre local criptografado correspondente.</p>
+          <p class="workflow-note">O mesmo valor efetivo, prefixo e ambiente criptográfico geram identificadores consistentes entre registros e arquivos. Restaure pelo cofre local correspondente ou, na 1.3.0, por um pacote seletivo vinculado aos bytes exatos do CSV mascarado.</p>
         </div>
       </section>
 
@@ -191,8 +245,8 @@
             </article>
             <article class="security-card">
               <strong>AES-256-GCM</strong>
-              <h3>Proteção autenticada do cofre</h3>
-              <p>As informações originais armazenadas no cofre são criptografadas e autenticadas contra alterações indevidas.</p>
+              <h3>Proteção autenticada dos dados</h3>
+              <p>Protege os valores originais no cofre. Pacotes e backups usam chaves de criptografia separadas, derivadas de senha.</p>
             </article>
             <article class="security-card">
               <strong>Windows DPAPI</strong>
@@ -200,6 +254,7 @@
               <p>As chaves locais são protegidas para o usuário do Windows. O processamento é local, sem telemetria ou sincronização automática de dados sensíveis.</p>
             </article>
           </div>
+          <p class="section-note">Sem telemetria ou envio automático de arquivos. O DMS é voltado ao Windows e não garante segurança absoluta. As distribuições ainda não possuem assinatura digital.</p>
         </div>
       </section>
 

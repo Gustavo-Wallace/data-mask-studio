@@ -37,8 +37,23 @@ Each release provides a per-user Windows installer (`DataMaskStudio-Setup-<versi
 ## Interface
 
 <p align="center">
-  <img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio main interface" width="900">
+  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0 preview: CSV column actions, output headers, prefixes and normalization, with synthetic data" width="900"></a>
 </p>
+
+Preview of the upcoming 1.3.0, using isolated synthetic data. The Windows interface is shown in Portuguese. Open an image for full-resolution detail.
+
+<details>
+<summary>Batch processing and transfer-package restoration</summary>
+
+Three synthetic CSVs successfully processed with a saved profile:
+
+<a href="docs/images/data-mask-studio-batch.png"><img src="docs/images/data-mask-studio-batch.png" alt="Data Mask Studio batch processing: three completed CSVs and a final summary of 360 processed rows" width="900"></a>
+
+Selective restoration from a matching encrypted `.dmspackage`, with the password cleared after completion:
+
+<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0 preview: successful CSV restoration from a transfer package with synthetic data" width="900"></a>
+
+</details>
 
 ## Main features
 

@@ -285,7 +285,6 @@ def test_site_reuses_official_assets_without_external_runtime_dependency() -> No
     expected_assets = {
         DOCS / "assets" / "dms_icon.svg": ROOT / "assets" / "branding" / "dms_icon.svg",
         DOCS / "assets" / "dms_icon_1024.png": ROOT / "assets" / "branding" / "dms_icon_1024.png",
-        DOCS / "assets" / "data-mask-studio-main.png": DOCS / "images" / "data-mask-studio-main.png",
     }
 
     for published, official in expected_assets.items():
@@ -319,13 +318,86 @@ def test_product_screenshot_preserves_aspect_ratio_responsively() -> None:
         ]
         assert len(screenshots) == 1
         assert screenshots[0].get("width") == "1280"
-        assert screenshots[0].get("height") == "800"
+        assert screenshots[0].get("height") == "820"
 
 
 def test_site_does_not_change_application_version() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert project["project"]["version"] == "1.3.0"
+
+
+@pytest.mark.parametrize("page,language,title,canonical", PAGES)
+def test_preview_screenshots_are_shared_local_assets_with_full_size_links(
+    page: Path, language: str, title: str, canonical: str
+) -> None:
+    _, inspector = inspect_page(page)
+    screenshots = [image for image in inspector.attributes_for("img")
+                   if image.get("src", "").endswith(".png")]
+    links = {anchor.get("href") for anchor in inspector.attributes_for("a")}
+    expected = {"data-mask-studio-main.png", "data-mask-studio-batch.png",
+                "data-mask-studio-package.png"}
+
+    assert {Path(image["src"]).name for image in screenshots} == expected
+    assert len(screenshots) == len(expected)
+    for image in screenshots:
+        assert (page.parent / image["src"]).resolve().parent == (DOCS / "images").resolve()
+        assert image["src"] in links
+        assert image.get("alt")
+        assert (image.get("width"), image.get("height")) == ("1280", "820")
+        if not image["src"].endswith("data-mask-studio-main.png"):
+            assert image.get("loading") == "lazy"
+    assert not (DOCS / "assets" / "data-mask-studio-main.png").exists()
+
+
+@pytest.mark.parametrize("page,language,title,canonical", PAGES)
+def test_upcoming_release_does_not_claim_available_1_3_0_artifacts(
+    page: Path, language: str, title: str, canonical: str
+) -> None:
+    content, inspector = inspect_page(page)
+    preparation = "1.3.0 is in preparation" if language == "en" else "1.3.0 está em preparação"
+    assert preparation in content
+    downloads = [anchor for anchor in inspector.attributes_for("a")
+                 if "button-primary" in anchor.get("class", "").split()]
+    assert len(downloads) == 1
+    assert downloads[0]["href"] == RELEASES_URL
+    assert downloads[0]["aria-describedby"] == "release-status"
+    assert "release-status" in inspector.ids
+    assert "/releases/download/" not in content
+    assert "DataMaskStudio-Setup-1.3.0.exe" not in content
+    assert "DataMaskStudio-Portable-1.3.0.zip" not in content
+
+
+@pytest.mark.parametrize("page,language,title,canonical", PAGES)
+def test_recovery_sources_and_package_restrictions_are_distinguished(
+    page: Path, language: str, title: str, canonical: str
+) -> None:
+    content, inspector = inspect_page(page)
+    recovery_id = "restoration" if language == "en" else "restauracao"
+    assert recovery_id in inspector.ids
+    assert len([tag for tag in inspector.attributes_for("article")
+                if "recovery-card" in tag.get("class", "").split()]) == 3
+    required = (
+        ("unchanged matching masked CSV", "No sender vault or DPAPI keys are needed",
+         "Individual CSVs only", "no fallback to the local vault",
+         "does not include CSV or HTML files")
+        if language == "en" else
+        ("CSV mascarado correspondente sem alterações", "Não precisa do cofre nem das chaves DPAPI",
+         "Apenas CSVs individuais", "não há fallback para o cofre local",
+         "não inclui arquivos CSV ou HTML")
+    )
+    for phrase in required:
+        assert phrase in content
+    assert ".dmspackage" in content and ".dmsbackup" in content
+
+
+def test_responsive_site_preserves_keyboard_focus_and_reduced_motion() -> None:
+    stylesheet = (DOCS / "styles.css").read_text(encoding="utf-8")
+
+    for required in ("a:focus-visible", ".skip-link:focus", "prefers-reduced-motion: reduce",
+                     "scroll-behavior: auto", "minmax(0, 1fr)", "flex-wrap: wrap"):
+        assert required in stylesheet
+    assert "overflow-x: hidden" not in stylesheet
 
 
 def test_github_pages_skips_jekyll_processing() -> None:

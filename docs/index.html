@@ -70,23 +70,28 @@
       <section class="hero">
         <div class="container">
           <div class="hero-copy">
-            <p class="eyebrow">Open source · Windows · Local-first</p>
-            <h1>Data Mask Studio <span>DMS</span></h1>
-            <p class="hero-lead">Local, open-source data preparation and masking for Windows.</p>
-            <p class="hero-summary">Work with sensitive datasets while preserving analytical correlations without directly exposing original values. Processing and controlled restoration remain in your local environment.</p>
-            <div class="button-row">
-              <a class="button button-primary" href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest">Download</a>
-              <a class="button" href="https://github.com/Gustavo-Wallace/data-mask-studio">View on GitHub</a>
+            <div class="hero-heading">
+              <p class="eyebrow">Open source · Windows · Local-first</p>
+              <h1>Data Mask Studio <span>DMS</span></h1>
+              <p class="hero-lead">Local, open-source data preparation and masking for Windows.</p>
             </div>
-            <ul class="trust-list" aria-label="Key privacy characteristics">
-              <li>Local processing</li>
-              <li>No telemetry</li>
-              <li>Controlled restoration</li>
-            </ul>
+            <div class="hero-details">
+              <p class="hero-summary">Prepare useful datasets without sending sensitive content away. Keep analytical correlations and choose what to preserve, mask or exclude.</p>
+              <div class="button-row">
+                <a class="button button-primary" href="https://github.com/Gustavo-Wallace/data-mask-studio/releases/latest" aria-describedby="release-status">Download latest release</a>
+                <a class="button button-secondary" href="https://github.com/Gustavo-Wallace/data-mask-studio">View on GitHub</a>
+              </div>
+              <p class="release-note" id="release-status"><strong>1.3.0 is in preparation.</strong> Downloads point to the latest published release, not this preview.</p>
+              <ul class="trust-list" aria-label="Key privacy characteristics">
+                <li>Local processing</li>
+                <li>No telemetry</li>
+                <li>Controlled restoration</li>
+              </ul>
+            </div>
           </div>
           <figure class="product-preview">
-            <img src="assets/data-mask-studio-main.png" alt="Data Mask Studio desktop interface showing CSV masking configuration" width="1280" height="800">
-            <figcaption>The official Data Mask Studio desktop interface.</figcaption>
+            <a href="images/data-mask-studio-main.png" aria-label="View full-size screenshot"><img src="images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0 preview with synthetic data: Preserve, Mask and Exclude actions, output headers, prefixes and normalization" width="1280" height="820" fetchpriority="high"></a>
+            <figcaption><span>Upcoming 1.3.0 · Actual Windows application · Synthetic data</span><a href="images/data-mask-studio-main.png">View full-size screenshot</a></figcaption>
           </figure>
         </div>
       </section>
@@ -99,7 +104,7 @@
           </div>
           <div class="prose-panel">
             <p>Data Mask Studio is a local-first Windows desktop application for data preparation and anonymization. Deterministic data masking keeps repeated values correlated during analysis, with controlled restoration of CSV data and codes in local HTML.</p>
-            <p>Original information is kept in an encrypted local vault. Reversibility is controlled through that vault and its protected keys, rather than being a property exposed by each token.</p>
+            <p>Restoration is controlled through recovery mappings, not through an individually reversible token. Use the local vault or, in the upcoming 1.3.0, a selective encrypted package paired with its matching CSV.</p>
           </div>
         </div>
       </section>
@@ -114,44 +119,93 @@
           <div class="feature-grid">
             <article class="feature-card">
               <span class="feature-number">01</span>
-              <h3>Deterministic masking</h3>
-              <p>Consistent tokens preserve useful correlations between repeated values.</p>
+              <h3>Prepare each column</h3>
+              <p>Preserve, mask or exclude columns. Configure normalization, output headers and composite columns before generating the CSV.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">02</span>
-              <h3>Encrypted local vault</h3>
-              <p>Mappings and original representations remain encrypted on the local machine.</p>
+              <h3>Individual and batch workflows</h3>
+              <p>Process one CSV or reuse saved profiles across a batch. Deterministic masking preserves correlations for repeated values.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">03</span>
-              <h3>Data preparation</h3>
-              <p>Preserve, mask or exclude columns; normalize values, rename headers and compose columns. Reuse profiles for batch processing.</p>
+              <h3>Selective transfer packages</h3>
+              <p>Coming in 1.3.0: password-protected <code>.dmspackage</code> files contain only the restoration mappings for their linked CSV.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">04</span>
-              <h3>HTML restoration</h3>
-              <p>Restore known codes in local HTML files while preserving document markup.</p>
+              <h3>Controlled restoration</h3>
+              <p>Restore selected CSV columns or known codes in local HTML. Package-based restoration covers individual CSVs in the 1.3.0 preview.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">05</span>
-              <h3>Portable encrypted backups</h3>
-              <p>Protect vault, key and profile backups with a password for controlled recovery.</p>
+              <h3>Full environment backups</h3>
+              <p>Password-protected <code>.dmsbackup</code> files carry the vault, keys and saved profiles for environment recovery.</p>
             </article>
             <article class="feature-card">
               <span class="feature-number">06</span>
-              <h3>Integrity verification</h3>
-              <p>Audit the local vault and identify structural or authentication problems safely.</p>
+              <h3>Integrity and maintenance</h3>
+              <p>Inspect the vault, run integrity checks and diagnostics, and manage temporary files and compaction locally.</p>
             </article>
-            <article class="feature-card">
-              <span class="feature-number">07</span>
-              <h3>Maintenance tools</h3>
-              <p>Use diagnostics, temporary-file cleanup and controlled vault compaction.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-quiet" id="restoration">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">Three different recovery needs</p>
+            <h2>Your vault. A selected transfer. A full backup.</h2>
+            <p class="section-intro">Choose the recovery source deliberately. These files serve different purposes and are not interchangeable.</p>
+          </div>
+          <div class="recovery-grid">
+            <article class="recovery-card">
+              <p class="card-label">Local restoration</p>
+              <h3>Encrypted vault</h3>
+              <p>Restore using the corresponding local vault and its original Windows DPAPI-protected keys. CSV and HTML workflows stay local.</p>
             </article>
-            <article class="feature-card">
-              <span class="feature-number">08</span>
-              <h3>Local-first by design</h3>
-              <p>No telemetry and no automatic synchronization of sensitive information.</p>
+            <article class="recovery-card recovery-highlight">
+              <p class="card-label">Selective transfer · Upcoming 1.3.0</p>
+              <h3><code>.dmspackage</code></h3>
+              <p>The recipient needs the unchanged matching masked CSV, its package, the password and a DMS version supporting the package format. No sender vault or DPAPI keys are needed.</p>
+              <p>Individual CSVs only. Missing mappings stop restoration; there is no fallback to the local vault.</p>
             </article>
+            <article class="recovery-card">
+              <p class="card-label">Environment recovery</p>
+              <h3><code>.dmsbackup</code></h3>
+              <p>Recover the vault, keys and saved profiles using the backup password. This replaces the local environment; it is not selective CSV restoration and does not include CSV or HTML files.</p>
+            </article>
+          </div>
+          <p class="section-note">Packages and backups contain sensitive recovery data. Keep their passwords separate. See the <a href="https://github.com/Gustavo-Wallace/data-mask-studio/blob/main/COMPATIBILITY.md">compatibility and recovery guide</a> for prerequisites and limits.</p>
+        </div>
+      </section>
+
+      <section class="section" id="in-practice">
+        <div class="container">
+          <div class="section-heading">
+            <p class="eyebrow">Inside the application</p>
+            <h2>From configuration to controlled recovery</h2>
+            <p class="section-intro">Actual 1.3.0 preview screens in Portuguese, captured with isolated synthetic data. Open any screenshot for readable, full-resolution detail.</p>
+          </div>
+          <div class="showcase">
+            <div class="showcase-heading">
+              <h3>Reuse a profile across a batch</h3>
+              <p>Three synthetic CSVs processed successfully, with per-file outcomes and a final summary.</p>
+            </div>
+          <figure class="product-preview">
+            <a href="images/data-mask-studio-batch.png" aria-label="View full-size screenshot"><img src="images/data-mask-studio-batch.png" alt="Data Mask Studio batch CSV masking: three completed files, saved profile, 100 percent progress and 360 processed rows" width="1280" height="820" loading="lazy" decoding="async"></a>
+            <figcaption><span>Batch masking · Synthetic data</span><a href="images/data-mask-studio-batch.png">View full-size screenshot</a></figcaption>
+          </figure>
+          </div>
+          <div class="showcase">
+            <div class="showcase-heading">
+              <h3>Restore from a matching transfer package</h3>
+              <p>The real package workflow restored 120 synthetic rows. The password field is cleared after processing.</p>
+            </div>
+          <figure class="product-preview">
+            <a href="images/data-mask-studio-package.png" aria-label="View full-size screenshot"><img src="images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0 package restoration: transfer-package source selected, three CSV columns selected and successful restoration with the password cleared" width="1280" height="820" loading="lazy" decoding="async"></a>
+            <figcaption><span>Selective package restoration · Upcoming 1.3.0</span><a href="images/data-mask-studio-package.png">View full-size screenshot</a></figcaption>
+          </figure>
           </div>
         </div>
       </section>
@@ -173,7 +227,7 @@
             <span class="workflow-arrow" aria-hidden="true">→</span>
             <div class="workflow-step">Controlled restoration</div>
           </div>
-          <p class="workflow-note">Identifiers remain consistent when generated with the same prefix and cryptographic environment, enabling correlation across records and files. Restoration requires access to the corresponding encrypted local vault.</p>
+          <p class="workflow-note">The same effective value, prefix and cryptographic environment produce consistent identifiers across records and files. Restore through the corresponding local vault or, in 1.3.0, a selective package bound to the exact masked CSV.</p>
         </div>
       </section>
 
@@ -192,8 +246,8 @@
             </article>
             <article class="security-card">
               <strong>AES-256-GCM</strong>
-              <h3>Authenticated vault protection</h3>
-              <p>Original information stored in the vault is encrypted and authenticated against unauthorized changes.</p>
+              <h3>Authenticated data protection</h3>
+              <p>Protects original values in the vault. Packages and backups use separate password-derived encryption keys.</p>
             </article>
             <article class="security-card">
               <strong>Windows DPAPI</strong>
@@ -201,6 +255,7 @@
               <p>Local keys are protected for the Windows user. Processing stays local, with no telemetry or automatic sensitive-data sync.</p>
             </article>
           </div>
+          <p class="section-note">No telemetry or automatic file uploads. DMS targets Windows and does not guarantee absolute security. Distributions are not digitally signed yet.</p>
         </div>
       </section>
 
