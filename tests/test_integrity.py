@@ -225,7 +225,7 @@ def test_safe_report_never_contains_secrets_or_complete_codes(tmp_path: Path) ->
 
 def test_abandoned_temporary_file_requires_attention(tmp_path: Path) -> None:
     paths, _, _ = prepare_valid_environment(tmp_path)
-    (paths.directory / ".secret-abandoned.tmp").write_bytes(b"local")
+    (paths.directory / ".secret-ab12_cd3.tmp").write_bytes(b"local")
 
     result = check(auditor(paths).run(), "Arquivos temporários abandonados")
 

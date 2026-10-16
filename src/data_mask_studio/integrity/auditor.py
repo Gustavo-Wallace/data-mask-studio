@@ -21,6 +21,7 @@ from data_mask_studio.normalization import NormalizationError, NormalizationRule
 from data_mask_studio.profiles import ProfileError, ProfileRepository
 from data_mask_studio.security import KeyProvider
 from data_mask_studio.security.key_provider import KEY_SIZE
+from data_mask_studio.temporary_artifacts import is_owned_temporary, recovery_artifacts
 from data_mask_studio.vault import VaultCipher, VaultEncryptionError
 from data_mask_studio.vault.database import (
     RESTORABLE_SCHEMA_VERSIONS,
@@ -398,14 +399,17 @@ class IntegrityAuditor:
         )
 
     def _check_temporary_files(self) -> CheckResult:
-        directory = self._paths.directory
+        directory = self._paths.directory.resolve()
         if not directory.is_dir():
             return _intact("Arquivos temporários abandonados", 0, "Nenhum arquivo temporário encontrado.")
         candidates = {
             path.resolve()
-            for pattern in ("*.tmp", ".dms-backup-*", ".dms-restore-*")
-            for path in directory.glob(pattern)
+            for path in directory.iterdir()
+            if is_owned_temporary(path, directory)
         }
+        # Recovery evidence may require attention but must never become a
+        # removable temporary solely because the auditor recognizes it.
+        candidates.update(path.resolve() for path in recovery_artifacts(directory))
         if candidates:
             identifiers = tuple(f"temporary#{index}" for index, _ in enumerate(sorted(candidates), 1))
             return CheckResult(
