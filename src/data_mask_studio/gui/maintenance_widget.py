@@ -48,10 +48,12 @@ from data_mask_studio.maintenance import (
     DiagnosticResult,
     MaintenanceDiagnostics,
     MaintenanceError,
+    MaintenanceStatus,
     TemporaryItem,
     VaultCompactor,
     safe_diagnostic_report,
 )
+from data_mask_studio.maintenance.report import safe_integrity_details
 from data_mask_studio.security import KeyProvider
 
 
@@ -89,6 +91,7 @@ class MaintenanceWidget(QWidget):
         self._worker: QThread | None = None
         self._last_diagnostic: DiagnosticResult | None = None
         self._last_audit: AuditReport | None = None
+        self._diagnostic_accept_result = False
         self.temporary_items: list[TemporaryItem] = []
 
         self.sections = QTabWidget()
@@ -190,7 +193,7 @@ class MaintenanceWidget(QWidget):
         )
         self.last_audit_label.setWordWrap(True)
         self.overview_output = EmptyStateTextEdit(
-            "Somente estatísticas agregadas serão exibidas aqui."
+            "Estatísticas e detalhes seguros das verificações serão exibidos aqui."
         )
         self.overview_output.setReadOnly(True)
         layout = QVBoxLayout(widget)
@@ -309,17 +312,25 @@ class MaintenanceWidget(QWidget):
     def start_diagnostic(self) -> None:
         if not self._begin_allowed(0):
             return
+        self.invalidate_diagnostic()
+        self._diagnostic_accept_result = True
         worker = DiagnosticWorker(self._diagnostics)
         worker.progress.connect(self._diagnostic_progress)
         worker.completed.connect(self._diagnostic_completed)
         self._start_worker(worker, "Atualizando diagnóstico...")
 
     def _diagnostic_progress(self, completed: int, total: int) -> None:
+        if not self._accept_diagnostic_signal():
+            return
         self._select_feedback_section(0)
         self.progress.setRange(0, total)
         self.progress.setValue(completed)
 
     def _diagnostic_completed(self, result: DiagnosticResult) -> None:
+        if not self._accept_diagnostic_signal():
+            if self.sender() is self._worker and self._diagnostic_accept_result:
+                self._cancelled()
+            return
         self._select_feedback_section(0)
         self._last_diagnostic = result
         self.set_last_audit(result.audit)
@@ -330,6 +341,34 @@ class MaintenanceWidget(QWidget):
             result.status.value == "failure",
             state="warning" if result.status.value == "attention" else "success",
         )
+
+    def _accept_diagnostic_signal(self) -> bool:
+        return (
+            self.sender() is self._worker
+            and isinstance(self._worker, DiagnosticWorker)
+            and self._diagnostic_accept_result
+            and not self._worker.cancellation_requested
+        )
+
+    def invalidate_diagnostic(self) -> None:
+        """Discard feedback tied to an older environment or diagnostic run."""
+        self._diagnostic_accept_result = False
+        if isinstance(self._worker, DiagnosticWorker):
+            self._worker.request_cancel()
+        self._clear_diagnostic_result()
+        message = "Diagnóstico desatualizado. Execute Atualizar diagnóstico."
+        self._section_feedback[0] = _SectionFeedback(message, "warning", 0, 1, 0)
+        if self._feedback_section == 0:
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            self._set_status(message, False, state="warning")
+
+    def _clear_diagnostic_result(self) -> None:
+        self._last_diagnostic = None
+        self._last_audit = None
+        self.copy_report_button.setEnabled(False)
+        self.overview_output.clear()
+        self.last_audit_label.setText("Última auditoria nesta sessão: diagnóstico desatualizado")
 
     def copy_report(self) -> None:
         if self._last_diagnostic is not None:
@@ -417,6 +456,8 @@ class MaintenanceWidget(QWidget):
 
     def _cleanup_completed(self, result: CleanupResult) -> None:
         self._select_feedback_section(2)
+        if result.removed:
+            self.invalidate_diagnostic()
         self._refresh_temporary_table()
         self._set_status(
             f"Limpeza concluída: {result.removed} removido(s), "
@@ -444,6 +485,7 @@ class MaintenanceWidget(QWidget):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        self.invalidate_diagnostic()
         worker = CompactionWorker(self._compactor)
         worker.phase_changed.connect(self._compaction_phase)
         worker.completed.connect(self._compaction_completed)
@@ -496,13 +538,33 @@ class MaintenanceWidget(QWidget):
         worker = self._worker
         if worker is not None and hasattr(worker, "request_cancel"):
             worker.request_cancel()
+            if isinstance(worker, DiagnosticWorker):
+                self._clear_diagnostic_result()
             self.cancel_button.setEnabled(False)
             self._set_status("Cancelamento solicitado...", False)
 
     def _cancelled(self) -> None:
+        if self.sender() is not self._worker:
+            return
+        if isinstance(self._worker, DiagnosticWorker):
+            if not self._diagnostic_accept_result:
+                return
+            self._diagnostic_accept_result = False
+            self._clear_diagnostic_result()
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
         self._set_status("Operação cancelada com segurança.", False, state="warning")
 
     def _failed(self, error: Exception) -> None:
+        if self.sender() is not self._worker:
+            return
+        if isinstance(self._worker, DiagnosticWorker):
+            if not self._diagnostic_accept_result:
+                return
+            self._diagnostic_accept_result = False
+            self._clear_diagnostic_result()
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
         message = (
             str(error)
             if isinstance(error, (MaintenanceError, BackupError))
@@ -513,22 +575,37 @@ class MaintenanceWidget(QWidget):
         self._set_status(message, True)
 
     def _finished(self) -> None:
+        if self.sender() is not self._worker:
+            return
         worker = self._worker
+        if (
+            isinstance(worker, DiagnosticWorker)
+            and worker.cancellation_requested
+            and self._diagnostic_accept_result
+        ):
+            self._cancelled()
+        diagnostic_succeeded = (
+            self._last_diagnostic is not None
+            and self._last_diagnostic.status is not MaintenanceStatus.FAILURE
+        )
+        self._diagnostic_accept_result = False
         self._worker = None
         self.backup_password_field.clear()
         self.show_backup_password.setChecked(False)
         if worker is not None:
             worker.deleteLater()
-        self._set_busy(False)
+        self._set_busy(
+            False, completed=not isinstance(worker, DiagnosticWorker) or diagnostic_succeeded
+        )
         self._remember_feedback()
 
-    def _set_busy(self, busy: bool) -> None:
+    def _set_busy(self, busy: bool, *, completed: bool = True) -> None:
         self.sections.setEnabled(not busy)
         self.cancel_button.setVisible(busy)
         self.cancel_button.setEnabled(busy)
         if not busy:
             self.progress.setRange(0, 1)
-            self.progress.setValue(1)
+            self.progress.setValue(int(completed))
         self.busy_changed.emit(busy)
 
     def has_running_worker(self) -> bool:
@@ -607,6 +684,9 @@ def _render_diagnostic(result: DiagnosticResult) -> str:
             f"journal: {'sim' if stats.journal_present else 'não'}",
             f"Espaço do ambiente local: {_format_bytes(stats.environment_size)}",
             f"Espaço livre na unidade: {_format_bytes(stats.free_space)}",
+            *stats.errors,
+            "",
+            safe_integrity_details(result.audit),
         )
     )
 

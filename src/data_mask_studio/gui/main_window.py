@@ -155,6 +155,15 @@ class MainWindow(QMainWindow):
             self._maintenance_directories,
         )
         self.maintenance_widget.busy_changed.connect(self._maintenance_busy_changed)
+        self.anonymization_widget.profiles_changed.connect(
+            self.maintenance_widget.invalidate_diagnostic
+        )
+        self.anonymization_widget.environment_may_change.connect(
+            self.maintenance_widget.invalidate_diagnostic
+        )
+        self.batch_widget.environment_may_change.connect(
+            self.maintenance_widget.invalidate_diagnostic
+        )
         self.maintenance_widget.environment_changed.connect(
             self._environment_maintained
         )
@@ -428,11 +437,13 @@ class MainWindow(QMainWindow):
         self.consultant_widget.clear_consultation()
         self.anonymization_widget.refresh_profiles()
         self.integrity_widget.clear_report()
+        self.maintenance_widget.invalidate_diagnostic()
         self.batch_restoration_widget.invalidate_analysis()
 
     def _environment_maintained(self) -> None:
         self.consultant_widget.clear_consultation()
         self.integrity_widget.clear_report()
+        self.maintenance_widget.invalidate_diagnostic()
         self.batch_restoration_widget.invalidate_analysis()
 
     def closeEvent(self, event: QCloseEvent) -> None:

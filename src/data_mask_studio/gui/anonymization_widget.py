@@ -109,6 +109,7 @@ class AnonymizationWidget(QWidget):
     """Interface da anonimização individual de arquivos CSV."""
 
     profiles_changed = Signal()
+    environment_may_change = Signal()
 
     def __init__(
         self,
@@ -1243,6 +1244,8 @@ class AnonymizationWidget(QWidget):
         worker.cancelled.connect(self._processing_cancelled)
         worker.failed.connect(self._processing_failed)
         worker.finished.connect(self._worker_finished)
+        if plan.requires_masking:
+            self.environment_may_change.emit()
         worker.start()
 
     def _processing_progress(self, records_processed: int) -> None:

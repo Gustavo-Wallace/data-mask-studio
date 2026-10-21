@@ -36,6 +36,7 @@ class EnvironmentStatistics:
     journal_present: bool
     environment_size: int
     free_space: int
+    errors: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

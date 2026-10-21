@@ -1,7 +1,7 @@
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 
@@ -55,6 +55,8 @@ VaultRepositoryFactory = Callable[[], VaultRepository]
 
 
 class BatchWidget(QWidget):
+    environment_may_change = Signal()
+
     def __init__(
         self,
         profile_service: ProfileService | None,
@@ -454,6 +456,7 @@ class BatchWidget(QWidget):
         worker.completed.connect(self._processing_completed)
         worker.failed.connect(self._worker_failed)
         worker.finished.connect(self._processing_finished)
+        self.environment_may_change.emit()
         worker.start()
 
     def cancel(self) -> None:

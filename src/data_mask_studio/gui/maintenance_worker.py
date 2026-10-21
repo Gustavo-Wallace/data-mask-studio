@@ -32,6 +32,10 @@ class DiagnosticWorker(_MaintenanceWorker):
         super().__init__()
         self._diagnostics = diagnostics
 
+    @property
+    def cancellation_requested(self) -> bool:
+        return self._cancellation.is_set()
+
     def run(self) -> None:
         try:
             result = self._diagnostics.run(
@@ -43,7 +47,10 @@ class DiagnosticWorker(_MaintenanceWorker):
         except Exception as error:
             self.failed.emit(error)
         else:
-            self.completed.emit(result)
+            if self.cancellation_requested:
+                self.cancelled.emit()
+            else:
+                self.completed.emit(result)
 
 
 class TemporaryScanWorker(_MaintenanceWorker):
