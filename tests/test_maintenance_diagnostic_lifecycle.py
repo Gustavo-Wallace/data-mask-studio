@@ -38,6 +38,22 @@ def complete_diagnostic(app, widget):
     assert widget._last_diagnostic is not None
 
 
+def test_completion_without_active_worker_cannot_restore_invalidated_success(diagnostic_gui):
+    app, widget, _, _ = diagnostic_gui
+    complete_diagnostic(app, widget)
+    previous = widget._last_diagnostic
+    widget.invalidate_diagnostic()
+    message = widget.status_label.text()
+    assert widget._worker is None
+    widget._diagnostic_completed(previous)
+    assert widget.status_label.text() == message
+    assert widget.status_label.property("feedbackState") == "warning"
+    assert widget._last_diagnostic is None
+    assert not widget.overview_output.toPlainText()
+    assert not widget.copy_report_button.isEnabled()
+    assert widget.progress.value() == 0
+
+
 def test_details_and_copied_report_include_safe_failure_references(diagnostic_gui):
     app, widget, paths, code = diagnostic_gui
     with sqlite3.connect(paths.vault_database_path) as connection:

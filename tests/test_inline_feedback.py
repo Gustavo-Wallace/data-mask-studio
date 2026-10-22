@@ -35,6 +35,7 @@ from data_mask_studio.restoration import (
     MissingCodePolicy, RepresentationPolicy, RestorationResult, RestorationSecurityError,
 )
 from test_main_navigation import build_window
+from test_maintenance_interface import wait
 
 
 STATE_COLORS = {
@@ -280,14 +281,20 @@ def test_integrity_uses_existing_report_classification_and_resets_presentation(p
 @pytest.mark.parametrize("status,state", [(MaintenanceStatus.HEALTHY, "success"),
                                          (MaintenanceStatus.ATTENTION, "warning"),
                                          (MaintenanceStatus.FAILURE, "error")])
-def test_diagnostics_use_existing_status_without_turning_attention_green(page, tmp_path, status, state):
-    _, window = page
+def test_diagnostics_use_existing_status_without_turning_attention_green(page, tmp_path, monkeypatch, status, state):
+    app, window = page
     audit = make_audit(tmp_path, IntegrityStatus.INTACT)
     statistics = EnvironmentStatistics(4, 0, 0, 0, 0, 0, 0, (), None, None,
                                        False, False, False, 0, 1024)
     result = DiagnosticResult(audit.finished_at, status, statistics, audit)
     widget = window.maintenance_widget
-    widget._diagnostic_completed(result)
+    # Exercise the real worker/signal lifecycle required by stale-result guards.
+    monkeypatch.setattr(widget._diagnostics, "run", lambda **kwargs: result)
+    widget.start_diagnostic()
+    wait(app, widget)
+    assert widget._worker is None
+    assert widget._last_diagnostic is result
+    assert widget.copy_report_button.isEnabled()
     assert_feedback(widget.status_label, state)
     assert "Diagnóstico concluído:" in widget.status_label.text()
     widget._compaction_phase("Etapa segura em andamento", True)
