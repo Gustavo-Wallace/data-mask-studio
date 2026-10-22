@@ -49,7 +49,16 @@ def pump_until(app, predicate):
 
 
 def finish(app, widget, attribute):
-    pump_until(app, lambda: getattr(widget, attribute) is None)
+    worker = getattr(widget, attribute)
+    if worker is not None:
+        # Join without tight Qt polling contending with the Python worker.
+        # Keep the existing 10-second bound and distinguish a running thread
+        # from a finished thread whose queued GUI cleanup did not execute.
+        assert worker.wait(10000), f"{attribute} is still running after 10 seconds"
+    app.processEvents()
+    assert getattr(widget, attribute) is None, (
+        f"{attribute} finished, but queued GUI cleanup did not clear its reference"
+    )
 
 
 def validate(page):
@@ -57,6 +66,33 @@ def validate(page):
     widget.validate_files()
     finish(app, widget, "_validation_worker")
     assert all(item.status is BatchFileStatus.COMPATIBLE for item in widget.files)
+
+
+@pytest.mark.parametrize("phase", ["validation", "processing"])
+def test_finish_joins_real_worker_then_delivers_queued_gui_cleanup(page, monkeypatch, phase):
+    app, _, widget, *_ = page
+    if phase == "processing":
+        validate(page)
+    attribute = "_validation_worker" if phase == "validation" else "_processing_worker"
+    (widget.validate_files if phase == "validation" else widget.start_processing)()
+    worker = getattr(widget, attribute)
+    joined = []
+    original_wait = worker.wait
+
+    def wait_for_thread(timeout):
+        stopped = original_wait(timeout)
+        joined.append((timeout, stopped, getattr(widget, attribute) is worker))
+        return stopped
+
+    monkeypatch.setattr(worker, "wait", wait_for_thread)
+    finish(app, widget, attribute)
+    # Completion must not depend on a tight GUI polling loop. The real thread
+    # stops first; its reference is cleared only by queued production slots.
+    assert joined == [(10000, True, True)]
+    assert getattr(widget, attribute) is None
+    expected = (BatchFileStatus.COMPATIBLE if phase == "validation"
+                else BatchFileStatus.COMPLETED)
+    assert all(item.status is expected for item in widget.files)
 
 
 @dataclass
