@@ -21,7 +21,6 @@ from data_mask_studio.gui.batch_widget import BatchWidget
 from data_mask_studio.gui.batch_restoration_widget import BatchRestorationWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
 from data_mask_studio.gui.html_restoration_widget import HTMLRestorationWidget
-from data_mask_studio.gui.integrity_widget import IntegrityWidget
 from data_mask_studio.gui.components import (
     NavigationItem,
     PageShell,
@@ -133,13 +132,6 @@ class MainWindow(QMainWindow):
         self.html_restoration_widget = HTMLRestorationWidget(
             self._restoration_repository_factory
         )
-        self.integrity_widget = IntegrityWidget(
-            self._backup_paths,
-            self._key_provider,
-            self._vault_key_provider,
-            self._prepare_integrity_audit,
-        )
-        self.integrity_widget.busy_changed.connect(self._integrity_busy_changed)
         self.batch_restoration_widget = BatchRestorationWidget(
             self._restoration_repository_factory,
             self._prepare_batch_restoration,
@@ -167,9 +159,6 @@ class MainWindow(QMainWindow):
         self.maintenance_widget.environment_changed.connect(
             self._environment_maintained
         )
-        self.integrity_widget.audit_completed.connect(
-            self.maintenance_widget.set_last_audit
-        )
 
         page_specs = (
             ("PROCESSAMENTO", "Anonimizar CSV", "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.", self.anonymization_widget),
@@ -179,7 +168,6 @@ class MainWindow(QMainWindow):
             ("RESTAURAÇÃO", "Restauração em lote", "Restaure vários arquivos CSV ou HTML usando o cofre local.", self.batch_restoration_widget),
             ("COFRE", "Consultar cofre", "Consulte códigos específicos sem expor todo o conteúdo do cofre.", self.consultant_widget),
             ("COFRE", "Backup e recuperação", "Crie ou restaure um backup criptografado do ambiente local.", self.backup_widget),
-            ("COFRE", "Integridade", "Verifique as chaves, o cofre e os perfis sem modificar os dados.", self.integrity_widget),
             ("COFRE", "Cofre e manutenção", "Diagnostique, limpe temporários e compacte o cofre com segurança.", self.maintenance_widget),
         )
         self.page_widgets = tuple(spec[3] for spec in page_specs)
@@ -314,7 +302,6 @@ class MainWindow(QMainWindow):
             self.batch_restoration_widget.start_button,
             self.consultant_widget.consult_button,
             self.backup_widget.create_button,
-            self.integrity_widget.run_button,
             self.maintenance_widget.refresh_button,
         ):
             set_button_role(button, "primary")
@@ -345,21 +332,6 @@ class MainWindow(QMainWindow):
             or self.batch_widget.has_running_workers()
             or self.restoration_widget.has_running_worker()
             or self.html_restoration_widget.has_running_worker()
-            or self.integrity_widget.has_running_worker()
-            or self.batch_restoration_widget.has_running_workers()
-            or self.maintenance_widget.has_running_worker()
-        ):
-            return False
-        self.consultant_widget.clear_consultation()
-        return True
-
-    def _prepare_integrity_audit(self) -> bool:
-        if (
-            self.anonymization_widget.has_running_worker()
-            or self.batch_widget.has_running_workers()
-            or self.restoration_widget.has_running_worker()
-            or self.html_restoration_widget.has_running_worker()
-            or self.backup_widget.has_running_worker()
             or self.batch_restoration_widget.has_running_workers()
             or self.maintenance_widget.has_running_worker()
         ):
@@ -374,7 +346,6 @@ class MainWindow(QMainWindow):
             or self.restoration_widget.has_running_worker()
             or self.html_restoration_widget.has_running_worker()
             or self.backup_widget.has_running_worker()
-            or self.integrity_widget.has_running_worker()
             or self.maintenance_widget.has_running_worker()
         ):
             return False
@@ -388,7 +359,6 @@ class MainWindow(QMainWindow):
             or self.restoration_widget.has_running_worker()
             or self.html_restoration_widget.has_running_worker()
             or self.backup_widget.has_running_worker()
-            or self.integrity_widget.has_running_worker()
             or self.batch_restoration_widget.has_running_workers()
         ):
             return False
@@ -397,9 +367,6 @@ class MainWindow(QMainWindow):
 
     def _backup_busy_changed(self, busy: bool) -> None:
         self._set_exclusive_page_busy(self.backup_widget, busy)
-
-    def _integrity_busy_changed(self, busy: bool) -> None:
-        self._set_exclusive_page_busy(self.integrity_widget, busy)
 
     def _batch_restoration_busy_changed(self, busy: bool) -> None:
         self._set_exclusive_page_busy(self.batch_restoration_widget, busy)
@@ -436,13 +403,11 @@ class MainWindow(QMainWindow):
         )
         self.consultant_widget.clear_consultation()
         self.anonymization_widget.refresh_profiles()
-        self.integrity_widget.clear_report()
         self.maintenance_widget.invalidate_diagnostic()
         self.batch_restoration_widget.invalidate_analysis()
 
     def _environment_maintained(self) -> None:
         self.consultant_widget.clear_consultation()
-        self.integrity_widget.clear_report()
         self.maintenance_widget.invalidate_diagnostic()
         self.batch_restoration_widget.invalidate_analysis()
 
@@ -467,10 +432,6 @@ class MainWindow(QMainWindow):
             (
                 self.html_restoration_widget.stop_worker,
                 "Aguarde o cancelamento da restauração de HTML.",
-            ),
-            (
-                self.integrity_widget.stop_worker,
-                "Aguarde o cancelamento da auditoria de integridade.",
             ),
             (
                 self.batch_restoration_widget.stop_workers,

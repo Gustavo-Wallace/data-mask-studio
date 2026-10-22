@@ -24,7 +24,6 @@ DESCRIPTIONS = (
     "Restaure vários arquivos CSV ou HTML usando o cofre local.",
     "Consulte códigos específicos sem expor todo o conteúdo do cofre.",
     "Crie ou restaure um backup criptografado do ambiente local.",
-    "Verifique as chaves, o cofre e os perfis sem modificar os dados.",
     "Diagnostique, limpe temporários e compacte o cofre com segurança.",
 )
 
@@ -35,7 +34,7 @@ def test_all_main_pages_share_header_hierarchy_alignment_and_original_texts(tmp_
     window.show()
     app.processEvents()
     assert window.current_page_index() == 0
-    assert len(window.page_shells) == len(DESCRIPTIONS) == 9
+    assert len(window.page_shells) == len(DESCRIPTIONS) == 8
 
     for index, shell in enumerate(window.page_shells):
         window.set_current_page(index)

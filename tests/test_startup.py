@@ -86,7 +86,6 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
         "Restauração em lote",
         "Consultar cofre",
         "Backup e recuperação",
-        "Integridade",
         "Cofre e manutenção",
     ]
     assert window.restoration_widget.path_field.isReadOnly()
@@ -98,7 +97,7 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
         is QLineEdit.EchoMode.Password
     )
     assert not window.consultant_widget.copy_button.isEnabled()
-    assert not window.integrity_widget.copy_button.isEnabled()
+    assert not window.maintenance_widget.copy_report_button.isEnabled()
     assert not window.isVisible()
 
     window.close()

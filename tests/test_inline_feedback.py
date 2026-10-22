@@ -31,6 +31,7 @@ from data_mask_studio.integrity import AuditReport, CheckResult, IntegrityStatus
 from data_mask_studio.maintenance.models import (
     CleanupResult, DiagnosticResult, EnvironmentStatistics, MaintenanceStatus,
 )
+from data_mask_studio.maintenance import MaintenanceCancelled, safe_diagnostic_report
 from data_mask_studio.restoration import (
     MissingCodePolicy, RepresentationPolicy, RestorationResult, RestorationSecurityError,
 )
@@ -132,7 +133,7 @@ def test_initial_operational_feedback_is_neutral_but_vault_warning_stays_promine
     _, window = page
     for widget in (window.anonymization_widget, window.batch_widget, window.restoration_widget,
                    window.html_restoration_widget, window.batch_restoration_widget,
-                   window.consultant_widget, window.integrity_widget, window.maintenance_widget):
+                   window.consultant_widget, window.maintenance_widget):
         assert_feedback(widget.status_label, "neutral")
     assert_feedback(window.backup_widget.create_status, "neutral")
     assert_feedback(window.backup_widget.restore_status, "neutral")
@@ -148,7 +149,7 @@ def test_initial_operational_feedback_is_neutral_but_vault_warning_stays_promine
 
 
 @pytest.mark.parametrize("name", ["anonymization", "batch", "restoration", "html_restoration",
-                                  "batch_restoration", "consultant", "backup", "integrity", "maintenance"])
+                                  "batch_restoration", "consultant", "backup", "maintenance"])
 def test_existing_page_status_helpers_share_states_and_error_overrides_success(page, name):
     _, window = page
     widget = getattr(window, f"{name}_widget")
@@ -240,7 +241,7 @@ def test_restoration_completion_distinguishes_existing_missing_code_notices(page
     assert_feedback(widget.status_label, "warning")
 
 
-@pytest.mark.parametrize("kind", ["anonymization", "restoration", "html_restoration", "integrity", "maintenance"])
+@pytest.mark.parametrize("kind", ["anonymization", "restoration", "html_restoration", "maintenance"])
 def test_unexpected_failures_keep_existing_safe_messages_and_error_presentation(page, kind):
     _, window = page
     widget = getattr(window, f"{kind}_widget")
@@ -265,17 +266,38 @@ def test_security_failures_remain_redacted(page, kind, error_type):
 @pytest.mark.parametrize("status,state", [(IntegrityStatus.INTACT, "success"),
                                          (IntegrityStatus.ATTENTION, "warning"),
                                          (IntegrityStatus.FAILURE, "error")])
-def test_integrity_uses_existing_report_classification_and_resets_presentation(page, tmp_path, status, state):
-    _, window = page
-    widget = window.integrity_widget
+def test_integrity_classification_in_maintenance_and_invalidation_remain_safe(page, tmp_path, monkeypatch, status, state):
+    app, window = page
+    widget = window.maintenance_widget
     report = make_audit(tmp_path, status)
-    widget._completed(report)
+    statistics = EnvironmentStatistics(4, 0, 0, 0, 0, 0, 0, (), None, None,
+                                       False, False, False, 0, 1024)
+    diagnostic_status = {
+        IntegrityStatus.INTACT: MaintenanceStatus.HEALTHY,
+        IntegrityStatus.ATTENTION: MaintenanceStatus.ATTENTION,
+        IntegrityStatus.FAILURE: MaintenanceStatus.FAILURE,
+    }[status]
+    result = DiagnosticResult(report.finished_at, diagnostic_status, statistics, report)
+    monkeypatch.setattr(widget._diagnostics, "run", lambda **kwargs: result)
+    widget.start_diagnostic()
+    wait(app, widget)
     assert_feedback(widget.status_label, state)
-    assert widget.report_view.toPlainText() == report.to_safe_text()
-    widget.clear_report()
-    assert_feedback(widget.status_label, "neutral")
-    widget._cancelled()
+    assert widget._last_diagnostic.audit is report
+    widget.copy_report()
+    assert app.clipboard().text() == safe_diagnostic_report(result)
+    widget.invalidate_diagnostic()
     assert_feedback(widget.status_label, "warning")
+    assert widget._last_diagnostic is None and not widget.copy_report_button.isEnabled()
+    assert not widget.overview_output.toPlainText()
+
+    def cancelled(**kwargs):
+        raise MaintenanceCancelled("Diagnóstico sintético cancelado.")
+
+    monkeypatch.setattr(widget._diagnostics, "run", cancelled)
+    widget.start_diagnostic()
+    wait(app, widget)
+    assert_feedback(widget.status_label, "warning")
+    assert widget._last_diagnostic is None and not widget.copy_report_button.isEnabled()
 
 
 @pytest.mark.parametrize("status,state", [(MaintenanceStatus.HEALTHY, "success"),

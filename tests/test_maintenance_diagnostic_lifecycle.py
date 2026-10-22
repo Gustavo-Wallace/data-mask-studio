@@ -148,7 +148,8 @@ def test_main_window_environment_events_invalidate_diagnostic(tmp_path, monkeypa
     assert not widget.overview_output.toPlainText()
     assert widget.progress.value() == 0
     assert "desatualizado" in widget.status_label.text().casefold()
-    assert "Integridade" in [button.text() for button in window.navigation.buttons]
+    assert "Integridade" not in [button.text() for button in window.navigation.buttons]
+    assert "Cofre e manutenção" in [button.text() for button in window.navigation.buttons]
 
 
 def test_statistics_progress_is_included_and_cancellable(tmp_path):

@@ -1,7 +1,6 @@
 """Operational screen layout and state contracts, without pixel snapshots."""
 
 import os
-from datetime import datetime, timezone
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -12,9 +11,8 @@ from PySide6.QtWidgets import QLabel, QLineEdit
 from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio.anonymization import TokenGenerator
 from data_mask_studio.app import create_application
-from data_mask_studio.gui.integrity_worker import IntegrityWorker
 from data_mask_studio.gui.maintenance_worker import DiagnosticWorker
-from data_mask_studio.integrity import AuditReport, CheckResult, IntegrityStatus
+from data_mask_studio.maintenance import safe_diagnostic_report
 from data_mask_studio.vault import MappingCandidate
 from test_main_navigation import build_window
 
@@ -38,16 +36,8 @@ def seed_mapping(window):
     return code, original
 
 
-def safe_report(window):
-    paths = window._backup_paths
-    now = datetime.now(timezone.utc)
-    return AuditReport(now, now, paths.vault_database_path, paths.profiles_path, 4,
-                       (CheckResult("Verificação sintética", IntegrityStatus.INTACT, 1, 0,
-                                    "Resultado agregado seguro."),))
-
-
 @pytest.mark.parametrize("name,attribute", [("consultant", "results_output"),
-                                           ("integrity", "report_view")])
+                                           ("maintenance", "overview_output")])
 def test_empty_result_is_compact_and_filled_result_gets_expansion_priority(page, name, attribute):
     app, window = page
     widget = getattr(window, f"{name}_widget")
@@ -59,7 +49,7 @@ def test_empty_result_is_compact_and_filled_result_gets_expansion_priority(page,
     assert output.isVisible() and output.isReadOnly()
     assert output.maximumHeight() == 160 and empty_height <= 160
     assert output.accessibleDescription() == output.empty_text
-    assert widget.layout().stretch(widget.layout().indexOf(output)) == 1
+    assert output.parentWidget().layout().stretch(output.parentWidget().layout().indexOf(output)) == 1
     output.setPlainText("\n".join(f"Synthetic report line {index}" for index in range(80)))
     app.processEvents()
     assert output.maximumHeight() == 16_777_215
@@ -102,28 +92,30 @@ def test_consultant_warning_copy_and_clear_remain_explicit_and_transient(page):
 
 
 @pytest.mark.parametrize("outcome,state", [("success", "success"), ("cancelled", "warning"), ("failure", "error")])
-def test_integrity_running_and_terminal_states_keep_existing_controls_and_progress(page, monkeypatch, outcome, state):
+def test_integrity_diagnostic_running_and_terminal_states_keep_controls_and_progress(page, monkeypatch, outcome, state):
     app, window = page
-    widget = window.integrity_widget
+    widget = window.maintenance_widget
     window.set_current_page(window.page_index(widget))
     assert widget.status_label.property("feedbackState") == "neutral"
-    assert widget.run_button.isEnabled() and not widget.copy_button.isEnabled()
-    assert widget.progress_bar.value() == 0 and widget.cancel_button.isHidden()
-    monkeypatch.setattr(IntegrityWorker, "start", lambda self: None)
-    widget.run_button.click()
+    assert widget.refresh_button.isEnabled() and not widget.copy_report_button.isEnabled()
+    assert widget.progress.value() == 0 and widget.cancel_button.isHidden()
+    monkeypatch.setattr(DiagnosticWorker, "start", lambda self: None)
+    widget.refresh_button.click()
     worker = widget._worker
-    assert worker is not None and not widget.run_button.isEnabled()
-    assert widget.cancel_button.isVisible() and not widget.copy_button.isEnabled()
+    assert worker is not None and not widget.refresh_button.isEnabled()
+    assert widget.cancel_button.isVisible() and not widget.copy_report_button.isEnabled()
     assert widget.status_label.property("feedbackState") == "neutral"
-    worker.progress.emit(3, 12)
-    assert widget.progress_bar.value() == 3
+    worker.progress.emit(3, 16)
+    assert widget.progress.value() == 3
     if outcome == "success":
-        report = safe_report(window)
-        worker.progress.emit(12, 12)
-        worker.completed.emit(report)
-        assert widget.report_view.toPlainText() == report.to_safe_text()
-        assert widget.progress_bar.value() == 12
-        assert "ainda não executada" not in widget.last_check_label.text()
+        seed_mapping(window)
+        result = widget._diagnostics.run()
+        worker.progress.emit(16, 16)
+        worker.completed.emit(result)
+        assert widget._last_diagnostic is result
+        assert "Integridade: ÍNTEGRO" in widget.overview_output.toPlainText()
+        assert widget.progress.value() == 16
+        assert "ainda não executada" not in widget.last_audit_label.text()
     elif outcome == "cancelled":
         widget.cancel_button.click()
         assert worker._cancellation.is_set() and not widget.cancel_button.isEnabled()
@@ -132,8 +124,9 @@ def test_integrity_running_and_terminal_states_keep_existing_controls_and_progre
         worker.failed.emit(RuntimeError("PRIVATE_SENTINEL"))
         assert "PRIVATE_SENTINEL" not in widget.status_label.text()
     worker.finished.emit()
-    assert widget._worker is None and widget.run_button.isEnabled() and widget.cancel_button.isHidden()
-    assert widget.copy_button.isEnabled() is (outcome == "success")
+    assert widget._worker is None and widget.refresh_button.isEnabled() and widget.cancel_button.isHidden()
+    assert widget.copy_report_button.isEnabled() is (outcome == "success")
+    assert widget.progress.value() == (1 if outcome == "success" else 0)
     assert widget.status_label.property("feedbackState") == state
 
 
@@ -176,28 +169,30 @@ def test_maintenance_tabs_actions_and_result_priorities_preserve_controls(page):
     assert not widget.copy_report_button.isEnabled() and not widget.cleanup_button.isEnabled()
 
 
-def test_real_audit_and_diagnostic_preserve_safe_reports_and_copy_contract(page):
+def test_real_integrity_diagnostic_preserves_safe_reports_and_copy_contract(page):
     app, window = page
     code, original = seed_mapping(window)
-    for widget, output, button, copy in (
-        (window.integrity_widget, window.integrity_widget.report_view,
-         window.integrity_widget.run_button, window.integrity_widget.copy_button),
-        (window.maintenance_widget, window.maintenance_widget.overview_output,
-         window.maintenance_widget.refresh_button, window.maintenance_widget.copy_report_button),
-    ):
-        window.set_current_page(window.page_index(widget))
-        button.click()
-        worker = widget._worker
-        assert worker is not None and worker.wait(10000)
-        app.processEvents()
-        assert output.toPlainText() and code not in output.toPlainText() and original not in output.toPlainText()
-        assert output.maximumHeight() == 16_777_215
-        assert widget.status_label.property("feedbackState") == "success" and copy.isEnabled()
-        copy.click()
-        assert app.clipboard().text() and code not in app.clipboard().text() and original not in app.clipboard().text()
-    assert window.integrity_widget.report_view.toPlainText() == window.integrity_widget._last_report.to_safe_text()
-    assert "Mapeamentos: 1" in window.maintenance_widget.overview_output.toPlainText()
-    assert window.maintenance_widget.layout().stretch(0) == 1
+    widget = window.maintenance_widget
+    window.set_current_page(window.page_index(widget))
+    widget.refresh_button.click()
+    worker = widget._worker
+    assert worker is not None and worker.wait(10000)
+    app.processEvents()
+    output = widget.overview_output
+    assert output.toPlainText() and code not in output.toPlainText() and original not in output.toPlainText()
+    assert output.maximumHeight() == 16_777_215
+    assert widget.status_label.property("feedbackState") == "success" and widget.copy_report_button.isEnabled()
+    widget.copy_report_button.click()
+    assert app.clipboard().text() == safe_diagnostic_report(widget._last_diagnostic)
+    assert code not in app.clipboard().text() and original not in app.clipboard().text()
+    public_report = widget._last_diagnostic.audit.to_safe_text()
+    assert code not in public_report and original not in public_report
+    for check in widget._last_diagnostic.audit.checks:
+        assert check.check_type in public_report
+        assert check.check_type in output.toPlainText()
+        assert check.check_type in app.clipboard().text()
+    assert "Mapeamentos: 1" in output.toPlainText()
+    assert widget.layout().stretch(0) == 1
 
 
 def test_result_sizing_of_other_pages_is_unchanged(page):
@@ -235,7 +230,7 @@ def test_maintenance_busy_and_terminal_feedback_remain_safe(page, monkeypatch, o
     assert widget.progress.maximum() > 0 and widget.status_label.property("feedbackState") == state
 
 
-@pytest.mark.parametrize("name,attribute", [("consultant", "results_output"), ("integrity", "report_view"),
+@pytest.mark.parametrize("name,attribute", [("consultant", "results_output"),
                                            ("maintenance", "overview_output")])
 @pytest.mark.parametrize("size", [(960, 640), (1280, 820), "maximized"])
 def test_empty_and_populated_pages_keep_footer_reachable_at_supported_sizes(page, name, attribute, size):

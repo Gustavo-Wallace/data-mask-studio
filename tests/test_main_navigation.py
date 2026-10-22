@@ -71,7 +71,6 @@ def test_sidebar_navigation_order_accessibility_and_state(tmp_path: Path) -> Non
         "Restauração em lote",
         "Consultar cofre",
         "Backup e recuperação",
-        "Integridade",
         "Cofre e manutenção",
     ]
 
@@ -271,7 +270,7 @@ def test_common_headers_roles_paths_empty_states_and_internal_tabs(
     application = create_application([])
     window = build_window(tmp_path)
 
-    assert len(window.findChildren(PageHeader)) == 9
+    assert len(window.findChildren(PageHeader)) == 8
     assert all(shell.header.title_label.text() for shell in window.page_shells)
     primary_buttons = (
         window.anonymization_widget.generate_button,
@@ -280,7 +279,7 @@ def test_common_headers_roles_paths_empty_states_and_internal_tabs(
         window.html_restoration_widget.generate_button,
         window.batch_restoration_widget.start_button,
         window.backup_widget.create_button,
-        window.integrity_widget.run_button,
+        window.maintenance_widget.refresh_button,
     )
     assert all(button.property("role") == "primary" for button in primary_buttons)
 
@@ -426,7 +425,8 @@ def test_sidebar_selection_signals_and_disabled_keyboard_navigation_are_preserve
     initial_sizes = [button.size() for button in navigation.buttons]
     assert window.current_page_index() == 0
 
-    for index in (2, 5, 8, 0):
+    maintenance_index = window.page_index(window.maintenance_widget)
+    for index in (2, 5, maintenance_index, 0):
         navigation.buttons[index].click()
         application.processEvents()
         assert navigation.current_index() == window.current_page_index() == index
@@ -435,9 +435,9 @@ def test_sidebar_selection_signals_and_disabled_keyboard_navigation_are_preserve
             position == index for position in range(len(navigation.buttons))
         ]
         assert [button.size() for button in navigation.buttons] == initial_sizes
-    assert changes == [2, 5, 8, 0]
+    assert changes == [2, 5, maintenance_index, 0]
     navigation.buttons[0].click()
-    assert changes == [2, 5, 8, 0]  # Clicking the active item does not emit a new destination.
+    assert changes == [2, 5, maintenance_index, 0]  # Clicking the active item does not emit a new destination.
 
     navigation.set_page_enabled(1, False)
     navigation.buttons[0].setFocus()
@@ -446,4 +446,41 @@ def test_sidebar_selection_signals_and_disabled_keyboard_navigation_are_preserve
     assert window.current_page_index() == 2
     assert navigation.buttons[2].hasFocus() and navigation.buttons[2].isChecked()
     assert not navigation.page_enabled(1)
-    assert changes == [2, 5, 8, 0, 2]
+    assert changes == [2, 5, maintenance_index, 0, 2]
+
+
+def test_vault_navigation_has_three_routes_and_keyboard_wraps_without_retired_page(tmp_path):
+    application = create_application([])
+    window = build_window(tmp_path)
+    window.show()
+    application.processEvents()
+    assert window.page_stack.count() == len(window.navigation.buttons) == 8
+    assert not hasattr(window, "integrity_widget")
+    vault_widgets = (
+        window.consultant_widget, window.backup_widget, window.maintenance_widget,
+    )
+    assert [button.text() for button in window.navigation.buttons[5:]] == [
+        "Consultar cofre", "Backup e recuperação", "Cofre e manutenção",
+    ]
+    assert window.current_page_index() == 0
+    assert window.navigation.buttons[0].isChecked()
+    for widget in vault_widgets:
+        index = window.page_index(widget)
+        button = window.navigation.buttons[index]
+        button.click()
+        application.processEvents()
+        assert window.current_page_index() == index
+        assert window.page_stack.currentWidget().content is widget
+        assert button.isChecked() and button.accessibleName() == button.text()
+    last = window.navigation.buttons[-1]
+    last.setFocus()
+    QTest.keyClick(last, Qt.Key.Key_Down)
+    application.processEvents()
+    assert window.current_page_index() == 0
+    assert window.navigation.buttons[0].hasFocus()
+    QTest.keyClick(window.navigation.buttons[0], Qt.Key.Key_Up)
+    application.processEvents()
+    assert window.current_page_index() == window.page_index(window.maintenance_widget)
+    assert last.hasFocus() and last.isChecked()
+    window.set_current_page(8)  # The former last index is no longer a valid route.
+    assert window.page_stack.currentWidget().content is window.maintenance_widget
