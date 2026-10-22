@@ -38,7 +38,8 @@ def test_batch_tab_validates_and_processes_offscreen(tmp_path: Path) -> None:
     )
     batch = window.batch_widget
 
-    assert window.navigation.buttons[1].text() == "Anonimização em lote"
+    assert window.navigation.buttons[1].text() == "Mascaramento em lote"
+    assert batch.start_button.text() == "Iniciar mascaramento"
     assert batch.add_paths([source, source]) == 1
     assert batch.file_table.rowCount() == 1
     batch.validate_files()
@@ -54,7 +55,8 @@ def test_batch_tab_validates_and_processes_offscreen(tmp_path: Path) -> None:
     application.processEvents()
 
     assert batch.files[0].status.value == "completed"
-    assert (output / "data_anonimizado.csv").exists()
+    assert batch.files[0].result_message == "Arquivo mascarado com sucesso."
+    assert (output / "data_masked.csv").exists()
     assert "Arquivos concluídos: 1" in batch.summary_output.toPlainText()
     assert batch.open_output_button.isEnabled()
 
@@ -133,7 +135,7 @@ def test_batch_interface_reports_aggregated_fallback_without_value(
     assert batch.files[0].status.value == "completed"
     assert "IP: 1 fallback(s)" in summary
     assert sensitive_value not in summary
-    assert (output / "addresses_anonimizado.csv").exists()
+    assert (output / "addresses_masked.csv").exists()
 
     window.close()
     application.quit()

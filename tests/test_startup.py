@@ -79,8 +79,8 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
     assert window.select_button.text() == "Selecionar CSV"
     assert window.clear_button.text() == "Limpar seleção"
     assert [button.text() for button in window.navigation.buttons] == [
-        "Anonimizar CSV",
-        "Anonimização em lote",
+        "Mascarar arquivo",
+        "Mascaramento em lote",
         "Restaurar CSV",
         "Restaurar HTML",
         "Restauração em lote",

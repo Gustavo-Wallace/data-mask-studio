@@ -52,6 +52,7 @@ def test_detection_dialog_shows_only_aggregated_suggestions_offscreen(
     dialog = widget._detection_dialog
     assert dialog is not None and dialog.isVisible()
     assert dialog.table.rowCount() == 3
+    assert dialog.table.horizontalHeaderItem(3).text() == "Mascarar"
     assert widget._suggestions[0].suggested_type is SuggestedType.CPF
     assert widget._suggestions[0].confidence is ConfidenceLevel.HIGH
     visible_text = " ".join(

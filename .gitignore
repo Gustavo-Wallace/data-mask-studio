@@ -68,6 +68,7 @@ vault.db-shm
 # Saídas geradas pela aplicação
 *.dmsbackup
 *_anonimizado.csv
+*_masked.csv
 *_restaurado.csv
 *.tmp
 

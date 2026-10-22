@@ -65,6 +65,20 @@ def test_real_mixed_restore_matches_local_bytes(tmp_path, ambiguous, representat
     assert result.composite_restored_exact == (0 if ambiguous else 2)
     assert result.missing_code_policy is MissingCodePolicy.ABORT
     assert (config.source_path.read_bytes(), package.read_bytes()) == original
+
+
+@pytest.mark.parametrize('filename', ['clientes_masked.csv', 'clientes_anonimizado.csv', 'custom.csv'])
+def test_restoration_binding_accepts_identical_bytes_under_any_csv_name(tmp_path, filename):
+    repo, config, package, _, output = make_case(tmp_path)
+    original = config.source_path.read_bytes()
+    renamed = config.source_path.with_name(filename)
+    config.source_path.rename(renamed)
+    config = replace(config, source_path=renamed)
+    local = restore_csv(config, tmp_path / 'local.csv', repo)
+    result = restore_csv_from_package(config, output, package, PASSWORD)
+    assert result.restored_codes == 4
+    assert result.output_path.read_bytes() == local.output_path.read_bytes()
+    assert renamed.read_bytes() == original
     assert not list(tmp_path.glob('*.tmp'))
 
 

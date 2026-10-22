@@ -334,9 +334,9 @@ def _completed_message(
     fallbacks: tuple[NormalizationFallback, ...],
 ) -> str:
     if not fallbacks:
-        return "Arquivo anonimizado com sucesso."
+        return "Arquivo mascarado com sucesso."
     details = "; ".join(f"{item.header}: {item.count}" for item in fallbacks)
     return (
-        "Arquivo anonimizado com sucesso. Alguns valores incompatíveis com a "
+        "Arquivo mascarado com sucesso. Alguns valores incompatíveis com a "
         f"normalização foram processados por valor exato. {details}."
     )

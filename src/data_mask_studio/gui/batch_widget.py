@@ -138,7 +138,7 @@ class BatchWidget(QWidget):
 
         self.validate_button = QPushButton("Validar arquivos")
         self.validate_button.clicked.connect(self.validate_files)
-        self.start_button = QPushButton("Iniciar anonimização")
+        self.start_button = QPushButton("Iniciar mascaramento")
         set_button_role(self.start_button, "primary")
         self.start_button.clicked.connect(self.start_processing)
         self.cancel_button = QPushButton("Cancelar")

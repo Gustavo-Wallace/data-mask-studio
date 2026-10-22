@@ -116,9 +116,10 @@ def test_analysis_classifies_selected_cells_and_does_not_modify_vault(
     assert repository.database_path.read_bytes() == before
 
 
-def test_restores_selected_columns_preserving_structure_and_source(tmp_path: Path) -> None:
+@pytest.mark.parametrize("filename", ["relatorio_anonimizado.csv", "relatorio_masked.csv"])
+def test_restores_selected_columns_preserving_structure_and_source(tmp_path: Path, filename: str) -> None:
     repository = make_repository(tmp_path)
-    source = tmp_path / "relatorio_anonimizado.csv"
+    source = tmp_path / filename
     original = (
         "CPF;Nome;Tipo\n"
         f"{CPF_CODE};{NAME_CODE};WEB\n"
@@ -372,6 +373,8 @@ def test_output_name_suggestion() -> None:
         "relatorio_restaurado.csv"
     )
     assert suggested_output_path("arquivo.csv").name == "arquivo_restaurado.csv"
+    assert suggested_output_path("relatorio_masked.csv").name == "relatorio_restaurado.csv"
+    assert suggested_output_path("relatorio_MASKED.CSV").name == "relatorio_restaurado.csv"
 
 
 def test_successful_write_uses_a_temporary_file(tmp_path: Path, monkeypatch) -> None:

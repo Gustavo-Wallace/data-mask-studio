@@ -8,7 +8,7 @@ from data_mask_studio.csv_tools.csv_anonymizer import paths_refer_to_same_file
 
 def suggested_output_name(source: str | Path) -> str:
     path = Path(source)
-    return f"{path.stem}_anonimizado.csv"
+    return f"{path.stem}_masked.csv"
 
 
 def reserve_output_path(output_directory: str | Path, source: str | Path) -> Path:
@@ -25,7 +25,7 @@ def reserve_output_path(output_directory: str | Path, source: str | Path) -> Pat
 def reserve_output_file(output_directory: str | Path, source: str | Path) -> OutputReservation:
     directory = Path(output_directory).expanduser().absolute()
     source_path = Path(source).expanduser().absolute()
-    stem = f"{source_path.stem}_anonimizado"
+    stem = Path(suggested_output_name(source_path)).stem
     index = 1
     while True:
         suffix = "" if index == 1 else f"_{index}"

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
 from data_mask_studio.gui.styles import section_title_stylesheet
+from data_mask_studio.batch.output_naming import suggested_output_name
 from data_mask_studio.anonymization import (
     AnonymizationResult,
     ColumnAction,
@@ -217,7 +218,7 @@ class AnonymizationWidget(QWidget):
         self.validate_button.clicked.connect(self.validate_current_configuration)
         self.validate_button.setEnabled(False)
 
-        self.generate_button = QPushButton("Gerar CSV anonimizado")
+        self.generate_button = QPushButton("Gerar CSV mascarado")
         self.generate_button.clicked.connect(self._choose_output_file)
         self.generate_button.setEnabled(False)
 
@@ -621,7 +622,7 @@ class AnonymizationWidget(QWidget):
         )
         if self._inspection_result is not None and self.transfer_controls.output_path is None:
             source = self._inspection_result.path
-            self.transfer_controls.set_output_path(source.with_name(f"{source.stem}_anonimizado.csv"))
+            self.transfer_controls.set_output_path(source.with_name(suggested_output_name(source)))
 
     def select_all_columns(self) -> None:
         for action_field in self._action_fields:
@@ -1168,10 +1169,10 @@ class AnonymizationWidget(QWidget):
             return
 
         source = self._inspection_result.path
-        suggested_path = source.with_name(f"{source.stem}_anonimizado.csv")
+        suggested_path = source.with_name(suggested_output_name(source))
         selected_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Salvar CSV anonimizado",
+            "Salvar CSV mascarado",
             str(suggested_path),
             "Arquivos CSV (*.csv)",
         )
@@ -1224,7 +1225,7 @@ class AnonymizationWidget(QWidget):
         self.progress_bar.setVisible(True)
         self.processed_count_label.setText("0 registros processados")
         self.processed_count_label.setVisible(True)
-        self._set_status("Gerando o CSV anonimizado...", is_error=False)
+        self._set_status("Gerando o CSV mascarado...", is_error=False)
         self._processing_started_at = time.perf_counter()
 
         worker = AnonymizationWorker(
@@ -1290,7 +1291,7 @@ class AnonymizationWidget(QWidget):
             else "Nenhum mapeamento foi criado ou atualizado no cofre local."
         )
         self._set_status(
-            "CSV anonimizado gerado com sucesso. "
+            "CSV mascarado gerado com sucesso. "
             f"{result.records_processed} registros processados; "
             f"{result.new_mappings} novos mapeamentos; "
             f"{result.updated_mappings} mapeamentos existentes atualizados. "
@@ -1313,7 +1314,7 @@ class AnonymizationWidget(QWidget):
         if isinstance(error, (CSVAnonymizationError, KeyProviderError, VaultError)):
             message = str(error)
         else:
-            message = "Não foi possível gerar o arquivo CSV anonimizado."
+            message = "Não foi possível gerar o arquivo CSV mascarado."
         self._set_status(message, is_error=True)
 
     def _worker_finished(self) -> None:

@@ -64,8 +64,8 @@ def test_sidebar_navigation_order_accessibility_and_state(tmp_path: Path) -> Non
     application = create_application([])
     window = build_window(tmp_path)
     expected = [
-        "Anonimizar CSV",
-        "Anonimização em lote",
+        "Mascarar arquivo",
+        "Mascaramento em lote",
         "Restaurar CSV",
         "Restaurar HTML",
         "Restauração em lote",

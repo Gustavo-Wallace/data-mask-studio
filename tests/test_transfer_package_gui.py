@@ -223,7 +223,7 @@ def test_automatic_destination_follows_csv_output(gui, tmp_path):
     widget.select_all_columns()
     controls = widget.transfer_controls
     controls.checkbox.setChecked(True)
-    assert Path(controls.destination.text()) == tmp_path / 'source_anonimizado.dmspackage'
+    assert Path(controls.destination.text()) == tmp_path / 'source_masked.dmspackage'
     output = tmp_path / 'customers_anonymized.csv'
     controls.set_output_path(output)
     assert Path(controls.destination.text()) == output.with_suffix('.dmspackage')
@@ -294,6 +294,6 @@ def test_destination_auto_manual_state_resets(gui, tmp_path, reset):
     else: widget.unselect_all_columns()
     widget.select_all_columns()
     controls.checkbox.setChecked(True)
-    expected = widget._inspection_result.path.with_name(widget._inspection_result.path.stem + '_anonimizado.dmspackage')
+    expected = widget._inspection_result.path.with_name(widget._inspection_result.path.stem + '_masked.dmspackage')
     assert Path(controls.destination.text()) == expected
     assert not controls.password.text() and not controls.confirmation.text()

@@ -260,8 +260,9 @@ def test_missing_abort_batch_policy_skips_remaining_files(tmp_path: Path) -> Non
     assert not list(output.iterdir())
 
 
-def test_output_naming_uses_numeric_suffix_and_never_overwrites(tmp_path: Path) -> None:
-    source = tmp_path / "arquivo_anonimizado.csv"
+@pytest.mark.parametrize("filename", ["arquivo_anonimizado.csv", "arquivo_masked.csv", "arquivo_MASKED.CSV"])
+def test_output_naming_uses_numeric_suffix_and_never_overwrites(tmp_path: Path, filename: str) -> None:
+    source = tmp_path / filename
     source.write_text("x", encoding="utf-8")
     (tmp_path / "arquivo_restaurado.csv").write_text("existing", encoding="utf-8")
     (tmp_path / "arquivo_restaurado_2.csv").write_text("existing", encoding="utf-8")

@@ -259,9 +259,10 @@ def _validate_destination(source: Path, destination: Path, overwrite: bool) -> N
 def suggested_output_path(source_path: str | Path) -> Path:
     source = Path(source_path)
     stem = source.stem
-    suffix = "_anonimizado"
-    if stem.lower().endswith(suffix):
-        stem = stem[: -len(suffix)]
+    for suffix in ("_masked", "_anonimizado"):
+        if stem.lower().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
     return source.with_name(f"{stem}_restaurado.csv")
 
 

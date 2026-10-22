@@ -41,7 +41,7 @@ def test_batch_final_survives_journal_cleanup_failure(tmp_path, monkeypatch, aft
     batch.process(items, profile, output, FixedKeyProvider(), lambda: repo)
     assert items[0].status is BatchFileStatus.ERROR
     assert repo.count() == 2
-    destination = output / 'input_anonimizado.csv'
+    destination = output / 'input_masked.csv'
     assert destination.is_file()
     content, committed = destination.read_bytes(), counts(repo)
     assert len(journals(tmp_path)) == int(not after_unlink)
@@ -152,7 +152,7 @@ def test_external_destination_created_at_publication_is_preserved(tmp_path, monk
     monkeypatch.setattr(module, 'publish', collision)
     batch.process(items, profile, output, FixedKeyProvider(), lambda: repo)
     assert items[0].status is BatchFileStatus.ERROR
-    destination = output / 'input_anonimizado.csv'
+    destination = output / 'input_masked.csv'
     assert destination.read_bytes() == b'external file'
     committed = counts(repo)
     assert repo.count() == 2
@@ -207,7 +207,7 @@ def test_windows_process_death_releases_only_claim(tmp_path):
     try:
         assert parent.poll(20)
         claim = Path(parent.recv())
-        destination = tmp_path / 'input_anonimizado.csv'
+        destination = tmp_path / 'input_masked.csv'
         destination.write_bytes(b'published')
         assert claim.exists()
     finally:
@@ -234,5 +234,5 @@ def test_batch_ambiguous_commit_preserves_evidence(tmp_path, monkeypatch):
         recover_publications(repo.database_path, b'B' * 32)
     assert counts(repo) == committed
     assert journals(tmp_path) and list(output.glob('*.tmp'))
-    assert not (output / 'input_anonimizado.csv').exists()
+    assert not (output / 'input_masked.csv').exists()
     assert not list(output.glob('.dms-batch-reservation-*'))

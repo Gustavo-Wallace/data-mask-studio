@@ -327,7 +327,7 @@ def anonymize_csv(
         raise CSVAnonymizationError(_safe_io_message(error)) from error
     except (UnicodeError, csv.Error, StopIteration) as error:
         raise CSVAnonymizationError(
-            "Não foi possível gerar o arquivo CSV anonimizado."
+            "Não foi possível gerar o arquivo CSV mascarado."
         ) from error
     except Exception as error:
         raise CSVAnonymizationError(

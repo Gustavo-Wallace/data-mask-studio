@@ -3,8 +3,15 @@ from pathlib import Path
 
 def available_output_path(source: Path, output_directory: Path) -> Path:
     stem = source.stem
-    if stem.casefold().endswith("_anonimizado"):
-        stem = stem[: -len("_anonimizado")]
+    suffixes = (
+        ("_masked", "_anonimizado")
+        if source.suffix.casefold() == ".csv"
+        else ("_anonimizado",)
+    )
+    for suffix in suffixes:
+        if stem.casefold().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
     extension = ".csv" if source.suffix.casefold() == ".csv" else ".html"
     base = output_directory / f"{stem}_restaurado{extension}"
     if not base.exists() and not _same_path(source, base):

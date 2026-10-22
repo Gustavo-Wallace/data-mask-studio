@@ -161,8 +161,8 @@ class MainWindow(QMainWindow):
         )
 
         page_specs = (
-            ("PROCESSAMENTO", "Anonimizar CSV", "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.", self.anonymization_widget),
-            ("PROCESSAMENTO", "Anonimização em lote", "Processe vários arquivos CSV com um perfil de configuração salvo.", self.batch_widget),
+            ("PROCESSAMENTO", "Mascarar arquivo", "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.", self.anonymization_widget),
+            ("PROCESSAMENTO", "Mascaramento em lote", "Processe vários arquivos CSV com um perfil de configuração salvo.", self.batch_widget),
             ("RESTAURAÇÃO", "Restaurar CSV", "Recupere valores de colunas selecionadas usando o cofre local ou um pacote de transferência.", self.restoration_widget),
             ("RESTAURAÇÃO", "Restaurar HTML", "Recupere códigos presentes em HTML e dashboards locais.", self.html_restoration_widget),
             ("RESTAURAÇÃO", "Restauração em lote", "Restaure vários arquivos CSV ou HTML usando o cofre local.", self.batch_restoration_widget),
@@ -313,7 +313,7 @@ class MainWindow(QMainWindow):
         set_button_role(self.backup_widget.restore_button, "attention")
         path_fields: tuple[tuple[QLineEdit, str], ...] = (
             (self.anonymization_widget.path_field, "Caminho do CSV selecionado"),
-            (self.batch_widget.output_field, "Pasta de saída da anonimização em lote"),
+            (self.batch_widget.output_field, "Pasta de saída do mascaramento em lote"),
             (self.restoration_widget.path_field, "Caminho do CSV anonimizado"),
             (self.html_restoration_widget.path_field, "Caminho do HTML anonimizado"),
             (self.batch_restoration_widget.output_field, "Pasta de saída da restauração em lote"),

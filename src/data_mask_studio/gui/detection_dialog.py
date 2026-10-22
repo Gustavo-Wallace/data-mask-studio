@@ -59,7 +59,7 @@ class DetectionDialog(QDialog):
                 "Aceitar",
                 "Cabeçalho",
                 "Tipo sugerido",
-                "Anonimizar",
+                "Mascarar",
                 "Prefixo",
                 "Normalização",
                 "Confiança",

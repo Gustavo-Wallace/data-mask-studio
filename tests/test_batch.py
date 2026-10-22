@@ -169,12 +169,12 @@ def test_profile_change_and_new_file_require_validation_again(tmp_path: Path) ->
 def test_output_name_and_numeric_conflict_reservation(tmp_path: Path) -> None:
     source = tmp_path / "relatorio.csv"
     source.touch()
-    (tmp_path / "relatorio_anonimizado.csv").touch()
+    (tmp_path / "relatorio_masked.csv").touch()
 
     reserved = reserve_output_path(tmp_path, source)
 
-    assert suggested_output_name(source) == "relatorio_anonimizado.csv"
-    assert reserved.name == "relatorio_anonimizado_2.csv"
+    assert suggested_output_name(source) == "relatorio_masked.csv"
+    assert reserved.name == "relatorio_masked_2.csv"
     assert reserved.exists()
 
 
@@ -238,7 +238,7 @@ def test_batch_applies_preserve_mask_and_exclude_from_profile(tmp_path: Path) ->
         [item], profile, output, FixedKeyProvider(), lambda: repository
     )
 
-    generated = (output / "mixed_anonimizado.csv").read_text(encoding="utf-8-sig")
+    generated = (output / "mixed_masked.csv").read_text(encoding="utf-8-sig")
     assert generated.splitlines()[0] == "A,B"
     assert generated.splitlines()[1].startswith("joao da silva,NOME-")
     assert "drop" not in generated
@@ -263,7 +263,7 @@ def test_batch_applies_preserve_mask_and_exclude_from_profile(tmp_path: Path) ->
         secret_key=b"B" * 32,
         vault_repository=CountingRepository(tmp_path / "individual-vault.db"),
     )
-    batch_output = output / "mixed_anonimizado.csv"
+    batch_output = output / "mixed_masked.csv"
     assert individual_output.read_bytes() == batch_output.read_bytes()
 
 
@@ -289,7 +289,7 @@ def test_batch_propagates_utf32_encoding_through_validation_and_processing(
         lambda: repository,
     )
 
-    generated = output / "utf32_anonimizado.csv"
+    generated = output / "utf32_masked.csv"
     assert item.encoding == "utf-32-le"
     assert item.status is BatchFileStatus.COMPLETED
     assert summary.completed_files == 1
@@ -323,7 +323,7 @@ def test_batch_uses_fallback_for_invalid_value_and_continues(tmp_path: Path) -> 
     assert summary.completed_files == 3
     assert summary.error_files == 0
     assert "Sensitive Sentinel" not in files[1].result_message
-    assert (output / "invalid_anonimizado.csv").exists()
+    assert (output / "invalid_masked.csv").exists()
     assert [(item.header, item.count) for item in summary.normalization_fallbacks] == [
         ("CPF", 1)
     ]

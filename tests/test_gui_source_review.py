@@ -64,7 +64,7 @@ def test_known_duplicate_edit_does_not_approve_private_third_occurrence(editor, 
                             lambda *args, **kwargs: pytest.fail('Generation must not reach file selection'))
         widget.generate_button.click()
         widget._choose_output_file()
-        assert not (tmp_path / 'input_anonimizado.csv').exists()
+        assert not (tmp_path / 'input_masked.csv').exists()
     finally:
         close_widget(editor, widget)
 

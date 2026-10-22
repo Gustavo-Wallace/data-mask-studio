@@ -212,7 +212,7 @@ def test_anonymization_completion_retains_existing_fallback_notice_and_cancellat
                                 normalization_fallbacks=(NormalizationFallback("IP", 1),) if fallback else ())
     widget._processing_completed(result)
     assert_feedback(widget.status_label, "warning" if fallback else "success")
-    assert "CSV anonimizado gerado com sucesso." in widget.status_label.text()
+    assert "CSV mascarado gerado com sucesso." in widget.status_label.text()
     assert ("processados por valor exato" in widget.status_label.text()) is fallback
     widget._processing_cancelled()
     assert_feedback(widget.status_label, "warning")
