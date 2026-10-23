@@ -71,6 +71,7 @@ def test_sidebar_navigation_order_accessibility_and_state(tmp_path: Path) -> Non
         "Consultar cofre",
         "Backup e recuperação",
         "Cofre e manutenção",
+        "Configurações",
     ]
 
     assert [button.text() for button in window.navigation.buttons] == expected
@@ -270,7 +271,7 @@ def test_common_headers_roles_paths_empty_states_and_internal_tabs(
     application = create_application([])
     window = build_window(tmp_path)
 
-    assert len(window.findChildren(PageHeader)) == 7
+    assert len(window.findChildren(PageHeader)) == 8
     assert all(shell.header.title_label.text() for shell in window.page_shells)
     primary_buttons = (
         window.anonymization_widget.generate_button,
@@ -280,6 +281,7 @@ def test_common_headers_roles_paths_empty_states_and_internal_tabs(
         window.batch_restoration_widget.start_button,
         window.backup_widget.create_button,
         window.maintenance_widget.refresh_button,
+        window.settings_widget.save_button,
     )
     assert all(button.property("role") == "primary" for button in primary_buttons)
 
@@ -401,8 +403,9 @@ def test_sidebar_alignment_compact_footer_and_fixed_width(tmp_path: Path) -> Non
         assert navigation.height() == window.centralWidget().height()
         assert navigation.footer_divider.height() == 1
         assert navigation.footer_divider.focusPolicy() == Qt.FocusPolicy.NoFocus
-        assert navigation.footer_divider.geometry().top() > navigation.buttons[-1].geometry().bottom()
-        assert navigation.footer_divider.geometry().bottom() < navigation.about_button.geometry().top()
+        assert navigation.footer_divider.geometry().top() > navigation.buttons[6].geometry().bottom()
+        assert navigation.footer_divider.geometry().bottom() < navigation.buttons[7].geometry().top()
+        assert navigation.buttons[7].geometry().bottom() < navigation.about_button.geometry().top()
         assert navigation.about_button.geometry().bottom() < navigation.height()
         assert navigation.about_button.isVisible() and not navigation.about_button.isCheckable()
         assert all(navigation.rect().contains(button.geometry()) for button in navigation.buttons)
@@ -455,12 +458,12 @@ def test_vault_navigation_has_three_routes_and_keyboard_wraps_without_retired_pa
     window = build_window(tmp_path)
     window.show()
     application.processEvents()
-    assert window.page_stack.count() == len(window.navigation.buttons) == 7
+    assert window.page_stack.count() == len(window.navigation.buttons) == 8
     assert not hasattr(window, "integrity_widget")
     vault_widgets = (
         window.consultant_widget, window.backup_widget, window.maintenance_widget,
     )
-    assert [button.text() for button in window.navigation.buttons[4:]] == [
+    assert [button.text() for button in window.navigation.buttons[4:7]] == [
         "Consultar cofre", "Backup e recuperação", "Cofre e manutenção",
     ]
     assert window.current_page_index() == 0
@@ -481,7 +484,7 @@ def test_vault_navigation_has_three_routes_and_keyboard_wraps_without_retired_pa
     assert window.navigation.buttons[0].hasFocus()
     QTest.keyClick(window.navigation.buttons[0], Qt.Key.Key_Up)
     application.processEvents()
-    assert window.current_page_index() == window.page_index(window.maintenance_widget)
+    assert window.current_page_index() == window.page_index(window.settings_widget)
     assert last.hasFocus() and last.isChecked()
-    window.set_current_page(7)  # The former last index is no longer a valid route.
-    assert window.page_stack.currentWidget().content is window.maintenance_widget
+    window.set_current_page(8)  # Out-of-range destinations remain ignored.
+    assert window.page_stack.currentWidget().content is window.settings_widget

@@ -62,8 +62,9 @@ def test_single_restoration_destination_has_clear_initial_state_and_keyboard_acc
     assert [button.text() for button in window.navigation.buttons] == [
         "Mascarar arquivo", "Mascaramento em lote", "Restaurar arquivo", "Restauração em lote",
         "Consultar cofre", "Backup e recuperação", "Cofre e manutenção",
+        "Configurações",
     ]
-    assert window.page_stack.count() == 7
+    assert window.page_stack.count() == 8
     assert window.page_index(window.restoration_widget) == window.page_index(window.html_restoration_widget) == 2
     assert unified.stack.currentIndex() == 0 and unified.select_button.isVisible()
     assert not unified.csv_widget.isVisible() and not unified.html_widget.isVisible()

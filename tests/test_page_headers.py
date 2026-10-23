@@ -24,6 +24,7 @@ DESCRIPTIONS = (
     "Consulte códigos específicos sem expor todo o conteúdo do cofre.",
     "Crie ou restaure um backup criptografado do ambiente local.",
     "Diagnostique, limpe temporários e compacte o cofre com segurança.",
+    "Escolha o idioma de preferência para a interface do aplicativo.",
 )
 
 
@@ -33,7 +34,7 @@ def test_all_main_pages_share_header_hierarchy_alignment_and_original_texts(tmp_
     window.show()
     app.processEvents()
     assert window.current_page_index() == 0
-    assert len(window.page_shells) == len(DESCRIPTIONS) == 7
+    assert len(window.page_shells) == len(DESCRIPTIONS) == 8
 
     for index, shell in enumerate(window.page_shells):
         window.set_current_page(index)

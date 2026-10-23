@@ -23,13 +23,13 @@ def test_main_window_composes_sidebar_pages_and_extracted_widgets(
     service = ProfileService(ProfileRepository(tmp_path / "profiles.json"))
     window = MainWindow(profile_service=service)
 
-    assert len(window.navigation.buttons) == 7
+    assert len(window.navigation.buttons) == 8
     assert window.page_widgets[0] is window.anonymization_widget
     assert isinstance(window.anonymization_widget, AnonymizationWidget)
     assert isinstance(window.config_table, ColumnConfigurationTable)
     assert isinstance(window.anonymization_widget.profile_controls, ProfileControls)
     assert window.centralWidget().objectName() == "mainWorkspace"
-    assert window.page_stack.count() == 7
+    assert window.page_stack.count() == 8
     assert "tabs" not in window.__dict__
 
     window.close()

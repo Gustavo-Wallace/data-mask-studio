@@ -86,6 +86,7 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
         "Consultar cofre",
         "Backup e recuperação",
         "Cofre e manutenção",
+        "Configurações",
     ]
     assert window.restoration_widget.path_field.isReadOnly()
     assert not window.restoration_widget.generate_button.isEnabled()

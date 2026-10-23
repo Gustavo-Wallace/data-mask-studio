@@ -28,6 +28,7 @@ class NavigationItem:
     group: str
     title: str
     accessible_description: str
+    footer: bool = False
 
 
 class ApplicationIdentity(QWidget):
@@ -110,8 +111,9 @@ class SidebarNavigation(QWidget):
         layout.addWidget(self.identity)
         layout.addSpacing(METRICS["button_padding"])
         previous_group = ""
+        footer_buttons = []
         for index, item in enumerate(items):
-            if item.group != previous_group:
+            if not item.footer and item.group != previous_group:
                 category = NavigationCategory(item.group)
                 self._categories.append(category)
                 layout.addSpacing(METRICS["button_padding"] if previous_group else 2)
@@ -132,10 +134,15 @@ class SidebarNavigation(QWidget):
             )
             self._group.addButton(button, index)
             self._buttons.append(button)
-            layout.addWidget(button)
+            if item.footer:
+                footer_buttons.append(button)
+            else:
+                layout.addWidget(button)
         layout.addStretch()
         self.footer_divider = _navigation_divider()
         layout.addWidget(self.footer_divider)
+        for button in footer_buttons:
+            layout.addWidget(button)
         self.about_button = QPushButton("Sobre")
         self.about_button.setObjectName("navigationUtility")
         self.about_button.setAutoDefault(False)

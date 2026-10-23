@@ -30,6 +30,8 @@ from data_mask_studio.gui.components import (
     set_button_role,
 )
 from data_mask_studio.gui.maintenance_widget import MaintenanceWidget
+from data_mask_studio.gui.settings_widget import SettingsWidget
+from data_mask_studio.preferences import PreferencesService
 from data_mask_studio.profiles import ProfileError, ProfileRepository, ProfileService
 from data_mask_studio.security import (
     DataProtector,
@@ -62,6 +64,7 @@ class MainWindow(QMainWindow):
         backup_paths: EnvironmentPaths | None = None,
         vault_key_provider: KeyProvider | None = None,
         data_protector: DataProtector | None = None,
+        preferences_service: PreferencesService | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
@@ -160,6 +163,7 @@ class MainWindow(QMainWindow):
             self._environment_maintained
         )
 
+        self.settings_widget = SettingsWidget(preferences_service)
         page_specs = (
             ("PROCESSAMENTO", "Mascarar arquivo", "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.", self.anonymization_widget),
             ("PROCESSAMENTO", "Mascaramento em lote", "Processe vários arquivos CSV com um perfil de configuração salvo.", self.batch_widget),
@@ -168,6 +172,7 @@ class MainWindow(QMainWindow):
             ("COFRE", "Consultar cofre", "Consulte códigos específicos sem expor todo o conteúdo do cofre.", self.consultant_widget),
             ("COFRE", "Backup e recuperação", "Crie ou restaure um backup criptografado do ambiente local.", self.backup_widget),
             ("COFRE", "Cofre e manutenção", "Diagnostique, limpe temporários e compacte o cofre com segurança.", self.maintenance_widget),
+            ("", "Configurações", "Escolha o idioma de preferência para a interface do aplicativo.", self.settings_widget),
         )
         self.page_widgets = tuple(spec[3] for spec in page_specs)
         self.page_stack = QStackedWidget()
@@ -178,7 +183,9 @@ class MainWindow(QMainWindow):
             shell = PageShell(title, description, widget)
             self.page_shells.append(shell)
             self.page_stack.addWidget(shell)
-            navigation_items.append(NavigationItem(group, title, description))
+            navigation_items.append(NavigationItem(
+                group, title, description, footer=widget is self.settings_widget,
+            ))
         self.navigation = SidebarNavigation(tuple(navigation_items))
         self.navigation.current_changed.connect(self._page_changed)
         self.navigation.about_requested.connect(self.show_about_dialog)
