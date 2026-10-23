@@ -1,7 +1,8 @@
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 
@@ -47,10 +48,15 @@ from data_mask_studio.vault import VaultRepository
 
 
 class HTMLRestorationWidget(QWidget):
+    file_loaded = Signal()
+    busy_changed = Signal(bool)
+
     def __init__(
         self,
         repository_factory: Callable[[], VaultRepository],
         parent: QWidget | None = None,
+        *,
+        file_selector: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self._service = HTMLRestorationService(repository_factory)
@@ -59,8 +65,8 @@ class HTMLRestorationWidget(QWidget):
         self._last_output_path: Path | None = None
         self._last_error: Exception | None = None
 
-        self.select_button = QPushButton("Selecionar HTML anonimizado")
-        self.select_button.clicked.connect(self._select_html)
+        self.select_button = QPushButton("Selecionar arquivo mascarado" if file_selector else "Selecionar HTML mascarado")
+        self.select_button.clicked.connect(file_selector or self._select_html)
         self.path_field = QLineEdit()
         self.path_field.setReadOnly(True)
         self.path_field.setPlaceholderText("Nenhum arquivo selecionado")
@@ -206,7 +212,7 @@ class HTMLRestorationWidget(QWidget):
     def _select_html(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selecionar HTML anonimizado",
+            "Selecionar HTML mascarado",
             "",
             "Arquivos HTML (*.html *.htm)",
         )
@@ -214,28 +220,45 @@ class HTMLRestorationWidget(QWidget):
             self.load_html(path)
 
     def load_html(self, path: str) -> None:
-        self._reset_progress()
+        if self._worker is not None:
+            return
         try:
             inspection = inspect_html(path)
         except HTMLRestorationError as error:
             self._set_status(str(error), is_error=True)
             return
         self._inspection = inspection
-        self._last_output_path = None
+        self._reset_operation_feedback()
         self.file_name_label.setText(inspection.path.name)
         self.path_field.setText(str(inspection.path))
         self.encoding_label.setText(inspection.encoding)
-        self.summary.clear()
-        self.open_folder_button.setVisible(False)
         self._set_file_controls_enabled(True)
         self._set_status("Arquivo HTML inspecionado com sucesso.", is_error=False, state="success")
+        self.file_loaded.emit()
+
+    def clear_selection(self) -> None:
+        if self._worker is not None:
+            return
+        self._inspection = None
+        self._reset_operation_feedback()
+        self.path_field.clear()
+        self.file_name_label.setText("—")
+        self.encoding_label.setText("—")
+        self._set_file_controls_enabled(False)
+        self._set_status("Selecione um arquivo HTML para começar.", False)
+
+    def _reset_operation_feedback(self) -> None:
+        self._reset_progress()
+        self._last_output_path = None
+        self._last_error = None
+        self.summary.clear()
+        self.open_folder_button.setVisible(False)
 
     def start_analysis(self) -> None:
         if self._inspection is None or self._worker is not None:
             return
         worker = HTMLAnalysisWorker(self._service, self._inspection)
-        worker.completed.connect(self._analysis_completed)
-        self._start_worker(worker, "Analisando códigos no HTML...")
+        self._start_worker(worker, "Analisando códigos no HTML...", self._analysis_completed)
 
     def _analysis_completed(self, result: HTMLAnalysisResult) -> None:
         prefixes = ", ".join(result.prefixes) or "nenhum"
@@ -303,15 +326,15 @@ class HTMLRestorationWidget(QWidget):
             RepresentationPolicy(self.representation_combo.currentData()),
             overwrite=overwrite,
         )
-        worker.completed.connect(self._restoration_completed)
-        self._start_worker(worker, "Gerando HTML restaurado...")
+        self._start_worker(worker, "Gerando HTML restaurado...", self._restoration_completed)
 
     def _start_worker(
         self,
         worker: HTMLAnalysisWorker | HTMLRestorationWorker,
         message: str,
+        completed: Callable[..., None],
     ) -> None:
-        self._reset_progress()
+        self._reset_operation_feedback()
         self._worker = worker
         self._set_processing_state(True)
         self.progress_bar.setRange(0, 100)
@@ -320,10 +343,18 @@ class HTMLRestorationWidget(QWidget):
         self.progress_label.setText("0 ocorrências processadas")
         self.progress_label.setVisible(True)
         self._set_status(message, False)
-        worker.progress.connect(self._progress_changed)
-        worker.cancelled.connect(self._cancelled)
-        worker.failed.connect(self._failed)
-        worker.finished.connect(self._worker_finished)
+        def deliver(callback: Callable[..., None], *args: object) -> None:
+            if self._worker is worker:
+                callback(*args)
+
+        for signal, callback in (
+            (worker.progress, self._progress_changed),
+            (worker.completed, completed),
+            (worker.cancelled, self._cancelled),
+            (worker.failed, self._failed),
+            (worker.finished, self._worker_finished),
+        ):
+            signal.connect(partial(deliver, callback))
         worker.start()
 
     def _progress_changed(self, progress: HTMLRestorationProgress) -> None:
@@ -418,6 +449,7 @@ class HTMLRestorationWidget(QWidget):
             widget.setEnabled(not processing and has_file)
         self.cancel_button.setVisible(processing)
         self.cancel_button.setEnabled(processing)
+        self.busy_changed.emit(processing)
 
     def _set_file_controls_enabled(self, enabled: bool) -> None:
         for widget in (

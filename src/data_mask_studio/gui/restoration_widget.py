@@ -3,7 +3,7 @@ from functools import partial
 from pathlib import Path
 import time
 
-from PySide6.QtCore import QSignalBlocker, Qt, QUrl
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -68,10 +68,15 @@ SEPARATOR_NAMES = {
 
 
 class RestorationWidget(QWidget):
+    file_loaded = Signal()
+    busy_changed = Signal(bool)
+
     def __init__(
         self,
         repository_factory: Callable[[], VaultRepository],
         parent: QWidget | None = None,
+        *,
+        file_selector: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self._service = RestorationService(repository_factory)
@@ -91,8 +96,8 @@ class RestorationWidget(QWidget):
         source_layout = QFormLayout()
         source_layout.addRow("Origem da restauração:", self.source_combo)
 
-        self.select_button = QPushButton("Selecionar CSV anonimizado")
-        self.select_button.clicked.connect(self._select_csv)
+        self.select_button = QPushButton("Selecionar arquivo mascarado" if file_selector else "Selecionar CSV mascarado")
+        self.select_button.clicked.connect(file_selector or self._select_csv)
         self.path_field = QLineEdit()
         self.path_field.setReadOnly(True)
         self.path_field.setPlaceholderText("Nenhum arquivo selecionado")
@@ -110,7 +115,7 @@ class RestorationWidget(QWidget):
         details.addRow("Separador:", self.delimiter_label)
 
         self.table = EmptyStateTable(
-            0, 2, "Selecione um CSV anonimizado para revisar as colunas."
+            0, 2, "Selecione um CSV mascarado para revisar as colunas."
         )
         self.table.setHorizontalHeaderLabels(["Restaurar", "Cabeçalho"])
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -206,7 +211,7 @@ class RestorationWidget(QWidget):
         self.open_folder_button = QPushButton("Abrir pasta do arquivo")
         self.open_folder_button.clicked.connect(self.open_output_folder)
         self.open_folder_button.setVisible(False)
-        self.status_label = QLabel("Selecione um CSV anonimizado para comecar.")
+        self.status_label = QLabel("Selecione um CSV mascarado para começar.")
         self.status_label.setWordWrap(True)
         set_feedback_state(self.status_label, "neutral")
 
@@ -314,7 +319,7 @@ class RestorationWidget(QWidget):
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Selecionar CSV anonimizado", "", "Arquivos CSV (*.csv)"
+            self, "Selecionar CSV mascarado", "", "Arquivos CSV (*.csv)"
         )
         if file_path:
             self.load_csv(file_path)
@@ -357,6 +362,7 @@ class RestorationWidget(QWidget):
         if warning:
             status = f"{status} {warning}"
         self._set_status(status, is_error=False, state="warning" if warning else "success")
+        self.file_loaded.emit()
 
     def clear_selection(self) -> None:
         if self._worker is not None:
@@ -371,7 +377,7 @@ class RestorationWidget(QWidget):
         self._checkboxes.clear()
         self._update_selected_count()
         self._update_enabled_state(False)
-        self._set_status("Selecione um CSV anonimizado para começar.", is_error=False)
+        self._set_status("Selecione um CSV mascarado para começar.", is_error=False)
 
     def _reset_operation_feedback(self) -> None:
         """Invalidate feedback, not the selected file, columns or source inputs."""
@@ -406,7 +412,7 @@ class RestorationWidget(QWidget):
 
     def _configuration(self) -> RestorationConfiguration:
         if self._inspection is None:
-            raise RestorationError("Selecione um arquivo CSV anonimizado.")
+            raise RestorationError("Selecione um arquivo CSV mascarado.")
         columns = tuple(
             SelectedColumn(index, self._inspection.headers[index])
             for index, checkbox in enumerate(self._checkboxes)
@@ -675,6 +681,7 @@ class RestorationWidget(QWidget):
         if self._package_mode():
             self.analyze_button.setEnabled(False)
             self.missing_policy_combo.setEnabled(False)
+        self.busy_changed.emit(processing)
 
     def _update_enabled_state(self, has_file: bool) -> None:
         for widget in (

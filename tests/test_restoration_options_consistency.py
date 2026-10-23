@@ -39,6 +39,9 @@ def page(request, tmp_path, monkeypatch):
         f"<p>{CODE}</p>" if request.param == "html" else f"Name,Kind\n{CODE},SYNTHETIC\n",
         encoding="utf-8",
     )
+    if request.param == "html":
+        window.file_restoration_widget.load_file(source)
+        widget.clear_selection()
     window.set_current_page(window.page_index(widget))
     window.show()
     app.processEvents()

@@ -20,7 +20,7 @@ from data_mask_studio.gui.backup_widget import BackupWidget
 from data_mask_studio.gui.batch_widget import BatchWidget
 from data_mask_studio.gui.batch_restoration_widget import BatchRestorationWidget
 from data_mask_studio.gui.consultant_widget import ConsultantWidget
-from data_mask_studio.gui.html_restoration_widget import HTMLRestorationWidget
+from data_mask_studio.gui.file_restoration_widget import FileRestorationWidget
 from data_mask_studio.gui.components import (
     NavigationItem,
     PageShell,
@@ -30,7 +30,6 @@ from data_mask_studio.gui.components import (
     set_button_role,
 )
 from data_mask_studio.gui.maintenance_widget import MaintenanceWidget
-from data_mask_studio.gui.restoration_widget import RestorationWidget
 from data_mask_studio.profiles import ProfileError, ProfileRepository, ProfileService
 from data_mask_studio.security import (
     DataProtector,
@@ -126,12 +125,13 @@ class MainWindow(QMainWindow):
         self.backup_widget.busy_changed.connect(self._backup_busy_changed)
         self.backup_widget.environment_restored.connect(self._environment_restored)
         self.consultant_widget = ConsultantWidget(self._vault_repository_factory)
-        self.restoration_widget = RestorationWidget(
+        self.file_restoration_widget = FileRestorationWidget(
             self._restoration_repository_factory
         )
-        self.html_restoration_widget = HTMLRestorationWidget(
-            self._restoration_repository_factory
-        )
+        # Keep existing internal access to each independent workflow. Neither
+        # child is registered as a standalone navigation destination anymore.
+        self.restoration_widget = self.file_restoration_widget.csv_widget
+        self.html_restoration_widget = self.file_restoration_widget.html_widget
         self.batch_restoration_widget = BatchRestorationWidget(
             self._restoration_repository_factory,
             self._prepare_batch_restoration,
@@ -163,8 +163,7 @@ class MainWindow(QMainWindow):
         page_specs = (
             ("PROCESSAMENTO", "Mascarar arquivo", "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.", self.anonymization_widget),
             ("PROCESSAMENTO", "Mascaramento em lote", "Processe vários arquivos CSV com um perfil de configuração salvo.", self.batch_widget),
-            ("RESTAURAÇÃO", "Restaurar CSV", "Recupere valores de colunas selecionadas usando o cofre local ou um pacote de transferência.", self.restoration_widget),
-            ("RESTAURAÇÃO", "Restaurar HTML", "Recupere códigos presentes em HTML e dashboards locais.", self.html_restoration_widget),
+            ("RESTAURAÇÃO", "Restaurar arquivo", "Restaure arquivos CSV pelo cofre local ou por pacote de transferência, e HTML pelo cofre local.", self.file_restoration_widget),
             ("RESTAURAÇÃO", "Restauração em lote", "Restaure vários arquivos CSV ou HTML usando o cofre local.", self.batch_restoration_widget),
             ("COFRE", "Consultar cofre", "Consulte códigos específicos sem expor todo o conteúdo do cofre.", self.consultant_widget),
             ("COFRE", "Backup e recuperação", "Crie ou restaure um backup criptografado do ambiente local.", self.backup_widget),
@@ -291,6 +290,8 @@ class MainWindow(QMainWindow):
         return self.page_stack.currentIndex()
 
     def page_index(self, widget: QWidget) -> int:
+        if widget in (self.restoration_widget, self.html_restoration_widget):
+            widget = self.file_restoration_widget
         return self.page_widgets.index(widget)
 
     def _configure_presentation(self) -> None:
@@ -314,8 +315,8 @@ class MainWindow(QMainWindow):
         path_fields: tuple[tuple[QLineEdit, str], ...] = (
             (self.anonymization_widget.path_field, "Caminho do CSV selecionado"),
             (self.batch_widget.output_field, "Pasta de saída do mascaramento em lote"),
-            (self.restoration_widget.path_field, "Caminho do CSV anonimizado"),
-            (self.html_restoration_widget.path_field, "Caminho do HTML anonimizado"),
+            (self.restoration_widget.path_field, "Caminho do CSV mascarado"),
+            (self.html_restoration_widget.path_field, "Caminho do HTML mascarado"),
             (self.batch_restoration_widget.output_field, "Pasta de saída da restauração em lote"),
             (self.backup_widget.destination_field, "Destino do novo backup"),
             (self.backup_widget.restore_file_field, "Arquivo de backup selecionado"),

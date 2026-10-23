@@ -66,8 +66,7 @@ def test_sidebar_navigation_order_accessibility_and_state(tmp_path: Path) -> Non
     expected = [
         "Mascarar arquivo",
         "Mascaramento em lote",
-        "Restaurar CSV",
-        "Restaurar HTML",
+        "Restaurar arquivo",
         "Restauração em lote",
         "Consultar cofre",
         "Backup e recuperação",
@@ -109,9 +108,9 @@ def test_sidebar_navigation_order_accessibility_and_state(tmp_path: Path) -> Non
     assert "tabs" not in window.__dict__
 
     window.consultant_widget.codes_input.setPlainText("CPF-ABCDEFGHI234")
-    window.set_current_page(5)
+    window.set_current_page(window.page_index(window.consultant_widget))
     window.set_current_page(0)
-    window.set_current_page(5)
+    window.set_current_page(window.page_index(window.consultant_widget))
     assert window.consultant_widget.codes_input.toPlainText() == "CPF-ABCDEFGHI234"
 
     window.close()
@@ -153,8 +152,9 @@ def test_maximized_window_uses_qt_available_screen_geometry(tmp_path: Path) -> N
     assert available.contains(window.frameGeometry())
     assert window.isMaximized()
 
-    shell = window.page_shells[4]
-    window.set_current_page(4)
+    index = window.page_index(window.batch_restoration_widget)
+    shell = window.page_shells[index]
+    window.set_current_page(index)
     application.processEvents()
     shell.scroll_area.verticalScrollBar().setValue(
         shell.scroll_area.verticalScrollBar().maximum()
@@ -270,7 +270,7 @@ def test_common_headers_roles_paths_empty_states_and_internal_tabs(
     application = create_application([])
     window = build_window(tmp_path)
 
-    assert len(window.findChildren(PageHeader)) == 8
+    assert len(window.findChildren(PageHeader)) == 7
     assert all(shell.header.title_label.text() for shell in window.page_shells)
     primary_buttons = (
         window.anonymization_widget.generate_button,
@@ -319,12 +319,13 @@ def test_batch_restoration_footer_is_reachable_at_compact_sizes(
     application = create_application([])
     window = build_window(tmp_path)
     window.show()
-    window.set_current_page(4)
+    index = window.page_index(window.batch_restoration_widget)
+    window.set_current_page(index)
 
     for width, height in ((1100, 760), (1280, 800)):
         window.resize(width, height)
         application.processEvents()
-        shell = window.page_shells[4]
+        shell = window.page_shells[index]
         scrollbar = shell.scroll_area.verticalScrollBar()
         widget = window.batch_restoration_widget
         for table in (widget.file_table, widget.column_table):
@@ -405,7 +406,7 @@ def test_sidebar_alignment_compact_footer_and_fixed_width(tmp_path: Path) -> Non
         assert navigation.about_button.geometry().bottom() < navigation.height()
         assert navigation.about_button.isVisible() and not navigation.about_button.isCheckable()
         assert all(navigation.rect().contains(button.geometry()) for button in navigation.buttons)
-        for category, index in zip(navigation.categories, (0, 2, 5), strict=True):
+        for category, index in zip(navigation.categories, (0, 2, 4), strict=True):
             label_x = category.label.mapTo(navigation, QPoint(0, 0)).x()
             assert abs(label_x - text_left(navigation.buttons[index])) <= 1
             assert category.layout().contentsMargins().left() == (
@@ -454,12 +455,12 @@ def test_vault_navigation_has_three_routes_and_keyboard_wraps_without_retired_pa
     window = build_window(tmp_path)
     window.show()
     application.processEvents()
-    assert window.page_stack.count() == len(window.navigation.buttons) == 8
+    assert window.page_stack.count() == len(window.navigation.buttons) == 7
     assert not hasattr(window, "integrity_widget")
     vault_widgets = (
         window.consultant_widget, window.backup_widget, window.maintenance_widget,
     )
-    assert [button.text() for button in window.navigation.buttons[5:]] == [
+    assert [button.text() for button in window.navigation.buttons[4:]] == [
         "Consultar cofre", "Backup e recuperação", "Cofre e manutenção",
     ]
     assert window.current_page_index() == 0
@@ -482,5 +483,5 @@ def test_vault_navigation_has_three_routes_and_keyboard_wraps_without_retired_pa
     application.processEvents()
     assert window.current_page_index() == window.page_index(window.maintenance_widget)
     assert last.hasFocus() and last.isChecked()
-    window.set_current_page(8)  # The former last index is no longer a valid route.
+    window.set_current_page(7)  # The former last index is no longer a valid route.
     assert window.page_stack.currentWidget().content is window.maintenance_widget

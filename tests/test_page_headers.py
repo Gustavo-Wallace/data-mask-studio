@@ -19,8 +19,7 @@ from test_main_navigation import build_window
 DESCRIPTIONS = (
     "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.",
     "Processe vários arquivos CSV com um perfil de configuração salvo.",
-    "Recupere valores de colunas selecionadas usando o cofre local ou um pacote de transferência.",
-    "Recupere códigos presentes em HTML e dashboards locais.",
+    "Restaure arquivos CSV pelo cofre local ou por pacote de transferência, e HTML pelo cofre local.",
     "Restaure vários arquivos CSV ou HTML usando o cofre local.",
     "Consulte códigos específicos sem expor todo o conteúdo do cofre.",
     "Crie ou restaure um backup criptografado do ambiente local.",
@@ -34,7 +33,7 @@ def test_all_main_pages_share_header_hierarchy_alignment_and_original_texts(tmp_
     window.show()
     app.processEvents()
     assert window.current_page_index() == 0
-    assert len(window.page_shells) == len(DESCRIPTIONS) == 8
+    assert len(window.page_shells) == len(DESCRIPTIONS) == 7
 
     for index, shell in enumerate(window.page_shells):
         window.set_current_page(index)

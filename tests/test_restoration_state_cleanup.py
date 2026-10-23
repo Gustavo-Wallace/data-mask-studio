@@ -157,7 +157,7 @@ def test_clear_selection_removes_all_obsolete_feedback(page, tmp_path, monkeypat
     assert widget._inspection is None and not widget.path_field.text()
     assert widget.table.rowCount() == 0 and not widget._checkboxes
     assert not widget.generate_button.isEnabled() and not widget.analyze_button.isEnabled()
-    assert widget.status_label.text() == "Selecione um CSV anonimizado para começar."
+    assert widget.status_label.text() == "Selecione um CSV mascarado para começar."
     assert widget.status_label.property("feedbackState") == "neutral"
     monkeypatch.setattr(QDesktopServices, "openUrl", lambda *_: pytest.fail("No output is selected"))
     widget.open_output_folder()

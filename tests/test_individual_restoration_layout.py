@@ -27,6 +27,12 @@ def page(request, tmp_path, monkeypatch):
     window.show()
     window.resize(1280, 820)
     window.set_current_page(window.page_index(widget))
+    # Retain empty-workspace layout coverage for each format, now hosted by
+    # the unified page; initial format selection is covered separately.
+    initial = tmp_path / ("initial.html" if request.param == "html" else "initial.csv")
+    initial.write_text("<p>SYNTHETIC</p>" if request.param == "html" else "Name\nSYNTHETIC\n", encoding="utf-8")
+    window.file_restoration_widget.load_file(initial)
+    widget.clear_selection()
     if request.param == "package":
         widget.source_combo.setCurrentIndex(1)
     settle(app)
@@ -94,7 +100,7 @@ def test_empty_views_are_compact_without_concealing_primary_controls(page):
     if kind != "html":
         assert widget.table.rowCount() == 0
         assert widget.table.maximumHeight() == widget.table.minimumHeight()
-        assert widget.table.empty_text == "Selecione um CSV anonimizado para revisar as colunas."
+        assert widget.table.empty_text == "Selecione um CSV mascarado para revisar as colunas."
 
 
 def test_populated_results_expand_scroll_and_compact_again(page, tmp_path):

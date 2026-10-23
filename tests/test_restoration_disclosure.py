@@ -35,6 +35,10 @@ def page(tmp_path, monkeypatch):
     window.set_current_page(window.page_index(widget))
     source = tmp_path / "synthetic.csv"
     source.write_text(f"CPF;Tipo\n{CODE};SYNTHETIC\n", encoding="utf-8")
+    # Exercise the retained CSV workspace after selecting its format. The new
+    # unified page's true no-file state has dedicated navigation regressions.
+    window.file_restoration_widget.load_file(source)
+    widget.clear_selection()
     window.show()
     app.processEvents()
     window.resize(1100, 760)
@@ -64,7 +68,7 @@ def test_initial_workspace_is_present_and_safe_defaults_remain_visible(page):
     assert_primary_workspace_present(widget)
     assert widget.source_combo.currentData() == "vault"
     assert widget._inspection is None and widget.table.rowCount() == 0
-    assert widget.table.accessibleDescription() == "Selecione um CSV anonimizado para revisar as colunas."
+    assert widget.table.accessibleDescription() == "Selecione um CSV mascarado para revisar as colunas."
     assert widget.path_field.isReadOnly() and not widget.path_field.text()
     assert all(label.text() == "—" for label in (
         widget.file_name_label, widget.encoding_label, widget.delimiter_label,

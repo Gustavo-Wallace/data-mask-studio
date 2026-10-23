@@ -81,8 +81,7 @@ def test_application_and_main_window_startup(tmp_path: Path) -> None:
     assert [button.text() for button in window.navigation.buttons] == [
         "Mascarar arquivo",
         "Mascaramento em lote",
-        "Restaurar CSV",
-        "Restaurar HTML",
+        "Restaurar arquivo",
         "Restauração em lote",
         "Consultar cofre",
         "Backup e recuperação",
