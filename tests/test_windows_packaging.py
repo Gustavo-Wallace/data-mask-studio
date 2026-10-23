@@ -89,6 +89,24 @@ def test_spec_uses_onedir_windowed_application_and_generated_metadata() -> None:
     assert 'Path(item[0]).name != "direct_url.json"' in spec
 
 
+def test_translation_resources_are_collected_for_python_packages_and_pyinstaller() -> None:
+    from PyInstaller.utils.hooks import collect_data_files
+    from data_mask_studio.i18n import SUPPORTED_LOCALES
+
+    project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text("utf-8"))
+    assert project["tool"]["setuptools"]["package-data"]["data_mask_studio.i18n"] == ["catalogs/*.json"]
+    spec = SPEC_FILE.read_text(encoding="utf-8")
+    assert 'collect_data_files("data_mask_studio.i18n", includes=["catalogs/*.json"])' in spec
+    assert 'hiddenimports=["data_mask_studio.i18n"]' in spec
+    collected = collect_data_files("data_mask_studio.i18n", includes=["catalogs/*.json"])
+    assert {Path(source).name for source, _ in collected} == {
+        f"{locale}.json" for locale in SUPPORTED_LOCALES
+    }
+    assert len(collected) == 2
+    assert all(Path(destination).as_posix() == "data_mask_studio/i18n/catalogs"
+               for _, destination in collected)
+
+
 def test_inno_setup_is_per_user_upgradeable_and_preserves_local_data() -> None:
     script = INNO_FILE.read_text(encoding="utf-8")
 

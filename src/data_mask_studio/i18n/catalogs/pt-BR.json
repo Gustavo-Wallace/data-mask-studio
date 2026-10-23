@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "locale": "pt-BR",
+  "messages": {
+    "common.settings": "Configurações",
+    "preferences.saved": "Preferência de idioma salva: {language}.",
+    "package.authentication_failed": "Não foi possível autenticar o pacote de transferência. Verifique a senha e a integridade do arquivo.",
+    "restoration.completed": "Linhas restauradas: {count}. Arquivo: {filename}.",
+    "files.selected.one": "{count} arquivo selecionado.",
+    "files.selected.other": "{count} arquivos selecionados."
+  }
+}

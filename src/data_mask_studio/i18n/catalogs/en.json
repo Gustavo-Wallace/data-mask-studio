@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "messages": {
+    "common.settings": "Settings",
+    "preferences.saved": "Language preference saved: {language}.",
+    "package.authentication_failed": "The transfer package could not be authenticated. Check the password and file integrity.",
+    "restoration.completed": "Rows restored: {count}. File: {filename}.",
+    "files.selected.one": "{count} file selected.",
+    "files.selected.other": "{count} files selected."
+  }
+}

@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 project_root = Path(SPECPATH).resolve().parents[1]
 source_root = project_root / "src"
@@ -13,13 +14,14 @@ if not icon_path.is_file():
     raise FileNotFoundError(f"Ícone oficial obrigatório não encontrado: {icon_path}")
 
 datas = [(str(icon_path), "assets/branding")]
+datas += collect_data_files("data_mask_studio.i18n", includes=["catalogs/*.json"])
 
 analysis = Analysis(
     [str(entry_point)],
     pathex=[str(source_root)],
     binaries=[],
     datas=datas,
-    hiddenimports=[],
+    hiddenimports=["data_mask_studio.i18n"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
