@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.gui.visual_tokens import METRICS
+from data_mask_studio.i18n import Translator
 
 
 def _navigation_divider() -> QFrame:
@@ -29,6 +30,9 @@ class NavigationItem:
     title: str
     accessible_description: str
     footer: bool = False
+    group_message_id: str | None = None
+    title_message_id: str | None = None
+    description_message_id: str | None = None
 
 
 class ApplicationIdentity(QWidget):
@@ -62,12 +66,15 @@ class ApplicationIdentity(QWidget):
 class NavigationCategory(QWidget):
     """Separador semântico e não interativo entre grupos de páginas."""
 
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, title: str, parent: QWidget | None = None,
+        *, translator: Translator | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("navigationCategory")
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAccessibleName(f"Categoria {title.title()}")
+        self._translator = translator or Translator("pt-BR")
         self.label = QLabel(title)
         self.label.setObjectName("navigationGroup")
         self.label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -83,6 +90,14 @@ class NavigationCategory(QWidget):
         layout.setSpacing(8)
         layout.addWidget(self.label)
         layout.addWidget(divider, stretch=1)
+        self.set_title(title, self._translator)
+
+    def set_title(self, title: str, translator: Translator) -> None:
+        self._translator = translator
+        self.label.setText(title)
+        self.setAccessibleName(translator.text(
+            "navigation.category_accessible", category=title.title(),
+        ))
 
 
 class SidebarNavigation(QWidget):
@@ -92,15 +107,18 @@ class SidebarNavigation(QWidget):
     about_requested = Signal()
 
     def __init__(
-        self, items: tuple[NavigationItem, ...], parent: QWidget | None = None
+        self, items: tuple[NavigationItem, ...], parent: QWidget | None = None,
+        *, translator: Translator | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("sidebarNavigation")
-        self.setAccessibleName("Navegação principal")
+        self._translator = translator or Translator("pt-BR")
+        self._items = items
         self.setFixedWidth(220)
         self._current_index = 0
         self._buttons: list[QPushButton] = []
         self._categories: list[NavigationCategory] = []
+        self._category_items: list[NavigationItem] = []
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         layout = QVBoxLayout(self)
@@ -113,12 +131,14 @@ class SidebarNavigation(QWidget):
         previous_group = ""
         footer_buttons = []
         for index, item in enumerate(items):
-            if not item.footer and item.group != previous_group:
-                category = NavigationCategory(item.group)
+            group_identity = item.group_message_id or item.group
+            if not item.footer and group_identity != previous_group:
+                category = NavigationCategory(item.group, translator=self._translator)
                 self._categories.append(category)
+                self._category_items.append(item)
                 layout.addSpacing(METRICS["button_padding"] if previous_group else 2)
                 layout.addWidget(category)
-                previous_group = item.group
+                previous_group = group_identity
             button = QPushButton(item.title)
             button.setObjectName("navigationItem")
             button.setCheckable(True)
@@ -143,14 +163,41 @@ class SidebarNavigation(QWidget):
         layout.addWidget(self.footer_divider)
         for button in footer_buttons:
             layout.addWidget(button)
-        self.about_button = QPushButton("Sobre")
+        self.about_button = QPushButton()
         self.about_button.setObjectName("navigationUtility")
         self.about_button.setAutoDefault(False)
-        self.about_button.setAccessibleName("Sobre o Data Mask Studio")
         self.about_button.clicked.connect(self.about_requested.emit)
         layout.addWidget(self.about_button)
         if self._buttons:
             self._buttons[0].setChecked(True)
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Update labels without replacing buttons, routes or connections."""
+        self._translator = translator
+        self.setAccessibleName(translator.text("navigation.main"))
+        self.about_button.setText(translator.text("common.about"))
+        self.about_button.setAccessibleName(translator.text(
+            "about.title", application="Data Mask Studio",
+        ))
+        for category, item in zip(self._categories, self._category_items, strict=True):
+            title = (
+                translator.text(item.group_message_id)
+                if item.group_message_id else item.group
+            )
+            category.set_title(title, translator)
+        for button, item in zip(self._buttons, self._items, strict=True):
+            title = (
+                translator.text(item.title_message_id)
+                if item.title_message_id else item.title
+            )
+            description = (
+                translator.text(item.description_message_id)
+                if item.description_message_id else item.accessible_description
+            )
+            button.setText(title)
+            button.setAccessibleName(title)
+            button.setAccessibleDescription(description)
 
     @property
     def buttons(self) -> tuple[QPushButton, ...]:

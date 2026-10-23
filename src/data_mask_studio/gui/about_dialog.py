@@ -4,6 +4,8 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout, QW
 
 from data_mask_studio.metadata import application_version
 from data_mask_studio.gui.components.presentation import configure_dialog_layout
+from data_mask_studio.gui.visual_tokens import COLORS
+from data_mask_studio.i18n import Translator
 from data_mask_studio.vault.database import SCHEMA_VERSION
 
 
@@ -20,48 +22,37 @@ PUBLIC_URLS = frozenset(
 class AboutDialog(QDialog):
     """Apresenta somente informações públicas e estáveis da aplicação."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, translator: Translator | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("aboutDialog")
-        self.setWindowTitle("Sobre o Data Mask Studio")
-        self.setAccessibleName("Sobre o Data Mask Studio")
         self.setModal(True)
         self.setMinimumWidth(430)
 
         title = QLabel("Data Mask Studio")
         title.setObjectName("aboutTitle")
-        details = QLabel(
-            f"Versão {application_version()}<br>"
-            f"Schema suportado: {SCHEMA_VERSION}<br>"
-            "Processamento local<br>"
-            "Sem telemetria"
-        )
+        details = QLabel()
         details.setObjectName("aboutDetails")
-        links = QLabel(
-            f'<a href="{REPOSITORY_URL}">Repositório</a> &middot; '
-            f'<a href="{SECURITY_URL}">Política de segurança</a><br>'
-            f'<a href="{PRIVACY_URL}">Privacidade</a> &middot; '
-            f'<a href="{COMPATIBILITY_URL}">Compatibilidade</a> &middot; '
-            f'<a href="{RELEASES_URL}">Releases</a>'
-        )
+        links = QLabel()
         links.setObjectName("aboutLinks")
         links.setOpenExternalLinks(False)
         links.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         links.linkActivated.connect(self._open_external_link)
+        self.title_label = title
+        self.details_label = details
         self.links_label = links
-        copyright_label = QLabel(
-            "Copyright © 2026 Gustavo Wallace Macedo Santos<br>"
-            "Licenciado sob GNU GPL v3.0 only."
-        )
+        copyright_label = QLabel()
         copyright_label.setObjectName("aboutCopyright")
-        warning = QLabel(
-            "Os executáveis distribuídos ainda não possuem assinatura digital."
-        )
+        warning = QLabel()
         warning.setObjectName("aboutSignatureNotice")
         warning.setWordWrap(True)
+        self.copyright_label = copyright_label
+        self.warning_label = warning
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
+        self.buttons = buttons
 
         layout = QVBoxLayout(self)
         configure_dialog_layout(layout)
@@ -71,6 +62,37 @@ class AboutDialog(QDialog):
         layout.addWidget(copyright_label)
         layout.addWidget(warning)
         layout.addWidget(buttons)
+        self.retranslate(translator if translator is not None else Translator("pt-BR"))
+
+    def retranslate(self, translator: Translator) -> None:
+        """Update presentation only, preserving widgets and standard button roles."""
+        self._translator = translator
+        title = translator.text("about.title", application=self.title_label.text())
+        self.setWindowTitle(title)
+        self.setAccessibleName(title)
+        self.details_label.setText("<br>".join((
+            translator.html("about.version", version=application_version()),
+            translator.html("about.schema", schema=SCHEMA_VERSION),
+            translator.html("about.local_processing"),
+            translator.html("about.no_telemetry"),
+        )))
+        self.links_label.setText(
+            # QLabel's rich-text document does not inherit QSS link-color.
+            f'<style>a {{ color: {COLORS["focus"]}; }}</style>'
+            f'<a href="{REPOSITORY_URL}">{translator.html("about.repository")}</a> &middot; '
+            f'<a href="{SECURITY_URL}">{translator.html("about.security")}</a><br>'
+            f'<a href="{PRIVACY_URL}">{translator.html("about.privacy")}</a> &middot; '
+            f'<a href="{COMPATIBILITY_URL}">{translator.html("about.compatibility")}</a> &middot; '
+            f'<a href="{RELEASES_URL}">{translator.html("about.releases")}</a>'
+        )
+        self.copyright_label.setText(
+            "Copyright © 2026 Gustavo Wallace Macedo Santos<br>"
+            + translator.html("about.license", license="GNU GPL v3.0 only")
+        )
+        self.warning_label.setText(translator.text("about.signature_notice"))
+        self.buttons.button(QDialogButtonBox.StandardButton.Close).setText(
+            translator.text("about.close")
+        )
 
     @staticmethod
     def _open_external_link(url: str) -> None:

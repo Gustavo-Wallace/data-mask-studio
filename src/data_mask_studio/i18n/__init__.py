@@ -1,6 +1,7 @@
-"""Application messages, not yet connected to the existing Portuguese GUI.
+"""Application messages for explicitly localized presentation components.
 
-Use Translator(effective_language) after PreferencesService.resolve_language();
+Normal GUI startup still uses pt-BR during the incremental migration. Future
+activation can pass PreferencesService.resolve_language() to Translator;
 this package neither detects a Windows language nor reads/writes preferences.
 Instances have an immutable locale; there is no process-wide current language.
 

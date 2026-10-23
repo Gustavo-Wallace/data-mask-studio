@@ -31,6 +31,7 @@ from data_mask_studio.gui.components import (
 )
 from data_mask_studio.gui.maintenance_widget import MaintenanceWidget
 from data_mask_studio.gui.settings_widget import SettingsWidget
+from data_mask_studio.i18n import Translator
 from data_mask_studio.preferences import PreferencesService
 from data_mask_studio.profiles import ProfileError, ProfileRepository, ProfileService
 from data_mask_studio.security import (
@@ -65,9 +66,13 @@ class MainWindow(QMainWindow):
         vault_key_provider: KeyProvider | None = None,
         data_protector: DataProtector | None = None,
         preferences_service: PreferencesService | None = None,
+        translator: Translator | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
+        # Localization activation remains explicit until all workflows migrate.
+        # Neither saved preferences nor the Windows UI language selects it yet.
+        self._translator = translator or Translator("pt-BR")
         self._initial_screen_fit_pending = True
         self._screen_change_connected = False
 
@@ -163,30 +168,42 @@ class MainWindow(QMainWindow):
             self._environment_maintained
         )
 
-        self.settings_widget = SettingsWidget(preferences_service)
+        self.settings_widget = SettingsWidget(
+            preferences_service, translator=self._translator,
+        )
         page_specs = (
-            ("PROCESSAMENTO", "Mascarar arquivo", "Defina como cada coluna será tratada no CSV de saída: preservar, mascarar ou excluir.", self.anonymization_widget),
-            ("PROCESSAMENTO", "Mascaramento em lote", "Processe vários arquivos CSV com um perfil de configuração salvo.", self.batch_widget),
-            ("RESTAURAÇÃO", "Restaurar arquivo", "Restaure arquivos CSV pelo cofre local ou por pacote de transferência, e HTML pelo cofre local.", self.file_restoration_widget),
-            ("RESTAURAÇÃO", "Restauração em lote", "Restaure vários arquivos CSV ou HTML usando o cofre local.", self.batch_restoration_widget),
-            ("COFRE", "Consultar cofre", "Consulte códigos específicos sem expor todo o conteúdo do cofre.", self.consultant_widget),
-            ("COFRE", "Backup e recuperação", "Crie ou restaure um backup criptografado do ambiente local.", self.backup_widget),
-            ("COFRE", "Cofre e manutenção", "Diagnostique, limpe temporários e compacte o cofre com segurança.", self.maintenance_widget),
-            ("", "Configurações", "Escolha o idioma de preferência para a interface do aplicativo.", self.settings_widget),
+            ("navigation.group.processing", "navigation.mask_file", "navigation.description.mask_file", self.anonymization_widget),
+            ("navigation.group.processing", "navigation.batch_masking", "navigation.description.batch_masking", self.batch_widget),
+            ("navigation.group.restoration", "navigation.restore_file", "navigation.description.restore_file", self.file_restoration_widget),
+            ("navigation.group.restoration", "navigation.batch_restoration", "navigation.description.batch_restoration", self.batch_restoration_widget),
+            ("navigation.group.vault", "navigation.browse_vault", "navigation.description.browse_vault", self.consultant_widget),
+            ("navigation.group.vault", "navigation.backup", "navigation.description.backup", self.backup_widget),
+            ("navigation.group.vault", "navigation.maintenance", "navigation.description.maintenance", self.maintenance_widget),
+            (None, "common.settings", "settings.description", self.settings_widget),
         )
         self.page_widgets = tuple(spec[3] for spec in page_specs)
         self.page_stack = QStackedWidget()
         self.page_stack.setObjectName("mainPageStack")
         self.page_shells: list[PageShell] = []
         navigation_items = []
-        for group, title, description, widget in page_specs:
-            shell = PageShell(title, description, widget)
+        for group_id, title_id, description_id, widget in page_specs:
+            title = self._translator.text(title_id)
+            description = self._translator.text(description_id)
+            shell = PageShell(
+                title, description, widget, translator=self._translator,
+                title_message_id=title_id, description_message_id=description_id,
+            )
             self.page_shells.append(shell)
             self.page_stack.addWidget(shell)
             navigation_items.append(NavigationItem(
-                group, title, description, footer=widget is self.settings_widget,
+                self._translator.text(group_id) if group_id else "",
+                title, description, footer=widget is self.settings_widget,
+                group_message_id=group_id, title_message_id=title_id,
+                description_message_id=description_id,
             ))
-        self.navigation = SidebarNavigation(tuple(navigation_items))
+        self.navigation = SidebarNavigation(
+            tuple(navigation_items), translator=self._translator,
+        )
         self.navigation.current_changed.connect(self._page_changed)
         self.navigation.about_requested.connect(self.show_about_dialog)
         self.about_dialog: AboutDialog | None = None
@@ -285,10 +302,20 @@ class MainWindow(QMainWindow):
 
     def show_about_dialog(self) -> None:
         if self.about_dialog is None:
-            self.about_dialog = AboutDialog(self)
+            self.about_dialog = AboutDialog(self, translator=self._translator)
         self.about_dialog.show()
         self.about_dialog.raise_()
         self.about_dialog.activateWindow()
+
+    def retranslate(self, translator: Translator) -> None:
+        """Explicitly refresh migrated presentation only, preserving live state."""
+        self._translator = translator
+        self.navigation.retranslate(translator)
+        for shell in self.page_shells:
+            shell.retranslate(translator)
+        self.settings_widget.retranslate(translator)
+        if self.about_dialog is not None:
+            self.about_dialog.retranslate(translator)
 
     def set_current_page(self, index: int) -> None:
         self.navigation.set_current_index(index)
