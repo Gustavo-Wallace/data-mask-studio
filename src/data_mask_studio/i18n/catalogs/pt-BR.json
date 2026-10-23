@@ -55,6 +55,12 @@
     "about.releases": "Releases",
     "about.license": "Licenciado sob {license}.",
     "about.signature_notice": "Os executáveis distribuídos ainda não possuem assinatura digital.",
-    "about.close": "Fechar"
+    "about.close": "Fechar",
+    "dialog.button.ok": "OK",
+    "dialog.button.cancel": "Cancelar",
+    "dialog.button.yes": "&Sim",
+    "dialog.button.no": "&Não",
+    "dialog.button.close": "Fechar",
+    "dialog.button.retry": "&Tentar novamente"
   }
 }

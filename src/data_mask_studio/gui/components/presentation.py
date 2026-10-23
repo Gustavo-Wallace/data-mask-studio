@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.gui.visual_tokens import METRICS
+from data_mask_studio.gui.dialog_localization import localize_standard_buttons
+from data_mask_studio.i18n import Translator
 
 
 FeedbackState = Literal["neutral", "success", "warning", "error"]
@@ -87,12 +89,20 @@ def configure_dialog_layout(layout: QLayout) -> None:
     layout.setSpacing(METRICS["panel_spacing"])
 
 
-def confirm_destructive_action(parent: QWidget, title: str, text: str) -> int:
+def confirm_destructive_action(
+    parent: QWidget, title: str, text: str, *, translator: Translator | None = None,
+) -> int:
     """QMessageBox padrão, com a mesma resposta segura Não/Enter/Escape."""
     message = QMessageBox(
-        QMessageBox.Icon.Warning, title, text,
+        QMessageBox.Icon.Warning, title, "",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, parent,
     )
+    # Callers supply plain instructions, sometimes containing user-entered names.
+    # Do not let Qt AutoText interpret those values as markup.
+    message.setTextFormat(Qt.TextFormat.PlainText)
+    message.setText(text)
+    if translator is not None:
+        localize_standard_buttons(message, translator)
     message.setDefaultButton(QMessageBox.StandardButton.No)
     message.setEscapeButton(QMessageBox.StandardButton.No)
     set_button_role(message.button(QMessageBox.StandardButton.Yes), "destructive")

@@ -55,6 +55,12 @@
     "about.releases": "Releases",
     "about.license": "Licensed under {license}.",
     "about.signature_notice": "Distributed executables are not digitally signed yet.",
-    "about.close": "Close"
+    "about.close": "Close",
+    "dialog.button.ok": "OK",
+    "dialog.button.cancel": "Cancel",
+    "dialog.button.yes": "&Yes",
+    "dialog.button.no": "&No",
+    "dialog.button.close": "Close",
+    "dialog.button.retry": "&Retry"
   }
 }
