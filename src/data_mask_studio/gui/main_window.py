@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
         self.backup_widget.environment_restored.connect(self._environment_restored)
         self.consultant_widget = ConsultantWidget(self._vault_repository_factory)
         self.file_restoration_widget = FileRestorationWidget(
-            self._restoration_repository_factory
+            self._restoration_repository_factory, translator=self._translator,
         )
         # Keep existing internal access to each independent workflow. Neither
         # child is registered as a standalone navigation destination anymore.
@@ -318,6 +318,7 @@ class MainWindow(QMainWindow):
         self.settings_widget.retranslate(translator)
         self.anonymization_widget.retranslate(translator)
         self.batch_widget.retranslate(translator)
+        self.file_restoration_widget.retranslate(translator)
         if self.about_dialog is not None:
             self.about_dialog.retranslate(translator)
 
@@ -353,7 +354,7 @@ class MainWindow(QMainWindow):
         path_fields: tuple[tuple[QLineEdit, str], ...] = (
             (self.anonymization_widget.path_field, self._translator.text("masking.path_accessible")),
             (self.batch_widget.output_field, self._translator.text("batch.output_accessible")),
-            (self.restoration_widget.path_field, "Caminho do CSV mascarado"),
+            (self.restoration_widget.path_field, self._translator.text("restoration.csv.path_accessible")),
             (self.html_restoration_widget.path_field, "Caminho do HTML mascarado"),
             (self.batch_restoration_widget.output_field, "Pasta de saída da restauração em lote"),
             (self.backup_widget.destination_field, "Destino do novo backup"),

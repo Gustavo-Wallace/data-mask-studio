@@ -5,14 +5,24 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.gui.restoration_worker import PackageRestorationRequest
+from data_mask_studio.i18n import Translator
 from data_mask_studio.restoration import RestorationError
+
+
+class RestorationInputError(RestorationError):
+    """GUI-owned validation only; keep backend errors and contracts unchanged."""
+
+    def __init__(self, message_id: str, translator: Translator) -> None:
+        self.message_id = message_id
+        super().__init__(translator.text(message_id))
 
 
 class PackageRestorationControls(QWidget):
     """Transient inputs only; authentication and binding belong to the backend."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, translator: Translator | None = None) -> None:
         super().__init__(parent)
+        self._translator = translator or Translator("pt-BR")
         self.path = QLineEdit()
         self.path.setAccessibleName("Pacote de transferência")
         self.browse = QPushButton("Escolher arquivo")
@@ -30,10 +40,27 @@ class PackageRestorationControls(QWidget):
         layout.addRow("Pacote (.dmspackage):", row)
         layout.addRow("Senha:", self.password)
         layout.addRow("", self.show_password)
+        self._path_label = layout.labelForField(row)
+        self._password_label = layout.labelForField(self.password)
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Relabel inputs without touching their values, visibility or echo mode."""
+        self._translator = translator
+        for widget, message_id in (
+            (self._path_label, "restoration.package.path_label"),
+            (self._password_label, "restoration.package.password_label"),
+            (self.browse, "restoration.package.browse"),
+            (self.show_password, "restoration.package.show_password"),
+        ):
+            widget.setText(translator.text(message_id))
+        self.path.setAccessibleName(translator.text("restoration.package.path_accessible"))
+        self.password.setAccessibleName(translator.text("restoration.package.password_accessible"))
 
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Selecionar pacote de transferência", "", "Pacotes (*.dmspackage)"
+            self, self._translator.text("restoration.package.select_title"), "",
+            self._translator.text("restoration.package.filter"),
         )
         if path:
             self.clear_password()
@@ -55,8 +82,8 @@ class PackageRestorationControls(QWidget):
         except (OSError, ValueError):
             valid = False
         if not valid:
-            raise RestorationError("Selecione um arquivo .dmspackage existente.")
+            raise RestorationInputError("restoration.package.error.path", self._translator)
         # Opening existing packages must not enforce the creation-time policy.
         if not self.password.text():
-            raise RestorationError("Informe a senha do pacote.")
+            raise RestorationInputError("restoration.package.error.password", self._translator)
         return PackageRestorationRequest(path, self.password.text())

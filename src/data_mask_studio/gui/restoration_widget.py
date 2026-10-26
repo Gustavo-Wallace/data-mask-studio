@@ -4,7 +4,7 @@ from pathlib import Path
 import time
 
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -43,7 +43,9 @@ from data_mask_studio.gui.restoration_worker import (
     RestorationAnalysisWorker,
 )
 from data_mask_studio.gui.components import EmptyStatePlainTextEdit, EmptyStateTable
-from data_mask_studio.gui.package_restoration_controls import PackageRestorationControls
+from data_mask_studio.gui.package_restoration_controls import PackageRestorationControls, RestorationInputError
+from data_mask_studio.gui.dialog_localization import localize_standard_buttons
+from data_mask_studio.i18n import Translator
 from data_mask_studio.restoration import (
     AnalysisResult,
     MissingCodePolicy,
@@ -59,11 +61,14 @@ from data_mask_studio.restoration import (
 )
 from data_mask_studio.vault import VaultRepository
 
-SEPARATOR_NAMES = {
-    ",": "Vírgula (,)",
-    ";": "Ponto e vírgula (;)",
-    "\t": "Tabulação",
-    "|": "Barra vertical (|)",
+_MISSING_POLICY_IDS = {
+    MissingCodePolicy.KEEP: "restoration.csv.policy.keep",
+    MissingCodePolicy.EMPTY: "restoration.csv.policy.empty",
+    MissingCodePolicy.ABORT: "restoration.csv.policy.abort",
+}
+_REPRESENTATION_IDS = {
+    RepresentationPolicy.FIRST_ORIGINAL: "restoration.csv.representation.first",
+    RepresentationPolicy.CANONICAL: "restoration.csv.representation.canonical",
 }
 
 
@@ -77,8 +82,15 @@ class RestorationWidget(QWidget):
         parent: QWidget | None = None,
         *,
         file_selector: Callable[[], None] | None = None,
+        translator: Translator | None = None,
     ) -> None:
         super().__init__(parent)
+        self._translator = translator or Translator("pt-BR")
+        self._unified_selector = file_selector is not None
+        self._status_message = None
+        self._progress_message = None
+        self._displayed_result: AnalysisResult | RestorationResult | None = None
+        self._confirmation_dialog: QMessageBox | None = None
         self._service = RestorationService(repository_factory)
         self._inspection: CSVInspectionResult | None = None
         self._checkboxes: list[QCheckBox] = []
@@ -90,11 +102,12 @@ class RestorationWidget(QWidget):
         self.source_combo.setAccessibleName("Origem da restauração")
         self.source_combo.addItem("Cofre local", "vault")
         self.source_combo.addItem("Pacote de transferência", "package")
-        self.package_controls = PackageRestorationControls(self)
+        self.package_controls = PackageRestorationControls(self, translator=self._translator)
         self.package_controls.setVisible(False)
         self.package_controls.setEnabled(False)
         source_layout = QFormLayout()
         source_layout.addRow("Origem da restauração:", self.source_combo)
+        self._source_label = source_layout.labelForField(self.source_combo)
 
         self.select_button = QPushButton("Selecionar arquivo mascarado" if file_selector else "Selecionar CSV mascarado")
         self.select_button.clicked.connect(file_selector or self._select_csv)
@@ -113,6 +126,14 @@ class RestorationWidget(QWidget):
         details.addRow("Caminho:", self.path_field)
         details.addRow("Codificação:", self.encoding_label)
         details.addRow("Separador:", self.delimiter_label)
+        self._detail_labels = [
+            (details.labelForField(field), message_id) for field, message_id in (
+                (self.file_name_label, "restoration.csv.metadata.file"),
+                (self.path_field, "restoration.csv.metadata.path"),
+                (self.encoding_label, "restoration.csv.metadata.encoding"),
+                (self.delimiter_label, "restoration.csv.metadata.separator"),
+            )
+        ]
 
         self.table = EmptyStateTable(
             0, 2, "Selecione um CSV mascarado para revisar as colunas."
@@ -164,6 +185,10 @@ class RestorationWidget(QWidget):
         policies.setContentsMargins(0, 0, 0, 0)
         policies.addRow("Códigos não encontrados:", self.missing_policy_combo)
         policies.addRow("Valor restaurado:", self.representation_combo)
+        self._policy_labels = [
+            (policies.labelForField(self.missing_policy_combo), "restoration.csv.policy.label"),
+            (policies.labelForField(self.representation_combo), "restoration.csv.representation.label"),
+        ]
         self.options_toggle = QPushButton("Opções de restauração")
         self.options_toggle.setCheckable(True)
         self.options_toggle.setAccessibleName("Mostrar ou ocultar opções de restauração")
@@ -213,6 +238,8 @@ class RestorationWidget(QWidget):
         self.open_folder_button.setVisible(False)
         self.status_label = QLabel("Selecione um CSV mascarado para começar.")
         self.status_label.setWordWrap(True)
+        for label in (self.file_name_label, self.progress_label, self.status_label, self.options_summary):
+            label.setTextFormat(Qt.TextFormat.PlainText)
         set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
@@ -247,6 +274,79 @@ class RestorationWidget(QWidget):
         self._update_options_disclosure()
         self._update_enabled_state(False)
         self.source_combo.currentIndexChanged.connect(self._source_changed)
+        self._set_status_id("restoration.csv.status.initial")
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Relabel existing controls and render stored results; never restart or reset."""
+        self._translator = translator
+        for widget, message_id in (
+            (self.select_button, "restoration.file.select" if self._unified_selector else "restoration.csv.select"),
+            (self._source_label, "restoration.csv.source.label"),
+            (self.select_all_button, "restoration.csv.select_all"),
+            (self.unselect_all_button, "restoration.csv.deselect_all"),
+            (self.analyze_button, "restoration.csv.analyze"),
+            (self.generate_button, "restoration.csv.generate"),
+            (self.cancel_button, "dialog.button.cancel"),
+            (self.open_folder_button, "restoration.csv.open_folder"),
+            *self._detail_labels, *self._policy_labels,
+        ):
+            widget.setText(translator.text(message_id))
+        for combo, identifiers in (
+            (self.source_combo, {"vault": "restoration.csv.source.vault", "package": "restoration.csv.source.package"}),
+            (self.missing_policy_combo, _MISSING_POLICY_IDS),
+            (self.representation_combo, _REPRESENTATION_IDS),
+        ):
+            with QSignalBlocker(combo):
+                for index in range(combo.count()):
+                    combo.setItemText(index, translator.text(identifiers[combo.itemData(index)]))
+        for widget, message_id in (
+            (self.source_combo, "restoration.csv.source.accessible"),
+            (self.path_field, "restoration.csv.path_accessible"),
+            (self.missing_policy_combo, "restoration.csv.policy.accessible"),
+            (self.representation_combo, "restoration.csv.representation.accessible"),
+            (self.options_toggle, "restoration.csv.options.accessible"),
+        ):
+            widget.setAccessibleName(translator.text(message_id))
+        self.path_field.setPlaceholderText(translator.text("restoration.csv.no_file"))
+        for view, message_id in ((self.table, "restoration.csv.table.empty"),
+                                 (self.summary, "restoration.csv.summary.empty")):
+            view.empty_text = translator.text(message_id)
+            view.setAccessibleDescription(view.empty_text)
+            view.viewport().update()
+        # Preserve cell identity, checkboxes, selections and scroll positions.
+        for index, message_id in enumerate(("restoration.csv.table.restore", "restoration.csv.table.header")):
+            self.table.horizontalHeaderItem(index).setText(translator.text(message_id))
+        if self._inspection is not None:
+            self.delimiter_label.setText(self._separator_label(self._inspection.delimiter))
+            for index, checkbox in enumerate(self._checkboxes):
+                checkbox.setAccessibleName(translator.text("restoration.csv.column_accessible",
+                    header=self._inspection.headers[index], number=index + 1))
+        self.package_controls.retranslate(translator)
+        self._update_selected_count()
+        self._render_options_title()
+        self._update_options_summary()
+        if self._status_message is not None:
+            message_id, parameters = self._status_message
+            self.status_label.setText(translator.text(message_id, **parameters))
+        self._render_progress()
+        if self._displayed_result is not None:
+            cursor = self.summary.textCursor()
+            anchor, position = cursor.anchor(), cursor.position()
+            scroll = self.summary.verticalScrollBar().value(), self.summary.horizontalScrollBar().value()
+            self._render_result()
+            end = self.summary.document().characterCount() - 1
+            cursor.setPosition(min(anchor, end))
+            cursor.setPosition(min(position, end), QTextCursor.MoveMode.KeepAnchor)
+            self.summary.setTextCursor(cursor)
+            self.summary.verticalScrollBar().setValue(scroll[0])
+            self.summary.horizontalScrollBar().setValue(scroll[1])
+        if self._confirmation_dialog is not None:
+            self._render_sensitive_confirmation()
+
+    def _separator_label(self, delimiter: str) -> str:
+        return self._translator.text({",": "masking.separator.comma", ";": "masking.separator.semicolon",
+                                     "\t": "masking.separator.tab", "|": "masking.separator.pipe"}[delimiter])
 
     def _update_information_layout(self) -> None:
         has_columns = self.table.rowCount() > 0
@@ -277,18 +377,18 @@ class RestorationWidget(QWidget):
         expanded = self.options_toggle.isChecked()
         self.options_controls.setVisible(expanded)
         self.options_summary.setVisible(not expanded)
-        self.options_toggle.setText(
-            "Ocultar opções de restauração" if expanded else "Opções de restauração"
-        )
+        self._render_options_title()
         if options_have_focus and not expanded and self.isVisible():
             self.options_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _render_options_title(self) -> None:
+        self.options_toggle.setText(self._translator.text(
+            "restoration.csv.options.hide" if self.options_toggle.isChecked() else "restoration.csv.options.show"))
+
     def _update_options_summary(self, *_args: object) -> None:
-        restriction = " (obrigatório no pacote)" if self._package_mode() else ""
-        self.options_summary.setText(
-            f"Não encontrados: {self.missing_policy_combo.currentText()}{restriction}. "
-            f"Valor: {self.representation_combo.currentText()}."
-        )
+        self.options_summary.setText(self._translator.text(
+            "restoration.csv.options.package_summary" if self._package_mode() else "restoration.csv.options.summary",
+            missing=self.missing_policy_combo.currentText(), representation=self.representation_combo.currentText()))
 
     def _package_mode(self) -> bool:
         return self.source_combo.currentData() == "package"
@@ -311,15 +411,11 @@ class RestorationWidget(QWidget):
         self._reset_operation_feedback()
         self._update_enabled_state(self._inspection is not None)
         self._update_options_summary()
-        self._set_status(
-            "O pacote e o vínculo com o CSV serão verificados durante a restauração."
-            if self._package_mode() else "Restauração pelo cofre local selecionada.",
-            is_error=False,
-        )
+        self._set_status_id("restoration.csv.status.package" if self._package_mode() else "restoration.csv.status.vault")
 
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Selecionar CSV mascarado", "", "Arquivos CSV (*.csv)"
+            self, self._translator.text("restoration.csv.select"), "", self._translator.text("masking.file.filter")
         )
         if file_path:
             self.load_csv(file_path)
@@ -338,12 +434,13 @@ class RestorationWidget(QWidget):
         self.file_name_label.setText(inspection.path.name)
         self.path_field.setText(str(inspection.path))
         self.encoding_label.setText(inspection.encoding)
-        self.delimiter_label.setText(SEPARATOR_NAMES[inspection.delimiter])
+        self.delimiter_label.setText(self._separator_label(inspection.delimiter))
         self.table.setRowCount(0)
         self._checkboxes.clear()
         for row, header in enumerate(inspection.headers):
             self.table.insertRow(row)
             checkbox = QCheckBox()
+            checkbox.setAccessibleName(self._translator.text("restoration.csv.column_accessible", header=header, number=row + 1))
             checkbox.stateChanged.connect(self._selection_changed)
             container = QWidget()
             checkbox_layout = QHBoxLayout(container)
@@ -358,10 +455,11 @@ class RestorationWidget(QWidget):
         self._update_selected_count()
         self._update_enabled_state(True)
         warning = format_header_replacement_warning(inspection.header_replacements)
-        status = "Cabecalhos lidos com sucesso."
         if warning:
-            status = f"{status} {warning}"
-        self._set_status(status, is_error=False, state="warning" if warning else "success")
+            # This service warning has no typed localization contract yet.
+            self._set_status_id("restoration.csv.status.inspected_warning", warning=warning, state="warning")
+        else:
+            self._set_status_id("restoration.csv.status.inspected", state="success")
         self.file_loaded.emit()
 
     def clear_selection(self) -> None:
@@ -377,13 +475,15 @@ class RestorationWidget(QWidget):
         self._checkboxes.clear()
         self._update_selected_count()
         self._update_enabled_state(False)
-        self._set_status("Selecione um CSV mascarado para começar.", is_error=False)
+        self._set_status_id("restoration.csv.status.initial")
 
     def _reset_operation_feedback(self) -> None:
         """Invalidate feedback, not the selected file, columns or source inputs."""
         self._operation_succeeded = False
         self._last_output_path = None
         self._last_error = None
+        self._displayed_result = None
+        self._progress_message = None
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(False)
@@ -406,20 +506,19 @@ class RestorationWidget(QWidget):
 
     def _update_selected_count(self) -> None:
         count = sum(checkbox.isChecked() for checkbox in self._checkboxes)
-        self.selected_count_label.setText(
-            f"{count} de {len(self._checkboxes)} colunas selecionadas"
-        )
+        self.selected_count_label.setText(self._translator.plural(
+            "restoration.csv.selected", count, total=len(self._checkboxes)))
 
     def _configuration(self) -> RestorationConfiguration:
         if self._inspection is None:
-            raise RestorationError("Selecione um arquivo CSV mascarado.")
+            raise RestorationInputError("restoration.csv.error.no_csv", self._translator)
         columns = tuple(
             SelectedColumn(index, self._inspection.headers[index])
             for index, checkbox in enumerate(self._checkboxes)
             if checkbox.isChecked()
         )
         if not columns:
-            raise RestorationError("Selecione ao menos uma coluna para restaurar.")
+            raise RestorationInputError("restoration.csv.error.no_columns", self._translator)
         return RestorationConfiguration(
             source_path=self._inspection.path,
             encoding=self._inspection.encoding,
@@ -440,30 +539,17 @@ class RestorationWidget(QWidget):
         try:
             configuration = self._configuration()
         except RestorationError as error:
-            self._set_status(str(error), is_error=True)
+            self._show_input_error(error)
             return
         worker = RestorationAnalysisWorker(self._service, configuration)
-        self._start_worker(worker, "Analisando códigos...", self._analysis_completed)
+        self._start_worker(worker, "restoration.csv.status.analyzing", self._analysis_completed)
 
     def _analysis_completed(self, result: AnalysisResult) -> None:
         self._operation_succeeded = True
-        prefixes = ", ".join(result.prefixes) or "nenhum"
-        incompatibilities = (
-            "\n".join(result.possible_incompatibilities) or "nenhuma"
-        )
-        self.summary.setPlainText(
-            f"Células analisadas: {result.cells_analyzed}\n"
-            f"Códigos válidos: {result.valid_codes}\n"
-            f"Encontrados no cofre: {result.found_codes}\n"
-            f"Não encontrados: {result.missing_codes}\n"
-            f"Formatos inválidos: {result.invalid_formats}\n"
-            f"Células vazias: {result.empty_cells}\n"
-            f"Valores comuns: {result.common_values}\n"
-            f"Prefixos: {prefixes}\n"
-            f"Possíveis incompatibilidades: {incompatibilities}"
-        )
-        self._set_status(
-            "Análise concluída sem alterar o cofre.", is_error=False,
+        self._displayed_result = result
+        self._render_result()
+        self._set_status_id(
+            "restoration.csv.status.analyzed",
             state="warning" if result.missing_codes or result.invalid_formats
             or result.possible_incompatibilities else "success",
         )
@@ -472,23 +558,16 @@ class RestorationWidget(QWidget):
         try:
             configuration = self._configuration()
         except RestorationError as error:
-            self._set_status(str(error), is_error=True)
+            self._show_input_error(error)
             return
-        confirmation = QMessageBox.warning(
-            self,
-            "Confirmar restauração de dados sensíveis",
-            "O arquivo restaurado poderá conter dados pessoais ou sensíveis. "
-            "Mantenha-o em ambiente autorizado.",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
-        )
+        confirmation = self._confirm_sensitive_data()
         if confirmation != QMessageBox.StandardButton.Ok:
             return
         selected_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Salvar CSV restaurado",
+            self._translator.text("restoration.csv.save_title"),
             str(suggested_output_path(configuration.source_path)),
-            "Arquivos CSV (*.csv)",
+            self._translator.text("masking.file.filter"),
         )
         if not selected_path:
             return
@@ -496,21 +575,39 @@ class RestorationWidget(QWidget):
         if destination.suffix.lower() != ".csv":
             destination = destination.with_suffix(".csv")
         if paths_refer_to_same_file(configuration.source_path, destination):
-            self._set_status(
-                "O arquivo restaurado não pode substituir o CSV de entrada.",
-                is_error=True,
-            )
+            self._set_status_id("restoration.csv.error.source_alias", is_error=True)
             return
         overwrite = destination.exists()
         if overwrite:
             answer = confirm_destructive_action(
                 self,
-                "Confirmar substituição",
-                "O arquivo de saída já existe. Deseja substituí-lo?",
+                self._translator.text("masking.file.overwrite_title"),
+                self._translator.text("masking.file.overwrite_text"),
+                translator=self._translator,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
         self.start_restoration(destination, overwrite=overwrite)
+
+    def _confirm_sensitive_data(self) -> int:
+        dialog = QMessageBox(QMessageBox.Icon.Warning, "", "",
+                             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel, self)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        dialog.setEscapeButton(QMessageBox.StandardButton.Cancel)
+        self._confirmation_dialog = dialog
+        self._render_sensitive_confirmation()
+        try:
+            return dialog.exec()
+        finally:
+            self._confirmation_dialog = None
+            dialog.deleteLater()
+
+    def _render_sensitive_confirmation(self) -> None:
+        dialog = self._confirmation_dialog
+        dialog.setWindowTitle(self._translator.text("restoration.csv.sensitive_title"))
+        dialog.setText(self._translator.text("restoration.csv.sensitive_text"))
+        localize_standard_buttons(dialog, self._translator)
 
     def start_restoration(self, destination: Path, *, overwrite: bool) -> None:
         if self._worker is not None:
@@ -525,9 +622,9 @@ class RestorationWidget(QWidget):
                     or destination.is_dir()
                     or paths_refer_to_same_file(configuration.source_path, destination)
                     or (destination.exists() and not overwrite)):
-                raise RestorationError("Destino inválido ou existente sem autorização de substituição.")
+                raise RestorationInputError("restoration.csv.error.destination", self._translator)
         except RestorationError as error:
-            self._set_status(str(error), is_error=True)
+            self._show_input_error(error)
             return
         worker = CSVRestorationWorker(
             self._service,
@@ -537,12 +634,12 @@ class RestorationWidget(QWidget):
             **options,
         )
         self.package_controls.clear_password()
-        self._start_worker(worker, "Gerando CSV restaurado...", self._restoration_completed)
+        self._start_worker(worker, "restoration.csv.status.restoring", self._restoration_completed)
 
     def _start_worker(
         self,
         worker: RestorationAnalysisWorker | CSVRestorationWorker,
-        status: str,
+        status_id: str,
         completed: Callable[..., None],
     ) -> None:
         self._reset_operation_feedback()
@@ -552,9 +649,10 @@ class RestorationWidget(QWidget):
         self.progress_bar.reset()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(True)
-        self.progress_label.setText("0 linhas processadas")
+        self._progress_message = ("restoration.csv.progress.initial", {"count": 0})
+        self._render_progress()
         self.progress_label.setVisible(True)
-        self._set_status(status, is_error=False)
+        self._set_status_id(status_id)
         self._processing_started_at = time.perf_counter()
 
         def deliver(callback: Callable[..., None], *args: object) -> None:
@@ -578,61 +676,75 @@ class RestorationWidget(QWidget):
             self, "_processing_started_at", time.perf_counter()
         )
         metrics = calculate_metrics(progress.rows_processed, elapsed)
+        self._progress_message = ("restoration.csv.progress.metrics", dict(
+            rows=progress.rows_processed, restored=progress.restored_codes, missing=progress.missing_codes,
+            preserved=progress.preserved_values, errors=progress.errors,
+            rate=f"{metrics.rows_per_second:,.0f}", seconds=f"{metrics.elapsed_seconds:.1f}"))
+        self._render_progress()
+
+    def _render_progress(self) -> None:
+        if self._progress_message is None:
+            return
+        message_id, parameters = self._progress_message
         self.progress_label.setText(
-            f"{progress.rows_processed} linhas; "
-            f"{progress.restored_codes} restaurados; "
-            f"{progress.missing_codes} não encontrados; "
-            f"{progress.preserved_values} preservados; {progress.errors} erros; "
-            f"{metrics.rows_per_second:,.0f} linhas/s; {metrics.elapsed_seconds:.1f} s; "
-            "estimativa indisponível"
-        )
+            self._translator.plural(message_id, parameters["count"])
+            if message_id == "restoration.csv.progress.initial" else
+            self._translator.text(message_id, **parameters))
 
     def _restoration_completed(self, result: RestorationResult) -> None:
         self._operation_succeeded = True
         self.package_controls.clear_password()
         self._last_output_path = result.output_path
-        missing_policy = {
-            MissingCodePolicy.KEEP: "Manter código original",
-            MissingCodePolicy.EMPTY: "Deixar célula vazia",
-            MissingCodePolicy.ABORT: "Interromper restauração",
-        }[result.missing_code_policy]
-        representation = {
-            RepresentationPolicy.FIRST_ORIGINAL: "Primeira representação original",
-            RepresentationPolicy.CANONICAL: "Valor canônico",
-        }[result.representation_policy]
-        self.summary.setPlainText(
-            f"Arquivo: {result.output_path}\n"
-            f"Linhas processadas: {result.rows_processed}\n"
-            f"Códigos restaurados: {result.restored_codes}\n"
-            f"Códigos não encontrados: {result.missing_codes}\n"
-            f"Valores comuns preservados: {result.preserved_common_values}\n"
-            f"Células vazias: {result.empty_cells}\n"
-            f"Tempo aproximado: {result.duration_seconds:.2f} s\n"
-            f"Política de ausentes: {missing_policy}\n"
-            f"Representação: {representation}"
-        )
+        self._displayed_result = result
+        self._render_result()
         self.open_folder_button.setVisible(True)
-        self._set_status(
-            "CSV restaurado gerado com sucesso.", is_error=False,
+        self._set_status_id(
+            "restoration.csv.status.completed",
             state="warning" if result.missing_codes else "success",
         )
+
+    def _render_result(self) -> None:
+        result = self._displayed_result
+        if isinstance(result, AnalysisResult):
+            self.summary.setPlainText(self._translator.text("restoration.csv.analysis.summary",
+                cells=result.cells_analyzed, valid=result.valid_codes, found=result.found_codes,
+                missing=result.missing_codes, invalid=result.invalid_formats, empty=result.empty_cells,
+                common=result.common_values,
+                prefixes=", ".join(result.prefixes) or self._translator.text("restoration.csv.analysis.no_prefixes"),
+                incompatibilities="\n".join(result.possible_incompatibilities)
+                    or self._translator.text("restoration.csv.analysis.no_incompatibilities")))
+        elif isinstance(result, RestorationResult):
+            representation_id = (
+                "restoration.csv.representation.canonical_summary"
+                if result.representation_policy is RepresentationPolicy.CANONICAL else
+                _REPRESENTATION_IDS[result.representation_policy])
+            self.summary.setPlainText(self._translator.text("restoration.csv.result.summary",
+                path=str(result.output_path), rows=result.rows_processed, restored=result.restored_codes,
+                missing=result.missing_codes, preserved=result.preserved_common_values, empty=result.empty_cells,
+                seconds=f"{result.duration_seconds:.2f}",
+                missing_policy=self._translator.text(_MISSING_POLICY_IDS[result.missing_code_policy]),
+                representation=self._translator.text(representation_id)))
 
     def _cancelled(self) -> None:
         self._operation_succeeded = False
         self.package_controls.clear_password()
-        self._set_status("A operacao foi cancelada com seguranca.", is_error=False, state="warning")
+        self._set_status_id("restoration.csv.status.cancelled", state="warning")
 
     def _failed(self, error: Exception) -> None:
         self._operation_succeeded = False
         self.package_controls.clear_password()
         self._last_error = error
         if isinstance(error, RestorationSecurityError):
-            message = "Não foi possível recuperar um ou mais mapeamentos com segurança."
+            self._set_status_id("restoration.csv.error.security", is_error=True)
+        elif self._package_mode() and isinstance(error, RestorationError):
+            # The worker intentionally redacts all package failures to one safe
+            # outcome. Present that outcome in this GUI's locale, not by parsing
+            # or translating backend text. Keep the original error for diagnostics.
+            self._set_status_id("restoration.csv.error.package", is_error=True)
         elif isinstance(error, RestorationError):
-            message = str(error)
+            self._set_status(str(error), is_error=True)
         else:
-            message = "Nao foi possivel concluir a restauracao com seguranca."
-        self._set_status(message, is_error=True)
+            self._set_status_id("restoration.csv.error.unexpected", is_error=True)
 
     def _worker_finished(self) -> None:
         self.package_controls.clear_password()
@@ -648,7 +760,7 @@ class RestorationWidget(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._worker.request_cancel()
             self.cancel_button.setEnabled(False)
-            self._set_status("Cancelamento solicitado...", is_error=False)
+            self._set_status_id("restoration.csv.status.cancelling")
 
     def has_running_worker(self) -> bool:
         return self._worker is not None and self._worker.isRunning()
@@ -703,10 +815,22 @@ class RestorationWidget(QWidget):
         if not QDesktopServices.openUrl(
             QUrl.fromLocalFile(str(self._last_output_path.parent))
         ):
-            self._set_status("Nao foi possivel abrir a pasta do arquivo.", is_error=True)
+            self._set_status_id("restoration.csv.error.open_folder", is_error=True)
+
+    def _show_input_error(self, error: RestorationError) -> None:
+        if isinstance(error, RestorationInputError):
+            self._set_status_id(error.message_id, is_error=True)
+        else:
+            self._set_status(str(error), is_error=True)
+
+    def _set_status_id(self, message_id: str, *, is_error: bool = False,
+                       state: FeedbackState = "neutral", **parameters: str | int | float) -> None:
+        self._set_status(self._translator.text(message_id, **parameters), is_error=is_error, state=state)
+        self._status_message = (message_id, parameters)
 
     def _set_status(
         self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
     ) -> None:
+        self._status_message = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if is_error else state)

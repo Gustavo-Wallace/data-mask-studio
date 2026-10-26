@@ -223,7 +223,7 @@ def test_package_output_confirmation_and_browse(gui, tmp_path, monkeypatch, over
     widget.package_controls.browse.click()
     widget.package_controls.password.setText(PASSWORD)
     output.write_text("protected", encoding="utf-8")
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(widget, "_confirm_sensitive_data", lambda: QMessageBox.StandardButton.Ok)
     monkeypatch.setattr(QMessageBox, "exec", lambda *a, **k: QMessageBox.StandardButton.Yes if overwrite else QMessageBox.StandardButton.No)
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(output), ""))
     widget._choose_output()

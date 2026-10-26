@@ -83,11 +83,7 @@ def test_sensitive_warning_requires_explicit_confirmation(
     widget = RestorationWidget(lambda: vault)
     widget.load_csv(str(source))
     widget._checkboxes[0].setChecked(True)
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *args, **kwargs: QMessageBox.StandardButton.Cancel,
-    )
+    monkeypatch.setattr(widget, "_confirm_sensitive_data", lambda: QMessageBox.StandardButton.Cancel)
 
     widget._choose_output()
 
@@ -108,11 +104,7 @@ def test_existing_output_requires_overwrite_confirmation(
     widget = RestorationWidget(lambda: vault)
     widget.load_csv(str(source))
     widget._checkboxes[0].setChecked(True)
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *args, **kwargs: QMessageBox.StandardButton.Ok,
-    )
+    monkeypatch.setattr(widget, "_confirm_sensitive_data", lambda: QMessageBox.StandardButton.Ok)
     monkeypatch.setattr(
         QFileDialog,
         "getSaveFileName",
