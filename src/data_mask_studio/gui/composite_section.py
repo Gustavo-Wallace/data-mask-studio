@@ -45,6 +45,8 @@ class CompositeSection(QGroupBox):
         self.add_button.setToolTip(translator.text("masking.composite.add_tooltip"))
         self.empty_label.setText(translator.text("masking.composite.empty"))
         self.table.retranslate(translator)
+        if getattr(self, "_editor_dialog", None) is not None:
+            self._editor_dialog.retranslate(translator)
         for index, composite in enumerate(self.configurations):
             action = self.table.cellWidget(index, 0)
             with QSignalBlocker(action):
@@ -171,15 +173,20 @@ class CompositeSection(QGroupBox):
             # O diálogo valida estrutura; ação/prefixo são editados na tabela.
             self._validate(tuple(replace(c, action=ColumnAction.PRESERVE, prefix="") for c in proposed))
 
-        dialog = CompositeDialog(inspection, validate, None if index is None else self.configurations[index], self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            proposed = list(self.configurations)
-            if index is None:
-                proposed.append(dialog.result_config)
-            else:
-                proposed[index] = dialog.result_config
-            self.set_configurations(proposed, notify=True)
-        dialog.deleteLater()
+        dialog = CompositeDialog(inspection, validate, None if index is None else self.configurations[index], self,
+                                 translator=self._translator)
+        self._editor_dialog = dialog
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                proposed = list(self.configurations)
+                if index is None:
+                    proposed.append(dialog.result_config)
+                else:
+                    proposed[index] = dialog.result_config
+                self.set_configurations(proposed, notify=True)
+        finally:
+            self._editor_dialog = None
+            dialog.deleteLater()
 
     def remove(self, index):
         self.set_configurations(self.configurations[:index] + self.configurations[index + 1:], notify=True)

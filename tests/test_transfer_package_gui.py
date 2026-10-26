@@ -2,7 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QLineEdit, QInputDialog
+from PySide6.QtWidgets import QLineEdit
 
 from data_mask_studio.gui import anonymization_widget as module
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
@@ -161,7 +161,7 @@ def test_profile_contains_no_execution_options(gui, tmp_path, monkeypatch):
     _, widget, _ = gui
     controls = enable(widget, tmp_path)
     destination = controls.destination.text()
-    monkeypatch.setattr(QInputDialog, 'getText', lambda *a, **k: ('Profile', True))
+    monkeypatch.setattr(widget, '_ask_profile_name', lambda **k: ('Profile', True))
     widget.save_as_profile()
     text = (tmp_path / 'profiles.json').read_text(encoding='utf-8')
     assert PASSWORD not in text and destination not in text

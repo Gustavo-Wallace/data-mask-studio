@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from qt_lifecycle import qt_widget_lifecycle
 
-from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from data_mask_studio.anonymization import ColumnAction, ColumnConfig
 from data_mask_studio.app import create_application
@@ -235,8 +235,8 @@ def test_manual_configuration_is_not_replaced_without_confirmation(
     )
     window._prefix_fields[0].setText("MANUAL")
     monkeypatch.setattr(
-        QMessageBox,
-        "question",
+        window.anonymization_widget,
+        "_confirm",
         lambda *args, **kwargs: QMessageBox.StandardButton.No,
     )
 
@@ -263,10 +263,10 @@ def test_save_rename_update_and_delete_profile_from_interface(
     )
     window.validate_current_configuration()
     names = iter((("Perfil inicial", True), ("Perfil final", True)))
-    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: next(names))
+    monkeypatch.setattr(window.anonymization_widget, "_ask_profile_name", lambda **kwargs: next(names))
     monkeypatch.setattr(
-        QMessageBox,
-        "question",
+        window.anonymization_widget,
+        "_confirm",
         lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
     )
 

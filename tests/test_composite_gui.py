@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
 from shiboken6 import isValid
 from PySide6.QtGui import QWheelEvent
-from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from data_mask_studio.app import create_application
 from data_mask_studio.anonymization import ColumnAction as Action
@@ -189,8 +189,8 @@ def test_profile_save_load_update_and_csv_reset(gui, monkeypatch):
     app, widget, service = gui
     original = create(widget)
     widget.validate_current_configuration()
-    monkeypatch.setattr(QInputDialog, 'getText', lambda *a, **k: ('Perfil composto', True))
-    monkeypatch.setattr(QMessageBox, 'question', lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, '_ask_profile_name', lambda **k: ('Perfil composto', True))
+    monkeypatch.setattr(widget, '_confirm', lambda *a, **k: QMessageBox.StandardButton.Yes)
     widget.save_as_profile()
     profile = service.list_profiles()[0]
     assert profile.composites == (original,) and profile.format_version == 2
@@ -220,7 +220,7 @@ def test_v1_profile_load_clears_composites(gui, monkeypatch):
     service.repository.path.write_text(json.dumps(document), encoding='utf-8')
     widget.refresh_profiles(profile.identifier)
     create(widget)
-    monkeypatch.setattr(QMessageBox, 'question', lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, '_confirm', lambda *a, **k: QMessageBox.StandardButton.Yes)
     widget.apply_selected_profile()
     assert widget.composite_section.configurations == () and widget.generate_button.isEnabled()
 
@@ -265,7 +265,7 @@ def test_invalid_profile_retained_for_review_never_starts_worker(gui, tmp_path, 
     invalid = replace(config, components=(CompositeSource(SourceColumnRef('AUSENTE')), config.components[1]))
     profile = service.create('Incompatível', widget._column_configs, composites=(invalid,))
     widget.refresh_profiles(profile.identifier)
-    monkeypatch.setattr(QMessageBox, 'question', lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, '_confirm', lambda *a, **k: QMessageBox.StandardButton.Yes)
     widget.apply_selected_profile()
     assert widget.composite_section.configurations == (invalid,)
     assert not widget.generate_button.isEnabled()
@@ -283,7 +283,7 @@ def test_unknown_columns_require_explicit_review_and_scalar_changes_keep_composi
     config = create(widget)
     profile = service.create('Incompleto', widget._column_configs[:2], composites=(config,))
     widget.refresh_profiles(profile.identifier)
-    monkeypatch.setattr(QMessageBox, 'question', lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, '_confirm', lambda *a, **k: QMessageBox.StandardButton.Yes)
     widget.apply_selected_profile()
     widget.validate_current_configuration()
     assert not widget.generate_button.isEnabled()
@@ -348,8 +348,8 @@ def test_action_transitions_validation_and_profile_round_trip(gui, monkeypatch):
     dialog.name_field.setText('EDITADA')
     dialog.accept()
     assert dialog.result_config == replace(masked, output_name='EDITADA')
-    monkeypatch.setattr(QInputDialog, 'getText', lambda *a, **k: ('Ações', True))
-    monkeypatch.setattr(QMessageBox, 'question', lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, '_ask_profile_name', lambda **k: ('Ações', True))
+    monkeypatch.setattr(widget, '_confirm', lambda *a, **k: QMessageBox.StandardButton.Yes)
     widget.save_as_profile()
     section.set_configurations(())
     widget.apply_selected_profile()

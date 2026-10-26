@@ -112,7 +112,7 @@ def test_composite_owned_labels_translate_but_freeform_validation_errors_do_not(
     assert prefix.toolTip() == "Use the prefix without a hyphen, for example CORR."
 
 
-def test_composite_editor_is_not_partially_translated_by_main_section(tmp_path, monkeypatch):
+def test_composite_editor_receives_main_section_translator(tmp_path, monkeypatch):
     create_application([])
     source = tmp_path / "synthetic.csv"
     source.write_text("NOME,CPF\nSynthetic,123\n", encoding="utf-8")
@@ -126,7 +126,7 @@ def test_composite_editor_is_not_partially_translated_by_main_section(tmp_path, 
 
     monkeypatch.setattr(CompositeDialog, "exec", reject)
     section.add_button.click()
-    assert observed == [("Coluna composta", "Valor exato")]
+    assert observed == [("Composite column", "Exact value")]
     assert section.configurations == ()
 
 

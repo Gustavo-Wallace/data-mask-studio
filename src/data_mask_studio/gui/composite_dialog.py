@@ -2,7 +2,7 @@
 from collections.abc import Callable
 from uuid import uuid4
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
     QLayout, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
@@ -18,48 +18,68 @@ from data_mask_studio.gui.components.presentation import (
 from data_mask_studio.normalization import NORMALIZATION_OPTIONS, NormalizationRule
 from data_mask_studio.processing.models import CompositeColumnConfig, CompositeSource
 from data_mask_studio.processing.planner import PlanningError
+from data_mask_studio.i18n import Translator
 
 
-def source_label(reference) -> str:
-    suffix = " (gerado)" if reference.is_synthetic else (
-        f" ({reference.occurrence + 1})" if reference.occurrence is not None else ""
-    )
+def source_label(reference, translator: Translator | None = None) -> str:
+    if reference.is_synthetic:
+        return (translator or Translator("pt-BR")).text(
+            "masking.composite.generated_source", header=reference.header,
+        )
+    suffix = f" ({reference.occurrence + 1})" if reference.occurrence is not None else ""
     return reference.header + suffix
 
 
 class ComponentRow(QWidget):
-    def __init__(self, inspection, component=None, parent=None):
+    def __init__(self, inspection, component=None, parent=None, *, translator: Translator | None = None):
         super().__init__(parent)
+        self._translator = translator or Translator("pt-BR")
+        self._unavailable_sources: set[int] = set()
         self.source = ScrollSafeComboBox()
-        self.source.setAccessibleName("Coluna fonte")
         self.source.setMinimumContentsLength(12)
         self.source.setSizeAdjustPolicy(ScrollSafeComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         for index in range(len(inspection.headers)):
             reference = source_ref_at(inspection, index)
-            self.source.addItem(source_label(reference), reference)
+            self.source.addItem(source_label(reference, self._translator), reference)
         self.normalization = ScrollSafeComboBox()
-        self.normalization.setAccessibleName("Normalização do componente")
         for rule, label in NORMALIZATION_OPTIONS:
             self.normalization.addItem(label, rule)
         if component is not None:
             try:
                 index = bind_source(component.reference, inspection)
             except SourceBindingError:
-                self.source.addItem(source_label(component.reference) + " (indisponível)", component.reference)
+                self.source.addItem("", component.reference)
                 index = self.source.count() - 1
+                self._unavailable_sources.add(index)
             self.source.setCurrentIndex(index)
             self.normalization.setCurrentIndex(self.normalization.findData(component.normalization_rule))
         self.up = QPushButton("↑")
-        self.up.setAccessibleName("Mover componente para cima")
         self.down = QPushButton("↓")
-        self.down.setAccessibleName("Mover componente para baixo")
-        self.remove = QPushButton("Remover")
+        self.remove = QPushButton()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.source, 1)
         layout.addWidget(self.normalization, 1)
         for button in (self.up, self.down, self.remove):
             layout.addWidget(button)
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        self._translator = translator
+        self.source.setAccessibleName(translator.text("composite.editor.source"))
+        self.normalization.setAccessibleName(translator.text("composite.editor.normalization"))
+        with QSignalBlocker(self.source), QSignalBlocker(self.normalization):
+            for index in range(self.source.count()):
+                text = source_label(self.source.itemData(index), translator)
+                if index in self._unavailable_sources:
+                    text = translator.text("composite.editor.unavailable_source", source=text)
+                self.source.setItemText(index, text)
+            for index in range(self.normalization.count()):
+                rule = NormalizationRule(self.normalization.itemData(index))
+                self.normalization.setItemText(index, translator.text(f"masking.normalization.{rule.value}"))
+        self.up.setAccessibleName(translator.text("composite.editor.move_up"))
+        self.down.setAccessibleName(translator.text("composite.editor.move_down"))
+        self.remove.setText(translator.text("composite.editor.remove"))
 
     def component(self):
         return CompositeSource(self.source.currentData(), NormalizationRule(self.normalization.currentData()))
@@ -70,9 +90,11 @@ class CompositeDialog(QDialog):
         self, inspection: CSVInspectionResult,
         validate: Callable[[CompositeColumnConfig], object],
         composite: CompositeColumnConfig | None = None, parent=None,
+        *, translator: Translator | None = None,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Coluna composta")
+        self._translator = translator or Translator("pt-BR")
+        self._editing = composite is not None
         self._inspection = inspection
         self._validate = validate
         self._identifier = composite.identifier if composite else uuid4()
@@ -82,8 +104,9 @@ class CompositeDialog(QDialog):
         self.rows: list[ComponentRow] = []
         self.name_field = QLineEdit(composite.output_name if composite else "")
         form = QFormLayout()
-        form.addRow("Cabeçalho de saída:", self.name_field)
-        self.name_field.setAccessibleName("Cabeçalho de saída")
+        self.name_label = QLabel()
+        self.name_label.setBuddy(self.name_field)
+        form.addRow(self.name_label, self.name_field)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         body = QWidget()
@@ -91,29 +114,26 @@ class CompositeDialog(QDialog):
         self.rows_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.rows_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(body)
-        self.add_button = QPushButton("+ Adicionar componente")
+        self.add_button = QPushButton()
         self.add_button.clicked.connect(lambda: self.add_component())
-        help_label = QLabel("Colunas excluídas da saída ainda podem ser usadas como fontes.\n"
-                            "A ordem dos componentes altera a identidade da coluna composta.")
-        help_label.setWordWrap(True)
+        self.help_label = QLabel()
+        self.help_label.setWordWrap(True)
+        self.components_label = QLabel()
         self.error_label = QLabel()
         self.error_label.setTextFormat(Qt.TextFormat.PlainText)
         self.error_label.setWordWrap(True)
-        self.error_label.setAccessibleName("Erro de configuração composta")
         set_feedback_state(self.error_label, "error")
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        self.buttons.button(QDialogButtonBox.StandardButton.Save).setText("Salvar" if composite else "Criar")
-        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
         set_button_role(self.buttons.button(QDialogButtonBox.StandardButton.Save), "primary")
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
         configure_dialog_layout(layout)
         layout.addLayout(form)
-        layout.addWidget(QLabel("Componentes"))
+        layout.addWidget(self.components_label)
         layout.addWidget(self.scroll, 1)
         layout.addWidget(self.add_button)
-        layout.addWidget(help_label)
+        layout.addWidget(self.help_label)
         layout.addWidget(self.error_label)
         layout.addWidget(self.buttons)
         if composite:
@@ -124,17 +144,35 @@ class CompositeDialog(QDialog):
             self.add_component()
             if len(inspection.headers) > 1:
                 self.rows[1].source.setCurrentIndex(1)
+        self.retranslate(self._translator)
         available = self.screen().availableGeometry()
         self.resize(min(self.sizeHint().width(), available.width()), min(self.sizeHint().height(), available.height()))
 
     def add_component(self, component=None):
-        row = ComponentRow(self._inspection, component, self)
+        row = ComponentRow(self._inspection, component, self, translator=self._translator)
         row.up.clicked.connect(lambda: self.move_component(row, -1))
         row.down.clicked.connect(lambda: self.move_component(row, 1))
         row.remove.clicked.connect(lambda: self.remove_component(row))
         self.rows.append(row)
         self.rows_layout.addWidget(row)
         self._refresh_order()
+
+    def retranslate(self, translator: Translator) -> None:
+        """Relabel the live editor without rebuilding rows or validating/saving."""
+        self._translator = translator
+        self.setWindowTitle(translator.text("composite.editor.title"))
+        self.name_label.setText(translator.text("composite.editor.output_label"))
+        self.name_field.setAccessibleName(translator.text("masking.table.output_header"))
+        self.components_label.setText(translator.text("masking.composite.components"))
+        self.add_button.setText(translator.text("composite.editor.add"))
+        self.help_label.setText(translator.text("composite.editor.help"))
+        self.error_label.setAccessibleName(translator.text("composite.editor.error_accessible"))
+        self.buttons.button(QDialogButtonBox.StandardButton.Save).setText(translator.text(
+            "composite.editor.save" if self._editing else "composite.editor.create"
+        ))
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(translator.text("dialog.button.cancel"))
+        for row in self.rows:
+            row.retranslate(translator)
 
     def move_component(self, row, offset):
         index = self.rows.index(row)

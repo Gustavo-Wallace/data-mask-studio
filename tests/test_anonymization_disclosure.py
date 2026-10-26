@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QLabel, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QLabel, QMessageBox
 
 from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio.anonymization import AnonymizationResult, ColumnConfig
@@ -174,7 +174,7 @@ def test_profiles_remain_manageable_without_csv_and_apply_after_selection(page, 
     assert widget.profile_controls.isVisible() and widget.profile_combo.isEnabled()
     assert not widget.apply_profile_button.isEnabled() and not widget.save_profile_button.isEnabled()
     assert widget.rename_profile_button.isEnabled() and widget.delete_profile_button.isEnabled()
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Renamed synthetic profile", True))
+    monkeypatch.setattr(widget, "_ask_profile_name", lambda **k: ("Renamed synthetic profile", True))
     widget.rename_profile_button.click()
     assert widget.profile_combo.currentText() == "Renamed synthetic profile"
     load(page)
@@ -194,8 +194,8 @@ def test_expanded_profile_controls_save_update_rename_and_delete_using_existing_
     widget.validate_button.click()
     widget.profile_toggle.click()
     names = iter((("Synthetic profile", True), ("Renamed synthetic profile", True)))
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(names))
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, "_ask_profile_name", lambda **k: next(names))
+    monkeypatch.setattr(widget, "_confirm", lambda *a, **k: QMessageBox.StandardButton.Yes)
     widget.save_profile_button.click()
     identifier = widget.profile_combo.currentData()
     assert identifier is not None and widget.profile_controls.isVisible()

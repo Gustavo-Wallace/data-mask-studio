@@ -5,12 +5,35 @@ from data_mask_studio.gui.styles import section_title_stylesheet
 from data_mask_studio.i18n import Translator
 
 from PySide6.QtWidgets import (
+    QInputDialog,
+    QLineEdit,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
+
+
+class ProfileNameDialog(QInputDialog):
+    """The existing native text-input dialog, with explicitly scoped labels."""
+
+    def __init__(self, parent=None, *, rename=False, text="", translator: Translator | None = None):
+        super().__init__(parent)
+        self._rename = rename
+        self.setInputMode(QInputDialog.InputMode.TextInput)
+        self.setTextValue(text)
+        self.retranslate(translator or Translator("pt-BR"))
+
+    def retranslate(self, translator: Translator) -> None:
+        self._translator = translator
+        self.setWindowTitle(translator.text("profile.rename_title" if self._rename else "profile.save_title"))
+        self.setLabelText(translator.text("profile.new_name" if self._rename else "profile.name"))
+        field = self.findChild(QLineEdit)
+        if field is not None:
+            field.setAccessibleName(self.labelText())
+        self.setOkButtonText(translator.text("dialog.button.ok"))
+        self.setCancelButtonText(translator.text("dialog.button.cancel"))
 
 
 class ProfileControls(QWidget):

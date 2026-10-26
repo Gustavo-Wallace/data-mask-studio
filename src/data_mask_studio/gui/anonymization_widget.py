@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -62,7 +61,8 @@ from data_mask_studio.gui.column_configuration_table import (
 )
 from data_mask_studio.gui.detection_dialog import DetectionDialog
 from data_mask_studio.gui.detection_worker import DetectionWorker
-from data_mask_studio.gui.profile_controls import ProfileControls
+from data_mask_studio.gui.profile_controls import ProfileControls, ProfileNameDialog
+from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.gui.components.presentation import (
     FeedbackState, confirm_destructive_action, set_feedback_state,
@@ -130,6 +130,9 @@ class AnonymizationWidget(QWidget):
         self._completed_result = None
         self._status_result = None
         self._analyzing = False
+        self._profile_name_dialog: ProfileNameDialog | None = None
+        self._confirmation_dialog: QMessageBox | None = None
+        self._confirmation_message = None
 
         self.select_button = QPushButton("Selecionar CSV")
         self.select_button.clicked.connect(self._select_csv)
@@ -380,6 +383,12 @@ class AnonymizationWidget(QWidget):
         self.config_table.retranslate(translator)
         self.composite_section.retranslate(translator)
         self.transfer_controls.retranslate(translator)
+        if self._profile_name_dialog is not None:
+            self._profile_name_dialog.retranslate(translator)
+        if self._confirmation_dialog is not None:
+            self._render_confirmation()
+        if self._detection_dialog is not None:
+            self._detection_dialog.retranslate(translator)
         self._translate_column_widgets()
         self._render_selected_count()
         if self._inspection_result is not None:
@@ -431,6 +440,39 @@ class AnonymizationWidget(QWidget):
     def _set_processed_id(self, message_id: str, **parameters: str | int | float) -> None:
         self._processed_message = (message_id, parameters)
         self.processed_count_label.setText(self._translator.text(message_id, **parameters))
+
+    def _ask_profile_name(self, *, rename: bool = False, text: str = "") -> tuple[str, bool]:
+        dialog = ProfileNameDialog(self, rename=rename, text=text, translator=self._translator)
+        self._profile_name_dialog = dialog
+        try:
+            accepted = dialog.exec() == dialog.DialogCode.Accepted
+            return dialog.textValue(), accepted
+        finally:
+            self._profile_name_dialog = None
+            dialog.deleteLater()
+
+    def _confirm(self, title_id: str, message_id: str, **parameters: str | int | float) -> int:
+        """Native question semantics; only labels are scoped to this workflow."""
+        dialog = QMessageBox(QMessageBox.Icon.Question, "", "",
+                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        dialog.setEscapeButton(QMessageBox.StandardButton.No)
+        self._confirmation_dialog = dialog
+        self._confirmation_message = (title_id, message_id, parameters)
+        self._render_confirmation()
+        try:
+            return dialog.exec()
+        finally:
+            self._confirmation_dialog = None
+            self._confirmation_message = None
+            dialog.deleteLater()
+
+    def _render_confirmation(self) -> None:
+        title_id, message_id, parameters = self._confirmation_message
+        self._confirmation_dialog.setWindowTitle(self._translator.text(title_id))
+        self._confirmation_dialog.setText(self._translator.text(message_id, **parameters))
+        localize_standard_buttons(self._confirmation_dialog, self._translator)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -842,7 +884,7 @@ class AnonymizationWidget(QWidget):
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
         self._suggestions = result.suggestions
-        dialog = DetectionDialog(result.suggestions, result.rows_analyzed, self)
+        dialog = DetectionDialog(result.suggestions, result.rows_analyzed, self, translator=self._translator)
         dialog.individual_requested.connect(self.apply_detection_suggestion)
         dialog.bulk_requested.connect(self.apply_detection_suggestions)
         dialog.suggestions_cleared.connect(self.clear_detection_suggestions)
@@ -910,14 +952,7 @@ class AnonymizationWidget(QWidget):
         if row in self._manually_changed_rows and self._suggestion_changes_row(
             row, suggestion
         ):
-            answer = QMessageBox.question(
-                self,
-                "Substituir configuração manual",
-                "Esta coluna possui uma configuração alterada manualmente. "
-                "Deseja substituí-la pela sugestão?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
+            answer = self._confirm("detection.replace_title", "detection.replace_text")
             if answer != QMessageBox.StandardButton.Yes:
                 return
         self._apply_detection_rows((row,))
@@ -936,17 +971,10 @@ class AnonymizationWidget(QWidget):
             and self._suggestion_changes_row(row, self._suggestions[row])
             for row in applicable
         )
-        warning = (
-            " Algumas configurações manuais também serão substituídas."
-            if manual_changes
-            else ""
-        )
-        answer = QMessageBox.question(
-            self,
-            "Aplicar sugestões",
-            f"Aplicar {len(applicable)} sugestões selecionadas?{warning}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        answer = self._confirm(
+            "detection.apply_title",
+            "detection.apply_manual_text" if manual_changes else "detection.apply_text",
+            count=len(applicable),
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -1011,11 +1039,7 @@ class AnonymizationWidget(QWidget):
 
     def clear_detection_suggestions(self) -> None:
         self._clear_detection_suggestions()
-        self._set_status(
-            "Sugestões removidas. A configuração atual foi preservada.",
-            is_error=False,
-            state="success",
-        )
+        self._set_status_id("detection.cleared", state="success")
 
     def _clear_detection_suggestions(self) -> None:
         self._suggestions = ()
@@ -1029,11 +1053,10 @@ class AnonymizationWidget(QWidget):
             self._profiles = []
             self.profile_combo.clear()
             self._update_profile_actions()
-            self._set_status(
-                self._profile_initialization_error
-                or "Os perfis de configuração não estão disponíveis.",
-                is_error=True,
-            )
+            if self._profile_initialization_error:
+                self._set_status(self._profile_initialization_error, is_error=True)
+            else:
+                self._set_status_id("profile.unavailable", is_error=True)
             self.profiles_changed.emit()
             return
         try:
@@ -1086,14 +1109,9 @@ class AnonymizationWidget(QWidget):
             or self._inspection_result is None
             or not self._configuration_validated
         ):
-            self._set_status(
-                "Selecione um CSV e valide a configuração antes de salvar o perfil.",
-                is_error=True,
-            )
+            self._set_status_id("profile.validate_first", is_error=True)
             return
-        name, accepted = QInputDialog.getText(
-            self, "Salvar perfil", "Nome do perfil:"
-        )
+        name, accepted = self._ask_profile_name()
         if not accepted:
             return
         try:
@@ -1104,7 +1122,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(profile.identifier)
-        self._set_status(f"Perfil “{profile.name}” salvo com sucesso.", is_error=False, state="success")
+        self._set_status_id("profile.saved", name=profile.name, state="success")
 
     def update_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -1114,18 +1132,9 @@ class AnonymizationWidget(QWidget):
             or self._inspection_result is None
             or not self._configuration_validated
         ):
-            self._set_status(
-                "Selecione um perfil, um CSV e uma configuração válida.",
-                is_error=True,
-            )
+            self._set_status_id("profile.select_valid", is_error=True)
             return
-        answer = QMessageBox.question(
-            self,
-            "Atualizar perfil",
-            f"Substituir a configuração do perfil “{profile.name}”?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
+        answer = self._confirm("profile.update_title", "profile.update_text", name=profile.name)
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
@@ -1138,7 +1147,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(updated.identifier)
-        self._set_status(f"Perfil “{updated.name}” atualizado.", is_error=False, state="success")
+        self._set_status_id("profile.updated", name=updated.name, state="success")
 
     def apply_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -1147,16 +1156,10 @@ class AnonymizationWidget(QWidget):
             or self._profile_service is None
             or self._inspection_result is None
         ):
-            self._set_status("Selecione um CSV e um perfil compatível.", is_error=True)
+            self._set_status_id("profile.select_compatible", is_error=True)
             return
         if self._configuration_dirty:
-            answer = QMessageBox.question(
-                self,
-                "Substituir configuração",
-                "A configuração atual foi alterada e será substituída. Continuar?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
+            answer = self._confirm("profile.replace_title", "profile.replace_text")
             if answer != QMessageBox.StandardButton.Yes:
                 return
 
@@ -1164,9 +1167,7 @@ class AnonymizationWidget(QWidget):
             profile, self._inspection_result
         )
         if not application.has_matches and not application.composites:
-            self._set_status(
-                "O perfil não é compatível com o CSV selecionado.", is_error=True
-            )
+            self._set_status_id("profile.incompatible", is_error=True)
             return
 
         self._apply_profile_configurations(application.configurations)
@@ -1176,13 +1177,13 @@ class AnonymizationWidget(QWidget):
         self._configuration_dirty = False
         self.validate_current_configuration()
         if self._configuration_validated:
-            self._set_status(f"Perfil “{profile.name}” aplicado.", is_error=False, state="success")
+            self._set_status_id("profile.applied", name=profile.name, state="success")
         else:
             details = self.status_label.text()
             scalar_validation = validate_configuration(self._column_configs)
             if scalar_validation.error_message and scalar_validation.error_message not in details:
                 details += " " + scalar_validation.error_message
-            self._set_status("O perfil foi aplicado parcialmente. " + details, is_error=True)
+            self._set_status_id("profile.partial", details=details, is_error=True)
 
     def _apply_profile_configurations(
         self, configurations: tuple[ProfileColumn, ...]
@@ -1227,12 +1228,7 @@ class AnonymizationWidget(QWidget):
         profile = self._selected_profile()
         if profile is None or self._profile_service is None:
             return
-        name, accepted = QInputDialog.getText(
-            self,
-            "Renomear perfil",
-            "Novo nome:",
-            text=profile.name,
-        )
+        name, accepted = self._ask_profile_name(rename=True, text=profile.name)
         if not accepted:
             return
         try:
@@ -1241,7 +1237,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles(renamed.identifier)
-        self._set_status(f"Perfil renomeado para “{renamed.name}”.", is_error=False, state="success")
+        self._set_status_id("profile.renamed", name=renamed.name, state="success")
 
     def delete_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -1249,8 +1245,9 @@ class AnonymizationWidget(QWidget):
             return
         answer = confirm_destructive_action(
             self,
-            "Excluir perfil",
-            f"Excluir somente o perfil “{profile.name}”?",
+            self._translator.text("profile.delete_title"),
+            self._translator.text("profile.delete_text", name=profile.name),
+            translator=self._translator,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -1260,7 +1257,7 @@ class AnonymizationWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         self._refresh_profiles()
-        self._set_status(f"Perfil “{profile.name}” excluído.", is_error=False, state="success")
+        self._set_status_id("profile.deleted", name=profile.name, state="success")
 
     def _choose_output_file(self) -> None:
         if self._inspection_result is None or not self._configuration_validated:

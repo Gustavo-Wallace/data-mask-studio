@@ -85,8 +85,8 @@ def test_individual_and_accepted_suggestions_are_applied_explicitly(
     assert not widget._column_configs[1].anonymize
 
     monkeypatch.setattr(
-        QMessageBox,
-        "question",
+        widget,
+        "_confirm",
         lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
     )
     dialog._acceptance_fields[1].setChecked(True)
@@ -110,11 +110,11 @@ def test_high_confidence_bulk_application_requires_confirmation(
     assert dialog is not None
     confirmations: list[str] = []
 
-    def confirm(_parent, _title, message, *_args, **_kwargs):
-        confirmations.append(message)
+    def confirm(_title_id, message_id, **parameters):
+        confirmations.append(widget._translator.text(message_id, **parameters))
         return QMessageBox.StandardButton.Yes
 
-    monkeypatch.setattr(QMessageBox, "question", confirm)
+    monkeypatch.setattr(widget, "_confirm", confirm)
     dialog.apply_high_button.click()
 
     assert confirmations
@@ -138,8 +138,8 @@ def test_manual_configuration_is_preserved_without_confirmation(
     widget._prefix_fields[0].setText("MANUAL")
     run_analysis(widget, application)
     monkeypatch.setattr(
-        QMessageBox,
-        "question",
+        widget,
+        "_confirm",
         lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
     )
 
