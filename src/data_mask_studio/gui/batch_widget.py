@@ -1,8 +1,8 @@
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QTextCursor
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 
 from PySide6.QtWidgets import (
@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.batch import (
-    STATUS_LABELS,
     BatchError,
     BatchFile,
     BatchFileStatus,
@@ -43,6 +42,8 @@ from data_mask_studio.gui.components.presentation import (
     FeedbackState, configure_result_area, set_button_role, set_feedback_state,
 )
 from data_mask_studio.gui.visual_tokens import METRICS
+from data_mask_studio.gui.dialog_localization import localize_standard_buttons
+from data_mask_studio.i18n import Translator
 from data_mask_studio.profiles import (
     ConfigurationProfile,
     ProfileError,
@@ -62,8 +63,15 @@ class BatchWidget(QWidget):
         profile_service: ProfileService | None,
         key_provider: KeyProvider,
         vault_repository_factory: VaultRepositoryFactory,
+        *, translator: Translator | None = None,
     ) -> None:
         super().__init__()
+        self._translator = translator or Translator("pt-BR")
+        self._status_message = None
+        self._current_progress: BatchProgress | None = None
+        self._current_idle = True
+        self._displayed_summary: BatchSummary | None = None
+        self._output_confirmation: QMessageBox | None = None
         self._profile_service = profile_service
         self._service = BatchService(profile_service) if profile_service else None
         self._key_provider = key_provider
@@ -133,8 +141,12 @@ class BatchWidget(QWidget):
         output_row.addWidget(self.choose_output_button)
         configuration = QFormLayout()
         configuration.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        configuration.addRow("Perfil:", self.profile_combo)
-        configuration.addRow("Pasta de saída:", output_row)
+        self.profile_label = QLabel()
+        self.profile_label.setBuddy(self.profile_combo)
+        self.output_label = QLabel()
+        self.output_label.setBuddy(self.output_field)
+        configuration.addRow(self.profile_label, self.profile_combo)
+        configuration.addRow(self.output_label, output_row)
 
         self.validate_button = QPushButton("Validar arquivos")
         self.validate_button.clicked.connect(self.validate_files)
@@ -159,6 +171,7 @@ class BatchWidget(QWidget):
         self.overall_progress.setValue(0)
         self.current_progress_label = QLabel("Nenhum processamento em andamento.")
         self.current_progress_label.setWordWrap(True)
+        self.current_progress_label.setTextFormat(Qt.TextFormat.PlainText)
         self.summary_output = EmptyStateTextEdit(
             "O resumo do lote aparecerá aqui."
         )
@@ -167,6 +180,7 @@ class BatchWidget(QWidget):
         configure_result_area(self.summary_output, 80)
         self.status_label = QLabel("Adicione arquivos CSV para começar.")
         self.status_label.setWordWrap(True)
+        self.status_label.setTextFormat(Qt.TextFormat.PlainText)
         set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
@@ -186,8 +200,137 @@ class BatchWidget(QWidget):
         self.summary_output.textChanged.connect(self._update_information_layout)
         self._update_information_layout()
 
+        self._set_status_id("batch.status.initial")
         self.refresh_profiles()
         self._update_actions()
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Presentation only: no profile reload, model reset, gating or worker calls."""
+        self._translator = translator
+        for widget, message_id in (
+            (self.add_files_button, "batch.add_files"),
+            (self.add_folder_button, "batch.add_folder"),
+            (self.remove_button, "batch.remove"),
+            (self.clear_button, "batch.clear"),
+            (self.profile_label, "batch.profile"),
+            (self.output_label, "batch.output_folder"),
+            (self.choose_output_button, "batch.choose_folder"),
+            (self.validate_button, "batch.validate"),
+            (self.start_button, "batch.start"),
+            (self.cancel_button, "dialog.button.cancel"),
+            (self.open_output_button, "batch.open_output"),
+        ):
+            widget.setText(translator.text(message_id))
+        self.profile_combo.setAccessibleName(translator.text("batch.profile_accessible"))
+        self.output_field.setAccessibleName(translator.text("batch.output_accessible"))
+        self.output_field.setPlaceholderText(translator.text("batch.output_placeholder"))
+        self.file_table.empty_text = translator.text("batch.files_empty")
+        self.file_table.setAccessibleDescription(self.file_table.empty_text)
+        self.summary_output.empty_text = translator.text("batch.summary_empty")
+        self.summary_output.setAccessibleDescription(self.summary_output.empty_text)
+        with QSignalBlocker(self.file_table):
+            self.file_table.setHorizontalHeaderLabels([
+                translator.text(f"batch.table.{column}")
+                for column in ("file", "path", "status", "columns", "result")
+            ])
+            for row, item in enumerate(self.files):
+                self.file_table.item(row, 2).setText(translator.text(f"batch.file_status.{item.status.value}"))
+                result = self._result_text(item)
+                self.file_table.item(row, 4).setText(result)
+                self.file_table.item(row, 4).setToolTip(result)
+        self.file_table.viewport().update()
+        self.summary_output.viewport().update()
+        if self._status_message is not None:
+            message_id, parameters, plural = self._status_message
+            self.status_label.setText(self._status_text(message_id, parameters, plural))
+        self._render_current_progress()
+        if self._displayed_summary is not None:
+            # Keep read-only report selection and scroll position as well as focus.
+            cursor = self.summary_output.textCursor()
+            anchor, position = cursor.anchor(), cursor.position()
+            horizontal = self.summary_output.horizontalScrollBar().value()
+            vertical = self.summary_output.verticalScrollBar().value()
+            with QSignalBlocker(self.summary_output):
+                self.summary_output.setPlainText(_render_summary(self._displayed_summary, translator))
+                maximum = self.summary_output.document().characterCount() - 1
+                cursor.setPosition(min(anchor, maximum))
+                cursor.setPosition(min(position, maximum), QTextCursor.MoveMode.KeepAnchor)
+                self.summary_output.setTextCursor(cursor)
+            self.summary_output.horizontalScrollBar().setValue(horizontal)
+            self.summary_output.verticalScrollBar().setValue(vertical)
+        if self._output_confirmation is not None:
+            self._retranslate_output_confirmation()
+
+    def _set_status_id(self, message_id: str, *, is_error: bool = False,
+                       state: FeedbackState = "neutral", plural: bool = False,
+                       **parameters: str | int | float) -> None:
+        text = self._status_text(message_id, parameters, plural)
+        self._set_status(text, is_error=is_error, state=state)
+        self._status_message = (message_id, parameters, plural)
+
+    def _status_text(self, message_id: str, parameters: dict, plural: bool) -> str:
+        if plural:
+            return self._translator.plural(message_id, parameters["count"], **{
+                name: value for name, value in parameters.items() if name != "count"
+            })
+        return self._translator.text(message_id, **parameters)
+
+    def _clear_summary(self) -> None:
+        self._displayed_summary = None
+        self.summary_output.clear()
+
+    def _clear_current_progress(self) -> None:
+        self._current_progress = None
+        self._current_idle = False
+        self.current_progress_label.clear()
+
+    def _render_current_progress(self) -> None:
+        progress = self._current_progress
+        if progress is not None:
+            self.current_progress_label.setText(self._translator.text(
+                "batch.current.progress", current=progress.current_file,
+                total=progress.compatible_files, filename=progress.file_name,
+                records=self._translator.plural("batch.records", progress.records_processed),
+                completed=progress.completed_files, errors=progress.error_files,
+            ))
+        else:
+            self.current_progress_label.setText(
+                self._translator.text("batch.current.idle") if self._current_idle else ""
+            )
+
+    def _result_text(self, item: BatchFile) -> str:
+        # A real successful result has structured fallback data. Validation and
+        # error messages may contain service warnings unavailable as typed fields.
+        if item.status is not BatchFileStatus.COMPLETED or item.processing_result is None:
+            return item.result_message
+        text = self._translator.text("batch.result.completed")
+        if item.processing_result.normalization_fallbacks:
+            details = "; ".join(
+                self._translator.text("batch.result.fallback_detail", header=value.header, count=value.count)
+                for value in item.processing_result.normalization_fallbacks
+            )
+            text += self._translator.text("batch.result.fallbacks", details=details)
+        return text
+
+    def _confirm_create_output(self) -> int:
+        dialog = QMessageBox(QMessageBox.Icon.Question, "", "",
+                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        dialog.setEscapeButton(QMessageBox.StandardButton.No)
+        self._output_confirmation = dialog
+        self._retranslate_output_confirmation()
+        try:
+            return dialog.exec()
+        finally:
+            self._output_confirmation = None
+            dialog.deleteLater()
+
+    def _retranslate_output_confirmation(self) -> None:
+        self._output_confirmation.setWindowTitle(self._translator.text("batch.output.create_title"))
+        self._output_confirmation.setText(self._translator.text("batch.output.create_text"))
+        localize_standard_buttons(self._output_confirmation, self._translator)
 
     def _update_information_layout(self) -> None:
         has_files = self.file_table.rowCount() > 0
@@ -258,19 +401,19 @@ class BatchWidget(QWidget):
         added = add_files(self.files, paths)
         if added:
             self._refresh_table()
-            self._set_status(f"{added} arquivo(s) adicionado(s).", is_error=False)
+            self._set_status_id("batch.files_added", count=added, plural=True)
         self._update_actions()
         return added
 
     def _choose_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Adicionar arquivos CSV", "", "Arquivos CSV (*.csv)"
+            self, self._translator.text("batch.files_title"), "", self._translator.text("masking.file.filter")
         )
         if paths:
             self.add_paths(paths)
 
     def _choose_folder(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "Adicionar pasta")
+        directory = QFileDialog.getExistingDirectory(self, self._translator.text("batch.add_folder"))
         if not directory:
             return
         try:
@@ -279,7 +422,7 @@ class BatchWidget(QWidget):
             self._set_status(str(error), is_error=True)
             return
         if not paths:
-            self._set_status("Nenhum arquivo CSV foi encontrado na pasta.", is_error=False)
+            self._set_status_id("batch.folder_empty")
             return
         self.add_paths(paths)
 
@@ -296,13 +439,15 @@ class BatchWidget(QWidget):
     def clear_files(self) -> None:
         self.files.clear()
         self._refresh_table()
-        self.summary_output.clear()
+        self._clear_summary()
         self._output_directory = None
         self.open_output_button.setEnabled(False)
         self.overall_progress.setRange(0, 1)
         self.overall_progress.setValue(0)
-        self.current_progress_label.setText("Nenhum processamento em andamento.")
-        self._set_status("Adicione arquivos CSV para começar.", is_error=False)
+        self._current_progress = None
+        self._current_idle = True
+        self._render_current_progress()
+        self._set_status_id("batch.status.initial")
         self._update_actions()
 
     def _profile_changed(self) -> None:
@@ -312,9 +457,7 @@ class BatchWidget(QWidget):
             return
         invalidate_files(self.files)
         self._refresh_table()
-        self._set_status(
-            "Perfil alterado. Valide novamente todos os arquivos.", is_error=False
-        )
+        self._set_status_id("batch.status.profile_changed")
         self._update_actions()
 
     def _selected_profile(self) -> ConfigurationProfile | None:
@@ -329,17 +472,17 @@ class BatchWidget(QWidget):
             return
         profile = self._selected_profile()
         if not self.files:
-            self._set_status("Adicione ao menos um arquivo ao lote.", is_error=True)
+            self._set_status_id("batch.error.no_files", is_error=True)
             return
         if profile is None or self._service is None:
-            self._set_status("Selecione um perfil de configuração.", is_error=True)
+            self._set_status_id("batch.error.no_profile", is_error=True)
             return
         # Start a fresh validation generation before the worker visits any file.
         # Unvisited files must not retain results from an earlier batch.
         self._requires_revalidation = True
         invalidate_files(self.files)
         self._refresh_table()
-        self.summary_output.clear()
+        self._clear_summary()
         self._set_busy(True, validating=True)
         worker = BatchValidationWorker(self._service, self.files, profile)
         self._validation_worker = worker
@@ -366,16 +509,11 @@ class BatchWidget(QWidget):
             and self._validation_worker._profile != self._selected_profile()
         )
         if incomplete:
-            self._set_status(
-                f"Validação interrompida: {compatible} compatível(is), "
-                f"{incompatible} incompatível(is). Valide novamente todos os arquivos.",
-                is_error=False,
-                state="warning",
-            )
+            self._set_status_id("batch.status.validation_interrupted", compatible=compatible,
+                                incompatible=incompatible, state="warning")
             return
-        self._set_status(
-            f"Validação concluída: {compatible} compatível(is), "
-            f"{incompatible} incompatível(is).",
+        self._set_status_id(
+            "batch.status.validated", compatible=compatible, incompatible=incompatible,
             is_error=compatible == 0,
             state="warning" if incompatible else "success",
         )
@@ -389,7 +527,7 @@ class BatchWidget(QWidget):
         self._set_busy(False)
 
     def _choose_output_directory(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "Escolher pasta de saída")
+        directory = QFileDialog.getExistingDirectory(self, self._translator.text("batch.output.choose_title"))
         if directory:
             self.output_field.setText(directory)
 
@@ -398,44 +536,38 @@ class BatchWidget(QWidget):
             return
         profile = self._selected_profile()
         if profile is None or self._service is None:
-            self._set_status("Selecione um perfil de configuração.", is_error=True)
+            self._set_status_id("batch.error.no_profile", is_error=True)
             return
         if self._requires_revalidation or not self.files or any(
             item.status is BatchFileStatus.PENDING for item in self.files
         ):
-            self._set_status("Valide todos os arquivos antes de iniciar.", is_error=True)
+            self._set_status_id("batch.error.validate_first", is_error=True)
             return
         if not any(item.status is BatchFileStatus.COMPATIBLE for item in self.files):
-            self._set_status("Não existem arquivos compatíveis para processar.", is_error=True)
+            self._set_status_id("batch.error.no_compatible", is_error=True)
             return
         output_text = self.output_field.text().strip()
         if not output_text:
-            self._set_status("Escolha uma pasta de saída.", is_error=True)
+            self._set_status_id("batch.error.no_output", is_error=True)
             return
         output = Path(output_text).expanduser()
         if not output.exists():
-            answer = QMessageBox.question(
-                self,
-                "Criar pasta de saída",
-                "A pasta de saída não existe. Deseja criá-la?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
+            answer = self._confirm_create_output()
             if answer != QMessageBox.StandardButton.Yes:
                 return
             try:
                 output.mkdir(parents=True, exist_ok=False)
             except OSError:
-                self._set_status("Não foi possível criar a pasta de saída.", is_error=True)
+                self._set_status_id("batch.error.create_output", is_error=True)
                 return
         if not output.is_dir():
-            self._set_status("A pasta de saída é inválida.", is_error=True)
+            self._set_status_id("batch.error.invalid_output", is_error=True)
             return
 
         # A configured destination is not evidence that this run published files.
         self._output_directory = None
         self.open_output_button.setEnabled(False)
-        self.summary_output.clear()
+        self._clear_summary()
         compatible_count = sum(
             item.status is BatchFileStatus.COMPATIBLE for item in self.files
         )
@@ -464,7 +596,7 @@ class BatchWidget(QWidget):
         if worker is not None:
             worker.request_cancel()
             self.cancel_button.setEnabled(False)
-            self._set_status("Cancelamento solicitado...", is_error=False)
+            self._set_status_id("batch.status.cancelling")
 
     def _file_changed(self, _item: BatchFile) -> None:
         if (self._processing_worker is not None
@@ -476,11 +608,8 @@ class BatchWidget(QWidget):
 
     def _progress_changed(self, progress: BatchProgress) -> None:
         self.overall_progress.setValue(progress.completed_files + progress.error_files)
-        self.current_progress_label.setText(
-            f"Arquivo {progress.current_file} de {progress.compatible_files}: "
-            f"{progress.file_name} — {progress.records_processed} registros; "
-            f"{progress.completed_files} concluído(s), {progress.error_files} erro(s)."
-        )
+        self._current_progress = progress
+        self._render_current_progress()
 
     def _processing_completed(self, summary: BatchSummary) -> None:
         self.overall_progress.setValue(
@@ -488,12 +617,13 @@ class BatchWidget(QWidget):
             + summary.error_files
             + summary.cancelled_or_skipped_files
         )
-        self.summary_output.setPlainText(_render_summary(summary))
+        self._displayed_summary = summary
+        self.summary_output.setPlainText(_render_summary(summary, self._translator))
         if summary.completed_files > 0:
             self._output_directory = summary.output_directory
         self.open_output_button.setEnabled(self._output_directory is not None)
-        self._set_status(
-            "Processamento em lote encerrado.", is_error=False,
+        self._set_status_id(
+            "batch.status.completed", is_error=False,
             state="error" if summary.error_files else "warning"
             if summary.incompatible_files or summary.cancelled_or_skipped_files
             or summary.normalization_fallbacks else "success",
@@ -504,13 +634,15 @@ class BatchWidget(QWidget):
         self._processing_worker = None
         if worker is not None:
             worker.deleteLater()
-        self.current_progress_label.clear()
+        self._clear_current_progress()
         self._refresh_pending_profiles()
         self._set_busy(False)
 
     def _worker_failed(self, error: Exception) -> None:
-        message = str(error) if isinstance(error, BatchError) else "Falha inesperada no lote."
-        self._set_status(message, is_error=True)
+        if isinstance(error, BatchError):
+            self._set_status(str(error), is_error=True)
+        else:
+            self._set_status_id("batch.error.unexpected", is_error=True)
         self._refresh_table()
 
     def _set_busy(self, busy: bool, *, validating: bool = False) -> None:
@@ -529,14 +661,11 @@ class BatchWidget(QWidget):
         self.cancel_button.setVisible(busy)
         self.cancel_button.setEnabled(busy)
         if busy:
-            self.current_progress_label.clear()
+            self._clear_current_progress()
             if validating:
                 self.overall_progress.setRange(0, 1)
                 self.overall_progress.setValue(0)
-            self._set_status(
-                "Validando arquivos..." if validating else "Processando lote...",
-                is_error=False,
-            )
+            self._set_status_id("batch.status.validating" if validating else "batch.status.processing")
         else:
             self._update_actions()
 
@@ -564,9 +693,9 @@ class BatchWidget(QWidget):
             values = (
                 item.path.name,
                 str(item.path),
-                STATUS_LABELS[item.status],
+                self._translator.text(f"batch.file_status.{item.status.value}"),
                 "—" if item.column_count is None else str(item.column_count),
-                item.result_message,
+                self._result_text(item),
             )
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
@@ -578,7 +707,7 @@ class BatchWidget(QWidget):
         if self._output_directory is None:
             return
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._output_directory))):
-            self._set_status("Não foi possível abrir a pasta de saída.", is_error=True)
+            self._set_status_id("batch.error.open_output", is_error=True)
 
     def stop_workers(self) -> bool:
         workers = [self._validation_worker, self._processing_worker]
@@ -600,31 +729,32 @@ class BatchWidget(QWidget):
     def _set_status(
         self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
     ) -> None:
+        self._status_message = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if is_error else state)
 
 
-def _render_summary(summary: BatchSummary) -> str:
+def _render_summary(summary: BatchSummary, translator: Translator | None = None) -> str:
+    translator = translator or Translator("pt-BR")
     lines = [
-            f"Arquivos selecionados: {summary.selected_files}",
-            f"Arquivos compatíveis: {summary.compatible_files}",
-            f"Arquivos concluídos: {summary.completed_files}",
-            f"Arquivos incompatíveis: {summary.incompatible_files}",
-            f"Arquivos com erro: {summary.error_files}",
-            "Arquivos cancelados ou ignorados: "
-            f"{summary.cancelled_or_skipped_files}",
-            f"Registros processados: {summary.records_processed}",
-            f"Novos mapeamentos: {summary.new_mappings}",
-            f"Mapeamentos atualizados: {summary.updated_mappings}",
-            f"Tempo aproximado: {summary.duration_seconds:.2f} s",
-            f"Pasta de saída: {summary.output_directory}",
+        translator.text(f"batch.summary.{name}", count=value)
+        for name, value in (
+            ("selected", summary.selected_files), ("compatible", summary.compatible_files),
+            ("completed", summary.completed_files), ("incompatible", summary.incompatible_files),
+            ("errors", summary.error_files), ("cancelled", summary.cancelled_or_skipped_files),
+            ("records", summary.records_processed), ("new_mappings", summary.new_mappings),
+            ("updated_mappings", summary.updated_mappings),
+        )
     ]
+    lines.extend((
+        translator.text("batch.summary.duration", seconds=f"{summary.duration_seconds:.2f}"),
+        translator.text("batch.summary.output", path=str(summary.output_directory)),
+    ))
     if summary.normalization_fallbacks:
         lines.append(
-            "Valores incompatíveis processados por valor exato: "
-            + "; ".join(
-                f"{item.header}: {item.count} fallback(s)"
+            translator.text("batch.summary.fallbacks", details="; ".join(
+                translator.text("masking.status.fallback_detail", header=item.header, count=item.count)
                 for item in summary.normalization_fallbacks
-            )
+            ))
         )
     return "\n".join(lines)

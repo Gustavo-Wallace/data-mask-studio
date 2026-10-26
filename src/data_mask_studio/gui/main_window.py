@@ -120,6 +120,7 @@ class MainWindow(QMainWindow):
             self._profile_service,
             self._key_provider,
             self._vault_repository_factory,
+            translator=self._translator,
         )
         self.anonymization_widget.profiles_changed.connect(
             self.batch_widget.refresh_profiles
@@ -316,6 +317,7 @@ class MainWindow(QMainWindow):
             shell.retranslate(translator)
         self.settings_widget.retranslate(translator)
         self.anonymization_widget.retranslate(translator)
+        self.batch_widget.retranslate(translator)
         if self.about_dialog is not None:
             self.about_dialog.retranslate(translator)
 
@@ -350,7 +352,7 @@ class MainWindow(QMainWindow):
         set_button_role(self.backup_widget.restore_button, "attention")
         path_fields: tuple[tuple[QLineEdit, str], ...] = (
             (self.anonymization_widget.path_field, self._translator.text("masking.path_accessible")),
-            (self.batch_widget.output_field, "Pasta de saída do mascaramento em lote"),
+            (self.batch_widget.output_field, self._translator.text("batch.output_accessible")),
             (self.restoration_widget.path_field, "Caminho do CSV mascarado"),
             (self.html_restoration_widget.path_field, "Caminho do HTML mascarado"),
             (self.batch_restoration_widget.output_field, "Pasta de saída da restauração em lote"),
