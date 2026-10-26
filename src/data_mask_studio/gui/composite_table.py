@@ -2,6 +2,8 @@
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QStyledItemDelegate, QTableWidget
 
+from data_mask_studio.i18n import Translator
+
 
 class _TextPaddingDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
@@ -11,9 +13,9 @@ class _TextPaddingDelegate(QStyledItemDelegate):
 
 
 class CompositeTable(QTableWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, translator: Translator | None = None):
         super().__init__(0, 5, parent)
-        self.setHorizontalHeaderLabels(["Ação", "Cabeçalho de saída", "Componentes", "Prefixo", "Ações"])
+        self._translator = translator or Translator("pt-BR")
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -32,6 +34,18 @@ class CompositeTable(QTableWidget):
         self._refresh.setSingleShot(True)
         self._refresh.timeout.connect(self.refresh_layout)
         self._width_reference = None
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        self._translator = translator
+        self.setHorizontalHeaderLabels([
+            translator.text(message_id) for message_id in (
+                "masking.table.action", "masking.table.output_header",
+                "masking.composite.components", "masking.table.prefix",
+                "masking.composite.actions",
+            )
+        ])
+        self.refresh_layout()
 
     def set_width_reference(self, table):
         """Acompanha o sizing da tabela física, sem duplicar sua distribuição."""

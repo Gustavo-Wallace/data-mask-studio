@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
             self._vault_repository_factory,
             self._profile_service,
             profile_initialization_error,
+            translator=self._translator,
         )
         self.batch_widget = BatchWidget(
             self._profile_service,
@@ -314,6 +315,7 @@ class MainWindow(QMainWindow):
         for shell in self.page_shells:
             shell.retranslate(translator)
         self.settings_widget.retranslate(translator)
+        self.anonymization_widget.retranslate(translator)
         if self.about_dialog is not None:
             self.about_dialog.retranslate(translator)
 
@@ -347,7 +349,7 @@ class MainWindow(QMainWindow):
             set_button_role(button, "destructive")
         set_button_role(self.backup_widget.restore_button, "attention")
         path_fields: tuple[tuple[QLineEdit, str], ...] = (
-            (self.anonymization_widget.path_field, "Caminho do CSV selecionado"),
+            (self.anonymization_widget.path_field, self._translator.text("masking.path_accessible")),
             (self.batch_widget.output_field, "Pasta de saída do mascaramento em lote"),
             (self.restoration_widget.path_field, "Caminho do CSV mascarado"),
             (self.html_restoration_widget.path_field, "Caminho do HTML mascarado"),

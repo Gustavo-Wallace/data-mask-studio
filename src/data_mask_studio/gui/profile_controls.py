@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.gui.styles import section_title_stylesheet
+from data_mask_studio.i18n import Translator
 
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -24,23 +25,25 @@ class ProfileControls(QWidget):
         rename_profile: Callable[[], None],
         delete_profile: Callable[[], None],
         selection_changed: Callable[..., None],
+        translator: Translator | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        label = QLabel("Perfil de configuração")
-        label.setStyleSheet(section_title_stylesheet())
+        self._translator = translator or Translator("pt-BR")
+        self.heading_label = QLabel()
+        self.heading_label.setStyleSheet(section_title_stylesheet())
 
         self.profile_combo = ScrollSafeComboBox()
         self.profile_combo.setMinimumWidth(180)
-        self.apply_button = QPushButton("Aplicar perfil")
+        self.apply_button = QPushButton()
         self.apply_button.clicked.connect(apply_profile)
-        self.save_button = QPushButton("Salvar como perfil")
+        self.save_button = QPushButton()
         self.save_button.clicked.connect(save_profile)
-        self.update_button = QPushButton("Atualizar perfil")
+        self.update_button = QPushButton()
         self.update_button.clicked.connect(update_profile)
-        self.rename_button = QPushButton("Renomear")
+        self.rename_button = QPushButton()
         self.rename_button.clicked.connect(rename_profile)
-        self.delete_button = QPushButton("Excluir")
+        self.delete_button = QPushButton()
         self.delete_button.clicked.connect(delete_profile)
         self.profile_combo.currentIndexChanged.connect(selection_changed)
 
@@ -57,6 +60,21 @@ class ProfileControls(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        layout.addWidget(label)
+        layout.addWidget(self.heading_label)
         layout.addLayout(selection)
         layout.addLayout(actions)
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Relabel entry points without changing profile selection or callbacks."""
+        self._translator = translator
+        self.heading_label.setText(translator.text("masking.profile.heading"))
+        self.profile_combo.setAccessibleName(translator.text("masking.profile.heading"))
+        for button, message_id in (
+            (self.apply_button, "masking.profile.apply"),
+            (self.save_button, "masking.profile.save"),
+            (self.update_button, "masking.profile.update"),
+            (self.rename_button, "masking.profile.rename"),
+            (self.delete_button, "masking.profile.delete"),
+        ):
+            button.setText(translator.text(message_id))

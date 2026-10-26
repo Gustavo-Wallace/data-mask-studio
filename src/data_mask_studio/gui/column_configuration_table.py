@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QLineEdit, QStyle
 
 from data_mask_studio.gui.components.empty_state_table import EmptyStateTable
 from data_mask_studio.gui.components.presentation import TruncatedTextToolTipDelegate
+from data_mask_studio.i18n import Translator
 
 PREFIX_PLACEHOLDER = "Disponível ao mascarar"
 
@@ -11,15 +12,13 @@ PREFIX_PLACEHOLDER = "Disponível ao mascarar"
 class ColumnConfigurationTable(EmptyStateTable):
     """Tabela visual da configuração das colunas do CSV."""
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, translator: Translator | None = None) -> None:
+        self._translator = translator or Translator("pt-BR")
         super().__init__(
             0,
             5,
-            "Selecione um CSV para configurar as colunas.",
+            self._translator.text("masking.table.empty"),
             parent,
-        )
-        self.setHorizontalHeaderLabels(
-            ["Ação", "Cabeçalho", "Cabeçalho de saída", "Prefixo", "Normalização"]
         )
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -36,7 +35,18 @@ class ColumnConfigurationTable(EmptyStateTable):
         self._layout_refresh_timer = QTimer(self)
         self._layout_refresh_timer.setSingleShot(True)
         self._layout_refresh_timer.timeout.connect(self._apply_deferred_column_layout)
-        self._resize_flexible_sections()
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Update presentation without replacing cell widgets or their state."""
+        self._translator = translator
+        self.empty_text = translator.text("masking.table.empty")
+        self.setAccessibleDescription(self.empty_text)
+        self.setHorizontalHeaderLabels([
+            translator.text(f"masking.table.{name}")
+            for name in ("action", "header", "output_header", "prefix", "normalization")
+        ])
+        self.refresh_column_layout()
 
     def refresh_column_layout(self) -> None:
         """Recalcula as seções após os widgets das células serem populados."""
@@ -83,13 +93,14 @@ class ColumnConfigurationTable(EmptyStateTable):
         )
         header_minimum = header.sectionSizeHint(1)
         prefix_minimum = (
-            font_metrics.horizontalAdvance(PREFIX_PLACEHOLDER)
+            font_metrics.horizontalAdvance(self._translator.text("masking.table.prefix_placeholder"))
             + text_padding
             + frame_width
         )
         output_minimum = max(
             header.sectionSizeHint(2),
-            font_metrics.horizontalAdvance("Manter original") + text_padding + frame_width,
+            font_metrics.horizontalAdvance(self._translator.text("masking.table.output_placeholder"))
+            + text_padding + frame_width,
         )
         # Mantém os editores legíveis; em telas estreitas o Qt oferece scroll.
         minimum_width = header_minimum + output_minimum + prefix_minimum

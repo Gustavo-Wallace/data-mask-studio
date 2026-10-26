@@ -95,8 +95,8 @@ def test_explicit_shell_localization_preserves_routes_and_keyboard(locale, tmp_p
     assert window.current_page_index() == 7
     assert window.page_stack.currentWidget().content is window.settings_widget
     assert window.navigation.buttons[7].hasFocus()
-    # Explicit translation is limited to migrated presentation, not workflows.
-    assert window.anonymization_widget.select_button.text() == "Selecionar CSV"
+    # Only migrated presentation follows the explicitly injected translator.
+    assert window.anonymization_widget.select_button.text() == translator.text("masking.select_csv")
     assert window.maintenance_widget.refresh_button.text() == "Atualizar diagnóstico"
 
 

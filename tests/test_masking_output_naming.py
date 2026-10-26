@@ -42,8 +42,8 @@ def test_new_default_collision_still_requires_explicit_overwrite(gui, tmp_path, 
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(destination), ""))
     confirmations, started = [], []
 
-    def confirm(*args):
-        confirmations.append(args)
+    def confirm(*args, **kwargs):
+        confirmations.append((args, kwargs))
         return answer
 
     monkeypatch.setattr(module, "confirm_destructive_action", confirm)
@@ -51,6 +51,7 @@ def test_new_default_collision_still_requires_explicit_overwrite(gui, tmp_path, 
     widget._choose_output_file()
 
     assert len(confirmations) == 1
+    assert confirmations[0][1] == {"translator": widget._translator}
     assert started == ([(destination, {"overwrite": True})] if answer == QMessageBox.StandardButton.Yes else [])
     assert destination.read_bytes() == b"existing unrelated output"
 

@@ -68,6 +68,7 @@ from data_mask_studio.gui.components.presentation import (
     FeedbackState, confirm_destructive_action, set_feedback_state,
 )
 from data_mask_studio.gui.visual_tokens import METRICS
+from data_mask_studio.i18n import Translator
 from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.normalization import (
     NORMALIZATION_OPTIONS,
@@ -119,8 +120,16 @@ class AnonymizationWidget(QWidget):
         profile_service: ProfileService | None = None,
         profile_initialization_error: str | None = None,
         parent: QWidget | None = None,
+        *,
+        translator: Translator | None = None,
     ) -> None:
         super().__init__(parent)
+        self._translator = translator or Translator("pt-BR")
+        self._status_message = None
+        self._processed_message = None
+        self._completed_result = None
+        self._status_result = None
+        self._analyzing = False
 
         self.select_button = QPushButton("Selecionar CSV")
         self.select_button.clicked.connect(self._select_csv)
@@ -153,25 +162,30 @@ class AnonymizationWidget(QWidget):
         self.column_count_label = QLabel("—")
 
         details_layout = QFormLayout()
+        self._details_layout = details_layout
         details_layout.addRow("Arquivo:", self.file_name_label)
         details_layout.addRow("Caminho completo:", self.path_field)
         metadata_layout = QHBoxLayout()
         self._metadata_layout = metadata_layout
         metadata_layout.setSpacing(METRICS["panel_spacing"])
-        for text, value in (
-            ("Codificação:", self.encoding_label),
-            ("Separador:", self.delimiter_label),
-            ("Quantidade de colunas:", self.column_count_label),
+        self._metadata_labels = []
+        for message_id, value in (
+            ("masking.metadata.encoding", self.encoding_label),
+            ("masking.metadata.separator", self.delimiter_label),
+            ("masking.metadata.columns", self.column_count_label),
         ):
             detail = QHBoxLayout()
             detail.setSpacing(METRICS["panel_spacing"])
-            detail.addWidget(QLabel(text))
+            label = QLabel(self._translator.text(message_id))
+            self._metadata_labels.append((label, message_id))
+            detail.addWidget(label)
             detail.addWidget(value)
             metadata_layout.addLayout(detail)
         metadata_layout.addStretch()
         details_layout.addRow(metadata_layout)
 
         configuration_label = QLabel("Configuração das colunas")
+        self.configuration_label = configuration_label
         configuration_label.setStyleSheet(section_title_stylesheet())
 
         self.profile_controls = ProfileControls(
@@ -181,6 +195,7 @@ class AnonymizationWidget(QWidget):
             rename_profile=self.rename_selected_profile,
             delete_profile=self.delete_selected_profile,
             selection_changed=self._update_profile_actions,
+            translator=self._translator,
         )
         self.profile_combo = self.profile_controls.profile_combo
         self.apply_profile_button = self.profile_controls.apply_button
@@ -212,7 +227,7 @@ class AnonymizationWidget(QWidget):
         selection_layout.addWidget(self.unselect_all_button)
         selection_layout.addWidget(self.selected_count_label, stretch=1)
 
-        self.config_table = ColumnConfigurationTable()
+        self.config_table = ColumnConfigurationTable(translator=self._translator)
 
         self.validate_button = QPushButton("Validar configuração")
         self.validate_button.clicked.connect(self.validate_current_configuration)
@@ -256,6 +271,7 @@ class AnonymizationWidget(QWidget):
         self._profile_missing_headers: tuple[str, ...] = ()
         self.composite_section = CompositeSection(
             lambda: self._inspection_result, self._build_current_plan, self,
+            translator=self._translator,
         )
         self.composite_section.changed.connect(self._configuration_changed)
         self.composite_section.table.set_width_reference(self.config_table)
@@ -292,6 +308,8 @@ class AnonymizationWidget(QWidget):
 
         self.status_label = QLabel("Selecione um arquivo CSV para começar.")
         self.status_label.setWordWrap(True)
+        for label in (self.status_label, self.output_path_label, self.file_name_label):
+            label.setTextFormat(Qt.TextFormat.PlainText)
         set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout()
@@ -305,7 +323,7 @@ class AnonymizationWidget(QWidget):
         layout.addLayout(selection_layout)
         layout.addWidget(self.config_table, stretch=1)
         layout.addWidget(self.composite_section)
-        self.transfer_controls = TransferPackageControls(self)
+        self.transfer_controls = TransferPackageControls(self, translator=self._translator)
         layout.addWidget(self.transfer_controls)
         layout.addLayout(action_layout)
         layout.addLayout(progress_layout)
@@ -325,7 +343,94 @@ class AnonymizationWidget(QWidget):
         )
         for previous, following in zip(profile_tab_order, profile_tab_order[1:]):
             QWidget.setTabOrder(previous, following)
+        self._set_status_id("masking.status.initial")
         self._refresh_profiles()
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Update presentation only; editors, data, validation and workers stay intact."""
+        self._translator = translator
+        for widget, message_id in (
+            (self.select_button, "masking.select_csv"),
+            (self.clear_button, "masking.clear"),
+            (self.select_all_button, "masking.mask_all"),
+            (self.unselect_all_button, "masking.preserve_all"),
+            (self.validate_button, "masking.validate"),
+            (self.generate_button, "masking.generate"),
+            (self.cancel_button, "dialog.button.cancel"),
+            (self.open_folder_button, "masking.open_folder"),
+            (self.configuration_label, "masking.configuration"),
+            *self._metadata_labels,
+        ):
+            widget.setText(translator.text(message_id))
+        self.analyze_button.setText(translator.text(
+            "masking.cancel_analysis" if self._analyzing else "masking.analyze"
+        ))
+        self.path_field.setPlaceholderText(translator.text("masking.no_file"))
+        self.path_field.setAccessibleName(translator.text("masking.path_accessible"))
+        self._details_layout.labelForField(self.file_name_label).setText(
+            translator.text("masking.metadata.file")
+        )
+        self._details_layout.labelForField(self.path_field).setText(
+            translator.text("masking.metadata.path")
+        )
+        self.profile_toggle.setAccessibleName(translator.text("masking.profile.toggle_accessible"))
+        self._update_profile_disclosure()
+        self.profile_controls.retranslate(translator)
+        self.config_table.retranslate(translator)
+        self.composite_section.retranslate(translator)
+        self.transfer_controls.retranslate(translator)
+        self._translate_column_widgets()
+        self._render_selected_count()
+        if self._inspection_result is not None:
+            self.delimiter_label.setText(self._separator_label(self._inspection_result.delimiter))
+        if self._status_message is not None:
+            message_id, parameters = self._status_message
+            self.status_label.setText(translator.text(message_id, **parameters))
+        if self._processed_message is not None:
+            message_id, parameters = self._processed_message
+            self.processed_count_label.setText(translator.text(message_id, **parameters))
+        if self._completed_result is not None:
+            self._render_completed_result(self._completed_result)
+        if self._status_result is not None:
+            self._render_completion_status(self._status_result)
+
+    def _separator_label(self, delimiter: str) -> str:
+        return self._translator.text({
+            ",": "masking.separator.comma", ";": "masking.separator.semicolon",
+            "\t": "masking.separator.tab", "|": "masking.separator.pipe",
+        }[delimiter])
+
+    def _translate_column_widgets(self) -> None:
+        for row, configuration in enumerate(self._column_configs):
+            action = self._action_fields[row]
+            normalization = self._normalization_fields[row]
+            blockers = QSignalBlocker(action), QSignalBlocker(normalization)
+            for index in range(action.count()):
+                action.setItemText(index, self._translator.text("masking.action." + action.itemData(index)))
+            for index in range(normalization.count()):
+                normalization.setItemText(index, self._translator.text("masking.normalization." + normalization.itemData(index)))
+            del blockers
+            for field, message_id in (
+                (action, "masking.column.action_accessible"),
+                (normalization, "masking.column.normalization_accessible"),
+                (self._output_name_fields[row], "masking.column.output_accessible"),
+                (self._prefix_fields[row], "masking.column.prefix_accessible"),
+            ):
+                field.setAccessibleName(self._translator.text(message_id, header=configuration.header))
+            self._output_name_fields[row].setPlaceholderText(self._translator.text("masking.table.output_placeholder"))
+            self._prefix_fields[row].setPlaceholderText(self._translator.text("masking.table.prefix_placeholder"))
+            normalization.setToolTip(self._translator.text("masking.column.normalization_tooltip"))
+        self.config_table.refresh_column_layout()
+
+    def _set_status_id(self, message_id: str, *, is_error: bool = False,
+                       state: FeedbackState = "neutral", **parameters: str | int | float) -> None:
+        self._set_status(self._translator.text(message_id, **parameters), is_error=is_error, state=state)
+        self._status_message = (message_id, parameters)
+
+    def _set_processed_id(self, message_id: str, **parameters: str | int | float) -> None:
+        self._processed_message = (message_id, parameters)
+        self.processed_count_label.setText(self._translator.text(message_id, **parameters))
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -373,7 +478,7 @@ class AnonymizationWidget(QWidget):
         expanded = self.profile_toggle.isChecked()
         self.profile_controls.setVisible(expanded)
         self.profile_toggle.setText(
-            "Ocultar perfis" if expanded else "Perfis de configuração (opcional)"
+            self._translator.text("masking.profile.hide" if expanded else "masking.profile.toggle")
         )
         if profile_has_focus and not expanded and self.isVisible():
             self.profile_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -381,12 +486,12 @@ class AnonymizationWidget(QWidget):
     def _select_csv(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selecionar arquivo CSV",
+            self._translator.text("masking.file.select_title"),
             "",
-            "Arquivos CSV (*.csv)",
+            self._translator.text("masking.file.filter"),
         )
         if not file_path:
-            self._set_status("Seleção de arquivo cancelada.", is_error=False)
+            self._set_status_id("masking.status.selection_cancelled")
             return
         self.load_csv(file_path)
 
@@ -416,17 +521,18 @@ class AnonymizationWidget(QWidget):
         self.file_name_label.setText(result.path.name)
         self.path_field.setText(str(result.path))
         self.encoding_label.setText(result.encoding)
-        self.delimiter_label.setText(SEPARATOR_NAMES[result.delimiter])
+        self.delimiter_label.setText(self._separator_label(result.delimiter))
         self.column_count_label.setText(str(len(result.headers)))
         self._build_configuration_table(result.headers)
         self.clear_button.setEnabled(True)
         self.analyze_button.setEnabled(True)
         self._update_profile_actions()
         warning = format_header_replacement_warning(result.header_replacements)
-        status = "Cabeçalhos lidos com sucesso."
         if warning:
-            status = f"{status} {warning}"
-        self._set_status(status, is_error=False, state="warning" if warning else "success")
+            # The service warning has no typed localization contract yet.
+            self._set_status_id("masking.status.inspected_warning", warning=warning, state="warning")
+        else:
+            self._set_status_id("masking.status.inspected", state="success")
 
     def _show_error(self, file_path: str, message: str) -> None:
         selected_path = Path(file_path).expanduser().absolute()
@@ -439,12 +545,15 @@ class AnonymizationWidget(QWidget):
     def clear_selection(
         self,
         *,
-        status: str = "Seleção limpa.",
+        status: str | None = None,
         is_error: bool = False,
     ) -> None:
         """Remove da interface todas as informações do arquivo selecionado."""
         self._reset_details()
-        self._set_status(status, is_error=is_error)
+        if status is None:
+            self._set_status_id("masking.status.cleared", is_error=is_error)
+        else:
+            self._set_status(status, is_error=is_error)
 
     def _reset_details(self) -> None:
         self.profile_toggle.setChecked(False)
@@ -546,6 +655,7 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(has_headers)
         self.unselect_all_button.setEnabled(has_headers)
         self.validate_button.setEnabled(has_headers)
+        self._translate_column_widgets()
         self._update_selected_count()
         self.config_table.refresh_column_layout()
 
@@ -560,7 +670,7 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(False)
         self.unselect_all_button.setEnabled(False)
         self.validate_button.setEnabled(False)
-        self.selected_count_label.setText("0 colunas para mascarar")
+        self.selected_count_label.setText(self._translator.text("masking.count.empty"))
 
     def _action_changed(self, row: int) -> None:
         if not self._applying_suggestion:
@@ -608,10 +718,7 @@ class AnonymizationWidget(QWidget):
         self._configuration_validated = False
         self._configuration_dirty = True
         self.generate_button.setEnabled(False)
-        self._set_status(
-            "Configuração alterada. Use “Validar configuração” para conferir.",
-            is_error=False,
-        )
+        self._set_status_id("masking.status.changed")
 
     def _update_transfer_controls(self) -> None:
         self.transfer_controls.set_mask_available(
@@ -638,11 +745,15 @@ class AnonymizationWidget(QWidget):
 
     def _update_selected_count(self) -> None:
         self._update_transfer_controls()
+        self._render_selected_count()
+
+    def _render_selected_count(self) -> None:
         selected_count = sum(
             configuration.anonymize for configuration in self._column_configs
         )
         self.selected_count_label.setText(
-            f"{selected_count} de {len(self._column_configs)} colunas para mascarar"
+            self._translator.text("masking.count.selected", selected=selected_count, total=len(self._column_configs))
+            if self._column_configs else self._translator.text("masking.count.empty")
         )
 
     @staticmethod
@@ -684,23 +795,18 @@ class AnonymizationWidget(QWidget):
             excluded = sum(
                 item.action is ColumnAction.EXCLUDE for item in self._column_configs
             )
-            self._set_status(
-                "Configuração válida: "
-                f"{result.selected_count} para mascarar, "
-                f"{preserved} para preservar e {excluded} para excluir.",
-                is_error=False,
-                state="success",
-            )
+            self._set_status_id("masking.status.valid", masked=result.selected_count,
+                                preserved=preserved, excluded=excluded, state="success")
 
     def _build_current_plan(self, composites=None):
         if self._inspection_result is None:
-            raise PlanningError("Selecione um CSV antes de configurar composites.")
+            raise PlanningError(self._translator.text("masking.error.no_csv"))
         if self._profile_missing_headers:
-            raise PlanningError("Cabeçalhos não encontrados: " + ", ".join(self._profile_missing_headers) + ".")
+            raise PlanningError(self._translator.text("masking.error.missing_headers", headers=", ".join(self._profile_missing_headers)))
         if self._unreviewed_sources:
-            raise PlanningError("Colunas adicionais não conhecidas pelo perfil: " +
-                                ", ".join(f"{self._inspection_result.headers[index]} (coluna {index + 1})"
-                                          for index in sorted(self._unreviewed_sources)) + ". Revise a configuração.")
+            raise PlanningError(self._translator.text("masking.error.unknown_columns", columns=
+                ", ".join(self._translator.text("masking.column.reference", header=self._inspection_result.headers[index], number=index + 1)
+                          for index in sorted(self._unreviewed_sources))))
         return ProfileService.build_configuration_plan(
             self._inspection_result, self._column_configs,
             self.composite_section.configurations if composites is None else composites,
@@ -710,7 +816,7 @@ class AnonymizationWidget(QWidget):
         if self._detection_worker is not None and self._detection_worker.isRunning():
             self._detection_worker.request_cancel()
             self.analyze_button.setEnabled(False)
-            self._set_status("Cancelamento da análise solicitado...", is_error=False)
+            self._set_status_id("masking.status.analysis_cancelling")
             return
         if self._inspection_result is None or self.has_running_worker():
             return
@@ -719,9 +825,9 @@ class AnonymizationWidget(QWidget):
         self._set_detection_state(True)
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(True)
-        self.processed_count_label.setText("Analisando no máximo 100 linhas")
+        self._set_processed_id("masking.progress.analysis", limit=100)
         self.processed_count_label.setVisible(True)
-        self._set_status("Analisando cabeçalhos e padrões agregados...", is_error=False)
+        self._set_status_id("masking.status.analyzing")
 
         worker = DetectionWorker(self._inspection_result, row_limit=100)
         self._detection_worker = worker
@@ -742,28 +848,22 @@ class AnonymizationWidget(QWidget):
         dialog.suggestions_cleared.connect(self.clear_detection_suggestions)
         self._detection_dialog = dialog
         dialog.show()
-        self._set_status(
-            "Análise concluída. Revise as sugestões antes de aplicá-las.",
-            is_error=False,
-            state="success",
-        )
+        self._set_status_id("masking.status.analyzed", state="success")
 
     def _detection_cancelled(self) -> None:
         self._set_detection_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        self._set_status("A análise das colunas foi cancelada.", is_error=False, state="warning")
+        self._set_status_id("masking.status.analysis_cancelled", state="warning")
 
     def _detection_failed(self, error: Exception) -> None:
         self._set_detection_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        message = (
-            str(error)
-            if isinstance(error, DetectionError)
-            else "Não foi possível analisar as colunas do CSV."
-        )
-        self._set_status(message, is_error=True)
+        if isinstance(error, DetectionError):
+            self._set_status(str(error), is_error=True)
+        else:
+            self._set_status_id("masking.error.analysis_failed", is_error=True)
 
     def _detection_worker_finished(self) -> None:
         worker = self._detection_worker
@@ -772,6 +872,7 @@ class AnonymizationWidget(QWidget):
             worker.deleteLater()
 
     def _set_detection_state(self, analyzing: bool) -> None:
+        self._analyzing = analyzing
         self.transfer_controls.setEnabled(not analyzing)
         self.composite_section.setEnabled(not analyzing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
@@ -786,7 +887,7 @@ class AnonymizationWidget(QWidget):
         )
         self.profile_combo.setEnabled(not analyzing)
         self.profile_toggle.setEnabled(not analyzing)
-        self.analyze_button.setText("Cancelar análise" if analyzing else "Analisar colunas")
+        self.analyze_button.setText(self._translator.text("masking.cancel_analysis" if analyzing else "masking.analyze"))
         self.analyze_button.setEnabled(has_file)
         if analyzing:
             for button in (
@@ -1163,7 +1264,7 @@ class AnonymizationWidget(QWidget):
 
     def _choose_output_file(self) -> None:
         if self._inspection_result is None or not self._configuration_validated:
-            self._set_status("Valide a configuração antes de gerar o arquivo.", is_error=True)
+            self._set_status_id("masking.error.validate_first", is_error=True)
             return
         if self._worker is not None and self._worker.isRunning():
             return
@@ -1172,12 +1273,12 @@ class AnonymizationWidget(QWidget):
         suggested_path = source.with_name(suggested_output_name(source))
         selected_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Salvar CSV mascarado",
+            self._translator.text("masking.file.save_title"),
             str(suggested_path),
-            "Arquivos CSV (*.csv)",
+            self._translator.text("masking.file.filter"),
         )
         if not selected_path:
-            self._set_status("Geração do arquivo cancelada.", is_error=False)
+            self._set_status_id("masking.status.save_cancelled")
             return
 
         destination = Path(selected_path)
@@ -1185,21 +1286,19 @@ class AnonymizationWidget(QWidget):
             destination = destination.with_suffix(".csv")
         self.transfer_controls.set_output_path(destination)
         if paths_refer_to_same_file(source, destination):
-            self._set_status(
-                "O arquivo de saída não pode ser o mesmo CSV original.",
-                is_error=True,
-            )
+            self._set_status_id("masking.error.same_file", is_error=True)
             return
 
         overwrite = destination.exists()
         if overwrite:
             answer = confirm_destructive_action(
                 self,
-                "Confirmar substituição",
-                "O arquivo de saída já existe. Deseja substituí-lo?",
+                self._translator.text("masking.file.overwrite_title"),
+                self._translator.text("masking.file.overwrite_text"),
+                translator=self._translator,
             )
             if answer != QMessageBox.StandardButton.Yes:
-                self._set_status("O arquivo existente não foi alterado.", is_error=False)
+                self._set_status_id("masking.status.not_overwritten")
                 return
 
         self._start_processing(destination, overwrite=overwrite)
@@ -1223,9 +1322,9 @@ class AnonymizationWidget(QWidget):
         self._set_processing_state(True)
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setVisible(True)
-        self.processed_count_label.setText("0 registros processados")
+        self._set_processed_id("masking.progress.processed", count=0)
         self.processed_count_label.setVisible(True)
-        self._set_status("Gerando o CSV mascarado...", is_error=False)
+        self._set_status_id("masking.status.processing")
         self._processing_started_at = time.perf_counter()
 
         worker = AnonymizationWorker(
@@ -1254,57 +1353,51 @@ class AnonymizationWidget(QWidget):
             self, "_processing_started_at", time.perf_counter()
         )
         metrics = calculate_metrics(records_processed, elapsed)
-        self.processed_count_label.setText(
-            f"{records_processed} registros; {metrics.rows_per_second:,.0f} linhas/s; "
-            f"{metrics.elapsed_seconds:.1f} s decorridos; estimativa indisponível"
-        )
+        self._set_processed_id("masking.progress.running", count=records_processed,
+                               rate=f"{metrics.rows_per_second:,.0f}", elapsed=f"{metrics.elapsed_seconds:.1f}")
 
     def _processing_completed(self, result: AnonymizationResult) -> None:
         self._set_processing_state(False)
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(1)
-        self.processed_count_label.setText(
-            f"{result.records_processed} registros processados"
-        )
+        self._set_processed_id("masking.progress.processed", count=result.records_processed)
         self._last_output_path = result.output_path
-        self.output_path_label.setText(f"Arquivo gerado: {result.output_path}")
-        if result.transfer_package_path is not None:
-            self.output_path_label.setText(
-                f"Arquivo gerado: {result.output_path}\nPacote de transferência criado: {result.transfer_package_path}"
-            )
+        self._completed_result = result
+        self._render_completed_result(result)
         self.output_path_label.setVisible(True)
         self.open_folder_button.setVisible(True)
         self.open_folder_button.setEnabled(True)
+        self._render_completion_status(result)
+
+    def _render_completed_result(self, result: AnonymizationResult) -> None:
+        text = self._translator.text("masking.output.csv", path=str(result.output_path))
+        if result.transfer_package_path is not None:
+            text += "\n" + self._translator.text("masking.output.package", path=str(result.transfer_package_path))
+        self.output_path_label.setText(text)
+
+    def _render_completion_status(self, result: AnonymizationResult) -> None:
         fallback_notice = ""
         if result.normalization_fallbacks:
             details = "; ".join(
-                f"{item.header}: {item.count} fallback(s)"
+                self._translator.text("masking.status.fallback_detail", header=item.header, count=item.count)
                 for item in result.normalization_fallbacks
             )
-            fallback_notice = (
-                " Alguns valores incompatíveis com a normalização configurada "
-                f"foram processados por valor exato. {details}."
-            )
-        vault_notice = (
-            "O cofre local foi atualizado."
-            if result.new_mappings or result.updated_mappings
-            else "Nenhum mapeamento foi criado ou atualizado no cofre local."
-        )
-        self._set_status(
-            "CSV mascarado gerado com sucesso. "
-            f"{result.records_processed} registros processados; "
-            f"{result.new_mappings} novos mapeamentos; "
-            f"{result.updated_mappings} mapeamentos existentes atualizados. "
-            f"{vault_notice}{fallback_notice}",
-            is_error=False,
+            fallback_notice = self._translator.text("masking.status.fallbacks", details=details)
+        vault_notice = self._translator.text(
+            "masking.status.vault_updated" if result.new_mappings or result.updated_mappings
+            else "masking.status.vault_unchanged")
+        self._set_status_id("masking.status.completed", count=result.records_processed,
+            new=result.new_mappings, updated=result.updated_mappings,
+            vault_notice=vault_notice, fallback_notice=fallback_notice,
             state="warning" if result.normalization_fallbacks else "success",
         )
+        self._status_result = result
 
     def _processing_cancelled(self) -> None:
         self._set_processing_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
-        self._set_status("A geração do CSV foi cancelada.", is_error=False, state="warning")
+        self._set_status_id("masking.status.cancelled", state="warning")
 
     def _processing_failed(self, error: Exception) -> None:
         self._last_processing_error = error
@@ -1312,10 +1405,9 @@ class AnonymizationWidget(QWidget):
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
         if isinstance(error, (CSVAnonymizationError, KeyProviderError, VaultError)):
-            message = str(error)
+            self._set_status(str(error), is_error=True)
         else:
-            message = "Não foi possível gerar o arquivo CSV mascarado."
-        self._set_status(message, is_error=True)
+            self._set_status_id("masking.error.processing_failed", is_error=True)
 
     def _worker_finished(self) -> None:
         worker = self._worker
@@ -1327,7 +1419,7 @@ class AnonymizationWidget(QWidget):
         if self._worker is not None and self._worker.isRunning():
             self._worker.request_cancel()
             self.cancel_button.setEnabled(False)
-            self._set_status("Cancelamento solicitado...", is_error=False)
+            self._set_status_id("masking.status.cancelling")
 
     def _set_processing_state(self, processing: bool) -> None:
         self.transfer_controls.setEnabled(not processing)
@@ -1363,6 +1455,8 @@ class AnonymizationWidget(QWidget):
         self.cancel_button.setEnabled(processing)
 
     def _clear_output_result(self) -> None:
+        self._completed_result = None
+        self._processed_message = None
         self._last_output_path = None
         self.output_path_label.clear()
         self.output_path_label.setVisible(False)
@@ -1378,7 +1472,7 @@ class AnonymizationWidget(QWidget):
             QUrl.fromLocalFile(str(self._last_output_path.parent))
         )
         if not opened:
-            self._set_status("Não foi possível abrir a pasta do arquivo.", is_error=True)
+            self._set_status_id("masking.error.open_folder", is_error=True)
 
     def has_running_worker(self) -> bool:
         return (
@@ -1401,5 +1495,7 @@ class AnonymizationWidget(QWidget):
     def _set_status(
         self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
     ) -> None:
+        self._status_message = None
+        self._status_result = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if is_error else state)

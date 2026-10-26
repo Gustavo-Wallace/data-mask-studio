@@ -2,38 +2,43 @@
 
 from pathlib import Path
 from PySide6.QtCore import QSignalBlocker
-from PySide6.QtWidgets import QWidget, QCheckBox, QLineEdit, QPushButton, QVBoxLayout, QFormLayout, QHBoxLayout, QFileDialog
+from PySide6.QtWidgets import QWidget, QCheckBox, QLineEdit, QLabel, QPushButton, QVBoxLayout, QFormLayout, QHBoxLayout, QFileDialog
 
 from data_mask_studio.csv_tools.csv_anonymizer import validate_transfer_package_destination, CSVAnonymizationError
 from data_mask_studio.transfer_package.service import validate_password
 from data_mask_studio.transfer_package.models import PackageError
 from data_mask_studio.transfer_package.staging import PackageStagingRequest
+from data_mask_studio.i18n import Translator
 
 
 class TransferPackageControls(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, translator: Translator | None = None):
         super().__init__(parent)
+        self._translator = translator or Translator("pt-BR")
         self.output_path: Path | None = None
         self._manual_destination = False
-        self.checkbox = QCheckBox("Gerar pacote de transferência", self)
+        self.checkbox = QCheckBox(self)
         self.checkbox.setEnabled(False)
         self.fields = QWidget(self)
         self.destination = QLineEdit(self)
-        self.destination.setAccessibleName("Destino do pacote de transferência")
-        self.browse_button = QPushButton("Escolher destino", self)
+        self.browse_button = QPushButton(self)
         self.password = QLineEdit(self)
         self.confirmation = QLineEdit(self)
-        for field, label in ((self.password, "Senha do pacote"), (self.confirmation, "Confirmar senha do pacote")):
+        for field in (self.password, self.confirmation):
             field.setEchoMode(QLineEdit.EchoMode.Password)
-            field.setAccessibleName(label)
+        self.destination_label = QLabel(self)
+        self.password_label = QLabel(self)
+        self.password_label.setBuddy(self.password)
+        self.confirmation_label = QLabel(self)
+        self.confirmation_label.setBuddy(self.confirmation)
         form = QFormLayout(self.fields)
         path_row = QHBoxLayout()
         path_row.addWidget(self.destination)
         path_row.addWidget(self.browse_button)
-        form.addRow("Pacote (.dmspackage):", path_row)
-        form.addRow("Senha:", self.password)
-        form.addRow("Confirmar senha:", self.confirmation)
-        self.show_passwords = QCheckBox("Mostrar senhas", self)
+        form.addRow(self.destination_label, path_row)
+        form.addRow(self.password_label, self.password)
+        form.addRow(self.confirmation_label, self.confirmation)
+        self.show_passwords = QCheckBox(self)
         self.show_passwords.toggled.connect(self._set_password_visibility)
         form.addRow("", self.show_passwords)
         layout = QVBoxLayout(self)
@@ -43,7 +48,27 @@ class TransferPackageControls(QWidget):
         self.checkbox.toggled.connect(self._toggled)
         self.browse_button.clicked.connect(self._browse)
         self.destination.textChanged.connect(self._destination_changed)
+        self.retranslate(self._translator)
         self._toggled(False)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Translate presentation only, retaining transient execution inputs."""
+        self._translator = translator
+        for widget, message_id in (
+            (self.checkbox, "masking.package.enabled"),
+            (self.browse_button, "masking.package.browse"),
+            (self.destination_label, "masking.package.destination_label"),
+            (self.password_label, "masking.package.password_label"),
+            (self.confirmation_label, "masking.package.confirmation_label"),
+            (self.show_passwords, "masking.package.show_passwords"),
+        ):
+            widget.setText(translator.text(message_id))
+        for field, message_id in (
+            (self.destination, "masking.package.destination_accessible"),
+            (self.password, "masking.package.password_accessible"),
+            (self.confirmation, "masking.package.confirmation_accessible"),
+        ):
+            field.setAccessibleName(translator.text(message_id))
 
     def _toggled(self, checked):
         self.fields.setEnabled(checked)
@@ -92,8 +117,8 @@ class TransferPackageControls(QWidget):
         self.checkbox.setEnabled(available)
 
     def _browse(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar pacote de transferência",
-            self.destination.text(), "Pacotes de transferência (*.dmspackage)")
+        path, _ = QFileDialog.getSaveFileName(self, self._translator.text("masking.package.save_title"),
+            self.destination.text(), self._translator.text("masking.package.file_filter"))
         if path:
             self.destination.setText(str(Path(path).with_suffix(".dmspackage")))
             self._manual_destination = True
@@ -102,11 +127,11 @@ class TransferPackageControls(QWidget):
         if not self.checkbox.isChecked():
             return {}
         if not requires_masking:
-            raise CSVAnonymizationError("O pacote exige ao menos uma coluna com ação Mascarar.")
+            raise CSVAnonymizationError(self._translator.text("masking.package.error.requires_masking"))
         self.set_output_path(output)
         destination = validate_transfer_package_destination(source, output, self.destination.text())
         validate_password(self.password.text())
         if self.password.text() != self.confirmation.text():
-            raise PackageError("A confirmação da senha não corresponde à senha do pacote.")
+            raise PackageError(self._translator.text("masking.package.error.confirmation"))
         return dict(transfer_package_request=PackageStagingRequest(self.password.text()),
                     transfer_package_destination=destination)
