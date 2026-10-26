@@ -50,7 +50,8 @@ class FileRestorationWidget(QWidget):
         idle_layout.addStretch()
         self.csv_widget = RestorationWidget(repository_factory, file_selector=self._select_file,
                                             translator=self._translator)
-        self.html_widget = HTMLRestorationWidget(repository_factory, file_selector=self._select_file)
+        self.html_widget = HTMLRestorationWidget(repository_factory, file_selector=self._select_file,
+                                                translator=self._translator)
         self.stack = _WorkflowStack()
         for widget in (idle, self.csv_widget, self.html_widget):
             widget.layout().setContentsMargins(0, 0, 0, 0)
@@ -80,9 +81,7 @@ class FileRestorationWidget(QWidget):
         self.select_button.setText(translator.text("restoration.file.select"))
         self.guidance.setText(translator.text("restoration.file.guidance"))
         self.csv_widget.retranslate(translator)
-        # Only this shared selector label belongs to the container. HTML-specific
-        # controls and results remain untouched until their separate migration.
-        self.html_widget.select_button.setText(translator.text("restoration.file.select"))
+        self.html_widget.retranslate(translator)
         self._render_format()
         if self._selection_message_id is not None:
             self.selection_status.setText(translator.text(self._selection_message_id))

@@ -355,7 +355,7 @@ class MainWindow(QMainWindow):
             (self.anonymization_widget.path_field, self._translator.text("masking.path_accessible")),
             (self.batch_widget.output_field, self._translator.text("batch.output_accessible")),
             (self.restoration_widget.path_field, self._translator.text("restoration.csv.path_accessible")),
-            (self.html_restoration_widget.path_field, "Caminho do HTML mascarado"),
+            (self.html_restoration_widget.path_field, self._translator.text("restoration.html.path_accessible")),
             (self.batch_restoration_widget.output_field, "Pasta de saída da restauração em lote"),
             (self.backup_widget.destination_field, "Destino do novo backup"),
             (self.backup_widget.restore_file_field, "Arquivo de backup selecionado"),

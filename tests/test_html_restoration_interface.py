@@ -170,11 +170,7 @@ def test_html_sensitive_warning_requires_explicit_confirmation(
     application = create_application([])
     widget = HTMLRestorationWidget(lambda: repository)
     widget.load_html(str(source))
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *args, **kwargs: QMessageBox.StandardButton.Cancel,
-    )
+    monkeypatch.setattr(widget, "_confirm_sensitive_data", lambda: QMessageBox.StandardButton.Cancel)
 
     widget._choose_output()
 
@@ -194,11 +190,7 @@ def test_html_existing_output_requires_confirmation(
     application = create_application([])
     widget = HTMLRestorationWidget(lambda: repository)
     widget.load_html(str(source))
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *args, **kwargs: QMessageBox.StandardButton.Ok,
-    )
+    monkeypatch.setattr(widget, "_confirm_sensitive_data", lambda: QMessageBox.StandardButton.Ok)
     monkeypatch.setattr(
         QFileDialog,
         "getSaveFileName",

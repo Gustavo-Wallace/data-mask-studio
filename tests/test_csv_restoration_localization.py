@@ -492,7 +492,7 @@ def test_sensitive_confirmation_keeps_native_roles_and_safe_cancel_default(pages
 
 
 @pytest.mark.parametrize("extension", [".html", ".HTM"])
-def test_shared_retranslation_does_not_migrate_or_reset_html_specific_content(pages, extension):
+def test_shared_retranslation_localizes_html_without_resetting_its_content(pages, extension):
     app, page, case = pages()
     html_file = case[1].source_path.with_suffix(extension)
     html_file.write_text("<!doctype html><p>SYNTHETIC</p>", encoding="utf-8")
@@ -500,12 +500,14 @@ def test_shared_retranslation_does_not_migrate_or_reset_html_specific_content(pa
     html = page.html_widget
     html.missing_policy_combo.setCurrentIndex(1)
     html.summary.setPlainText("Synthetic HTML feedback remains literal.")
-    before = html._inspection, html.summary.toPlainText(), html.missing_policy_combo.currentData(), html.status_label.text()
+    before = html._inspection, html.summary.toPlainText(), html.missing_policy_combo.currentData()
     for target in ("en", "pt-BR", "en"):
         page.retranslate(Translator(target))
         assert page.stack.currentWidget() is html
-        assert (html._inspection, html.summary.toPlainText(), html.missing_policy_combo.currentData(), html.status_label.text()) == before
-        assert html.generate_button.text() == "Gerar HTML restaurado"
+        assert (html._inspection, html.summary.toPlainText(), html.missing_policy_combo.currentData()) == before
+        assert html.generate_button.text() == Translator(target).text("restoration.html.generate")
+        assert html.status_label.text() == Translator(target).text("restoration.html.status.inspected")
+        assert html.status_label.property("feedbackState") == "success"
         assert html.select_button.text() == Translator(target).text("restoration.file.select")
         assert page.format_label.text() == Translator(target).text("restoration.file.html_type")
     load_csv(page, case)

@@ -407,6 +407,26 @@
     "restoration.package.select_title": "Select transfer package",
     "restoration.package.filter": "Packages (*.dmspackage)",
     "restoration.package.error.path": "Select an existing .dmspackage file.",
-    "restoration.package.error.password": "Enter the package password."
+    "restoration.package.error.password": "Enter the package password.",
+    "restoration.html.select": "Select masked HTML",
+    "restoration.html.path_accessible": "Masked HTML path",
+    "restoration.html.filter": "HTML files (*.html *.htm)",
+    "restoration.html.save_title": "Save restored HTML",
+    "restoration.html.save_filter": "HTML files (*.html)",
+    "restoration.html.generate": "Generate restored HTML",
+    "restoration.html.status.initial": "Select an HTML file to begin.",
+    "restoration.html.status.inspected": "HTML file inspected successfully.",
+    "restoration.html.status.restoring": "Generating restored HTML...",
+    "restoration.html.status.analyzed": "Analysis completed without modifying the file or the vault.",
+    "restoration.html.status.completed": "Restored HTML generated successfully.",
+    "restoration.html.sensitive_text": "The restored HTML may contain personal or sensitive data. Keep it in an authorized environment.",
+    "restoration.html.analysis.summary": "Unique tokens found: {unique}\nTotal occurrences: {total}\nTokens found in vault: {found}\nMissing tokens: {missing}\nInvalid token-like formats: {invalid}\nPrefixes found: {prefixes}",
+    "restoration.html.result.summary": "Output file: {path}\nEncoding preserved: {encoding}\nOccurrences processed: {processed}\nOccurrences restored: {restored}\nMissing tokens preserved: {missing}\nApproximate duration: {seconds} s\nMissing-token policy: {missing_policy}\nRepresentation: {representation}",
+    "restoration.html.progress.initial.one": "{count} occurrence processed",
+    "restoration.html.progress.initial.other": "{count} occurrences processed",
+    "restoration.html.progress.metrics": "{processed} occurrences; {restored} restored; {missing} missing",
+    "restoration.html.error.source_alias": "The restored file cannot replace the input HTML.",
+    "restoration.html.error.missing": "Restoration stopped because a token was not found in the vault.",
+    "restoration.html.error.context": "The HTML contains a context that is not supported for safe restoration."
   }
 }
