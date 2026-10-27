@@ -1,9 +1,10 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QUrl, Qt, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QSignalBlocker, QThread, QUrl, Qt, Signal
+from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QFileDialog,
     QFormLayout,
@@ -23,6 +24,7 @@ from data_mask_studio.backup import (
     BackupCreationResult,
     BackupError,
     BackupValidationResult,
+    BackupValidationError,
     EnvironmentPaths,
     RestoreResult,
     suggested_backup_name,
@@ -39,6 +41,8 @@ from data_mask_studio.gui.components.presentation import (
     set_button_role, set_feedback_state,
 )
 from data_mask_studio.gui.visual_tokens import METRICS
+from data_mask_studio.gui.dialog_localization import localize_standard_buttons
+from data_mask_studio.i18n import Translator
 from data_mask_studio.security import DataProtector, KeyProvider
 
 
@@ -53,6 +57,7 @@ class BackupWidget(QWidget):
         vault_key_provider: KeyProvider,
         protector: DataProtector,
         prepare_restore: Callable[[], bool] | None = None,
+        *, translator: Translator | None = None,
     ) -> None:
         super().__init__()
         self._paths = paths
@@ -60,13 +65,17 @@ class BackupWidget(QWidget):
         self._vault_key_provider = vault_key_provider
         self._protector = protector
         self._prepare_restore = prepare_restore or (lambda: True)
+        self._translator = translator or Translator("pt-BR")
+        self._status_messages: dict[QLabel, tuple[str, dict[str, int]]] = {}
+        self._displayed_validation: BackupValidationResult | None = None
+        self._confirmation_ids: tuple[str, str] | None = None
         self._worker: (
             BackupCreationWorker | BackupValidationWorker | BackupRestoreWorker | None
         ) = None
         self._validated_result: BackupValidationResult | None = None
         self._last_backup_path: Path | None = None
 
-        create_group = QGroupBox("Criar backup")
+        self.create_group = create_group = QGroupBox()
         self.destination_field = QLineEdit()
         self.destination_field.setReadOnly(True)
         self.destination_field.setText(str(Path.home() / suggested_backup_name()))
@@ -83,7 +92,7 @@ class BackupWidget(QWidget):
                 (self.create_password_field, self.confirm_password_field), visible
             )
         )
-        recommendation = QLabel("Use uma frase-senha longa, única e bem guardada.")
+        self.recommendation_label = recommendation = QLabel()
         recommendation.setWordWrap(True)
         recommendation.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         set_feedback_state(recommendation, "neutral")
@@ -116,8 +125,15 @@ class BackupWidget(QWidget):
         create_form.addRow("", create_actions)
         create_form.addRow("Progresso:", self.create_progress)
         create_form.addRow("Status:", self.create_status)
+        self._create_labels = (
+            (create_form.labelForField(destination_row), "backup.destination"),
+            (create_form.labelForField(self.create_password_field), "masking.package.password_label"),
+            (create_form.labelForField(self.confirm_password_field), "masking.package.confirmation_label"),
+            (create_form.labelForField(self.create_progress), "backup.progress"),
+            (create_form.labelForField(self.create_status), "backup.status_label"),
+        )
 
-        restore_group = QGroupBox("Restaurar backup")
+        self.restore_group = restore_group = QGroupBox()
         self.restore_file_field = QLineEdit()
         self.restore_file_field.setReadOnly(True)
         self.restore_file_field.textChanged.connect(self._invalidate_validation)
@@ -170,7 +186,7 @@ class BackupWidget(QWidget):
         restore_actions.addWidget(self.restore_cancel_button)
         restore_actions.addStretch()
         restore_form.addRow("", restore_actions)
-        summary_label = QLabel("Resumo técnico:")
+        self.summary_label = summary_label = QLabel()
         summary_label.setBuddy(self.restore_summary)
         summary_row = QHBoxLayout()
         summary_row.addWidget(summary_label, alignment=Qt.AlignmentFlag.AlignTop)
@@ -179,16 +195,13 @@ class BackupWidget(QWidget):
         restore_feedback.addRow("Progresso:", self.restore_progress)
         restore_feedback.addRow("Status:", self.restore_status)
         # Align the existing captions using their font-dependent size hints.
-        labels = (
-            restore_form.labelForField(restore_file_row),
-            restore_form.labelForField(self.restore_password_field),
-            summary_label,
-            restore_feedback.labelForField(self.restore_progress),
-            restore_feedback.labelForField(self.restore_status),
+        self._restore_labels = (
+            (restore_form.labelForField(restore_file_row), "masking.metadata.file"),
+            (restore_form.labelForField(self.restore_password_field), "masking.package.password_label"),
+            (summary_label, "backup.summary.label"),
+            (restore_feedback.labelForField(self.restore_progress), "backup.progress"),
+            (restore_feedback.labelForField(self.restore_status), "backup.status_label"),
         )
-        label_width = max(label.sizeHint().width() for label in labels)
-        for label in labels:
-            label.setMinimumWidth(label_width)
         restore_layout = QVBoxLayout(restore_group)
         restore_layout.addLayout(restore_form)
         restore_layout.addLayout(summary_row, stretch=1)
@@ -202,6 +215,94 @@ class BackupWidget(QWidget):
         layout.addStretch()
         self.restore_summary.textChanged.connect(self._update_summary_layout)
         self._update_summary_layout()
+        for label in (self.create_status, self.restore_status, recommendation):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+        self._status_id(self.create_status, "backup.create.initial")
+        self._status_id(self.restore_status, "backup.restore.initial")
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Relabel existing controls and metadata without touching credentials or workers."""
+        self._translator = translator
+        self.create_group.setTitle(translator.text("backup.create"))
+        self.restore_group.setTitle(translator.text("backup.restore"))
+        for widget, identifier in (
+            (self.choose_destination_button, "backup.choose_destination"),
+            (self.create_button, "backup.create"),
+            (self.create_cancel_button, "dialog.button.cancel"),
+            (self.restore_cancel_button, "dialog.button.cancel"),
+            (self.open_folder_button, "backup.open_folder"),
+            (self.choose_restore_button, "backup.select"),
+            (self.validate_backup_button, "backup.validate"),
+            (self.restore_button, "backup.restore_action"),
+            (self.show_create_password, "restoration.package.show_password"),
+            (self.show_restore_password, "restoration.package.show_password"),
+            (self.recommendation_label, "backup.recommendation"),
+            *self._create_labels, *self._restore_labels,
+        ):
+            widget.setText(translator.text(identifier))
+        for field, identifier in (
+            (self.destination_field, "backup.destination_accessible"),
+            (self.restore_file_field, "backup.file_accessible"),
+            (self.create_password_field, "backup.password_accessible"),
+            (self.confirm_password_field, "backup.confirmation_accessible"),
+            (self.restore_password_field, "backup.restore_password_accessible"),
+            (self.restore_summary, "backup.summary_accessible"),
+        ):
+            field.setAccessibleName(translator.text(identifier))
+        self.restore_summary.empty_text = translator.text("backup.summary.empty")
+        self.restore_summary.setAccessibleDescription(self.restore_summary.empty_text)
+        self.restore_summary.viewport().update()
+        for label, _ in self._restore_labels:
+            label.setMinimumWidth(0)
+        width = max(label.sizeHint().width() for label, _ in self._restore_labels)
+        for label, _ in self._restore_labels:
+            label.setMinimumWidth(width)
+        for label, (identifier, parameters) in self._status_messages.items():
+            label.setText(self._status_text(identifier, parameters))
+        if self._displayed_validation is not None:
+            self._render_summary(preserve_position=True)
+        dialog = QApplication.activeModalWidget()
+        if (self._confirmation_ids is not None and isinstance(dialog, QMessageBox)
+                and dialog.parentWidget() is self):
+            title_id, text_id = self._confirmation_ids
+            dialog.setWindowTitle(translator.text(title_id))
+            dialog.setText(translator.text(text_id))
+            localize_standard_buttons(dialog, translator)
+
+    def _render_summary(self, *, preserve_position: bool = False) -> None:
+        output = self.restore_summary
+        text = _render_validation(self._displayed_validation, self._translator)
+        if not preserve_position:
+            output.setPlainText(text)
+            return
+        cursor = output.textCursor()
+        positions = []
+        for position in (cursor.anchor(), cursor.position()):
+            cursor.setPosition(position)
+            block = cursor.block()
+            positions.append((block.blockNumber(), block.length() - 1 - cursor.positionInBlock()))
+        vertical, horizontal = output.verticalScrollBar().value(), output.horizontalScrollBar().value()
+        with QSignalBlocker(output):
+            output.setPlainText(text)
+            cursor = output.textCursor()
+            for index, (number, offset) in enumerate(positions):
+                block = output.document().findBlockByNumber(number)
+                cursor.setPosition(block.position() + max(0, block.length() - 1 - offset),
+                                   QTextCursor.MoveMode.MoveAnchor if index == 0 else QTextCursor.MoveMode.KeepAnchor)
+            output.setTextCursor(cursor)
+            output.verticalScrollBar().setValue(vertical)
+            output.horizontalScrollBar().setValue(horizontal)
+
+    def _confirm(self, title_id: str, text_id: str) -> int:
+        self._confirmation_ids = (title_id, text_id)
+        try:
+            return confirm_destructive_action(
+                self, self._translator.text(title_id), self._translator.text(text_id),
+                translator=self._translator,
+            )
+        finally:
+            self._confirmation_ids = None
 
     def _update_summary_layout(self) -> None:
         # Creation keeps its natural size; only populated restore results expand.
@@ -213,9 +314,9 @@ class BackupWidget(QWidget):
     def choose_destination(self) -> None:
         selected, _ = QFileDialog.getSaveFileName(
             self,
-            "Salvar backup criptografado",
+            self._translator.text("backup.dialog.save"),
             self.destination_field.text(),
-            "Backup do Data Mask Studio (*.dmsbackup)",
+            self._translator.text("backup.file_filter"),
         )
         if selected:
             path = Path(selected)
@@ -226,9 +327,9 @@ class BackupWidget(QWidget):
     def choose_restore_file(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Selecionar backup",
+            self._translator.text("backup.select"),
             "",
-            "Backup do Data Mask Studio (*.dmsbackup)",
+            self._translator.text("backup.file_filter"),
         )
         if selected:
             self.restore_file_field.setText(selected)
@@ -242,17 +343,14 @@ class BackupWidget(QWidget):
                 self.create_password_field.text(), self.confirm_password_field.text()
             )
             if not self.destination_field.text():
-                raise BackupError("Escolha o destino do backup.")
+                self._status_id(self.create_status, "backup.error.destination", error=True)
+                return
         except BackupError as error:
             self._status(self.create_status, str(error), True)
             return
         overwrite = destination.exists()
         if overwrite:
-            answer = confirm_destructive_action(
-                self,
-                "Substituir backup",
-                "O arquivo de backup já existe. Deseja substituí-lo?",
-            )
+            answer = self._confirm("backup.confirm.overwrite.title", "backup.confirm.overwrite.text")
             if answer != QMessageBox.StandardButton.Yes:
                 return
         worker = BackupCreationWorker(
@@ -273,7 +371,7 @@ class BackupWidget(QWidget):
 
     def start_validation(self) -> None:
         if self._worker is not None or not self.restore_file_field.text():
-            self._status(self.restore_status, "Selecione um arquivo de backup.", True)
+            self._status_id(self.restore_status, "backup.error.select", error=True)
             return
         worker = BackupValidationWorker(
             self.restore_file_field.text(), self.restore_password_field.text()
@@ -289,17 +387,9 @@ class BackupWidget(QWidget):
         if self._worker is not None or self._validated_result is None:
             return
         if not self._prepare_restore():
-            self._status(
-                self.restore_status,
-                "Finalize as operações em andamento antes de restaurar.",
-                True,
-            )
+            self._status_id(self.restore_status, "backup.error.busy", error=True)
             return
-        answer = confirm_destructive_action(
-            self,
-            "Confirmar restauração",
-            "A restauração substituirá o cofre, as chaves e os perfis locais atuais.",
-        )
+        answer = self._confirm("backup.confirm.restore.title", "backup.confirm.restore.text")
         if answer != QMessageBox.StandardButton.Yes:
             return
         worker = BackupRestoreWorker(
@@ -317,65 +407,89 @@ class BackupWidget(QWidget):
 
     def _begin(self, worker: QThread, *, creating: bool) -> None:
         self._worker = worker
+        if isinstance(worker, BackupValidationWorker):
+            self._validated_result = None
+            self.restore_button.setEnabled(False)
+            self._clear_summary()
         self.busy_changed.emit(True)
         self._set_controls_enabled(False)
         progress = self.create_progress if creating else self.restore_progress
         progress.setRange(0, 0)
+        progress.setValue(0)
         if creating:
             self.create_cancel_button.setEnabled(True)
             self.create_cancel_button.setVisible(True)
-            self._status(self.create_status, "Criando backup criptografado...", False)
+            self._status_id(self.create_status, "backup.status.creating")
         else:
             self.restore_cancel_button.setEnabled(True)
             self.restore_cancel_button.setVisible(True)
-            self._status(self.restore_status, "Processando backup...", False)
+            self._status_id(self.restore_status, "backup.status.processing")
 
     def _creation_completed(self, result: BackupCreationResult) -> None:
+        if not self._accept_worker_signal():
+            return
         self._last_backup_path = result.path
         self.create_progress.setRange(0, 1)
         self.create_progress.setValue(1)
         self.open_folder_button.setEnabled(True)
-        self._status(self.create_status, "Backup criado com sucesso.", False, state="success")
+        self._status_id(self.create_status, "backup.status.created", state="success")
         self._clear_create_passwords()
 
     def _validation_completed(self, result: BackupValidationResult) -> None:
+        if not self._accept_worker_signal():
+            return
         self._validated_result = result if result.is_compatible else None
         self.restore_button.setEnabled(result.is_compatible)
         self.restore_progress.setRange(0, 1)
         self.restore_progress.setValue(1)
-        self.restore_summary.setPlainText(_render_validation(result))
-        message = "Backup validado com sucesso." if result.is_compatible else "Backup incompatível."
-        self._status(self.restore_status, message, not result.is_compatible, state="success")
+        self._displayed_validation = result
+        self._render_summary()
+        self._status_id(self.restore_status, "backup.status.validated" if result.is_compatible
+                        else "backup.status.incompatible", error=not result.is_compatible, state="success")
 
     def _restore_completed(self, result: RestoreResult) -> None:
+        if not self._accept_worker_signal():
+            return
         self.restore_progress.setRange(0, 1)
         self.restore_progress.setValue(1)
-        self._status(
-            self.restore_status,
-            f"Ambiente restaurado com sucesso: {result.mapping_count} mapeamento(s).",
-            False,
-            state="success",
-        )
+        self._status_id(self.restore_status, "backup.status.restored", count=result.mapping_count, state="success")
         self.restore_password_field.clear()
         self._validated_result = None
         self.restore_button.setEnabled(False)
         self.environment_restored.emit()
 
     def _cancelled(self) -> None:
+        if not self._accept_worker_signal():
+            return
         self._clear_all_passwords()
-        self._status(self.create_status, "Operação cancelada.", False, state="warning")
-        self._status(self.restore_status, "Operação cancelada.", False, state="warning")
+        for progress in (self.create_progress, self.restore_progress):
+            progress.setRange(0, 1)
+            progress.setValue(0)
+        self._status_id(self.create_status, "backup.status.cancelled", state="warning")
+        self._status_id(self.restore_status, "backup.status.cancelled", state="warning")
 
     def _failed(self, error: Exception) -> None:
-        message = str(error) if isinstance(error, BackupError) else "A operação de backup falhou."
+        if not self._accept_worker_signal():
+            return
         target = self.create_status if isinstance(self._worker, BackupCreationWorker) else self.restore_status
-        self._status(target, message, True)
+        if isinstance(self._worker, BackupValidationWorker) and isinstance(error, BackupValidationError):
+            self._status_id(target, "backup.error.validation", error=True)
+        elif isinstance(error, BackupError):
+            self._status(target, str(error), True)
+        else:
+            self._status_id(target, "backup.error.unexpected", error=True)
+        progress = self.create_progress if target is self.create_status else self.restore_progress
+        progress.setRange(0, 1)
+        progress.setValue(0)
         if isinstance(self._worker, BackupCreationWorker):
             self._clear_create_passwords()
         self._validated_result = None
+        self._clear_summary()
         self.restore_button.setEnabled(False)
 
     def _finished(self) -> None:
+        if not self._accept_worker_signal():
+            return
         worker = self._worker
         self._worker = None
         if worker is not None:
@@ -384,6 +498,9 @@ class BackupWidget(QWidget):
         self.restore_cancel_button.setVisible(False)
         self.create_progress.setRange(0, 1)
         self.restore_progress.setRange(0, 1)
+        for progress in (self.create_progress, self.restore_progress):
+            if progress.value() < 0:
+                progress.setValue(0)
         self._set_controls_enabled(True)
         self.busy_changed.emit(False)
         self.restore_button.setEnabled(self._validated_result is not None)
@@ -400,15 +517,20 @@ class BackupWidget(QWidget):
     def _invalidate_validation(self) -> None:
         self._validated_result = None
         self.restore_button.setEnabled(False)
-        self.restore_summary.clear()
+        self._clear_summary()
         if self._worker is None:
-            set_feedback_state(self.restore_status, "neutral")
+            self.restore_progress.setRange(0, 1)
+            self.restore_progress.setValue(0)
+            self._status_id(self.restore_status, "backup.status.validation_pending" if self.restore_file_field.text()
+                            else "backup.restore.initial")
         self.validate_backup_button.setEnabled(
             bool(self.restore_file_field.text() and self.restore_password_field.text())
             and self._worker is None
         )
 
     def _set_controls_enabled(self, enabled: bool) -> None:
+        if not enabled:
+            self.restore_button.setEnabled(False)
         for control in (
             self.choose_destination_button,
             self.create_password_field,
@@ -447,12 +569,33 @@ class BackupWidget(QWidget):
         self._clear_create_passwords()
         self.restore_password_field.clear()
 
-    @staticmethod
     def _status(
-        label: QLabel, message: str, error: bool, *, state: FeedbackState = "neutral"
+        self, label: QLabel, message: str, error: bool, *, state: FeedbackState = "neutral"
     ) -> None:
+        self._status_messages.pop(label, None)
         label.setText(message)
         set_feedback_state(label, "error" if error else state)
+
+    def _status_id(self, label: QLabel, identifier: str, *, error: bool = False,
+                   state: FeedbackState = "neutral", **parameters: int) -> None:
+        self._status_messages[label] = (identifier, parameters)
+        label.setText(self._status_text(identifier, parameters))
+        set_feedback_state(label, "error" if error else state)
+
+    def _status_text(self, identifier: str, parameters: dict[str, int]) -> str:
+        if identifier == "backup.status.restored":
+            return self._translator.plural(identifier, parameters["count"])
+        return self._translator.text(identifier, **parameters)
+
+    def _clear_summary(self) -> None:
+        self._displayed_validation = None
+        self.restore_summary.clear()
+
+    def _accept_worker_signal(self) -> bool:
+        sender = self.sender()
+        # Direct internal calls remain supported; Qt callbacks belong only to
+        # the active worker, including terminal signals queued before finished.
+        return sender is None or sender is self._worker
 
 
 def _password_field() -> QLineEdit:
@@ -467,16 +610,18 @@ def _set_password_visible(fields: tuple[QLineEdit, ...], visible: bool) -> None:
         field.setEchoMode(mode)
 
 
-def _render_validation(result: BackupValidationResult) -> str:
-    compatibility = "Compatível" if result.is_compatible else "Incompatível"
+def _render_validation(result: BackupValidationResult, translator: Translator | None = None) -> str:
+    translator = translator or Translator("pt-BR")
+    text = translator.text
     return "\n".join(
         (
-            f"Data do backup: {result.created_at.isoformat()}",
-            f"Versão da aplicação: {result.application_version}",
-            f"Versão do formato: {result.format_version}",
-            f"Mapeamentos: {result.mapping_count}",
-            f"Perfis: {result.profile_count}",
-            f"Cofre presente: {'Sim' if result.vault_present else 'Não'}",
-            f"Compatibilidade: {compatibility}",
+            text("backup.summary.date", timestamp=result.created_at.isoformat()),
+            text("backup.summary.application", version=result.application_version),
+            text("backup.summary.format", version=result.format_version),
+            text("backup.summary.mappings", count=result.mapping_count),
+            text("backup.summary.profiles", count=result.profile_count),
+            text("backup.summary.vault_present", present=text("backup.value.yes" if result.vault_present else "backup.value.no")),
+            text("backup.summary.compatibility", compatibility=text("batch.file_status.compatible" if result.is_compatible
+                                                                   else "batch.file_status.incompatible")),
         )
     )

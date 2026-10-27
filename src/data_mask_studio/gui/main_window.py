@@ -131,6 +131,7 @@ class MainWindow(QMainWindow):
             self._vault_key_provider,
             self._data_protector,
             self._prepare_restore,
+            translator=self._translator,
         )
         self.backup_widget.busy_changed.connect(self._backup_busy_changed)
         self.backup_widget.environment_restored.connect(self._environment_restored)
@@ -324,6 +325,7 @@ class MainWindow(QMainWindow):
         self.file_restoration_widget.retranslate(translator)
         self.batch_restoration_widget.retranslate(translator)
         self.consultant_widget.retranslate(translator)
+        self.backup_widget.retranslate(translator)
         if self.about_dialog is not None:
             self.about_dialog.retranslate(translator)
 
@@ -362,8 +364,8 @@ class MainWindow(QMainWindow):
             (self.restoration_widget.path_field, self._translator.text("restoration.csv.path_accessible")),
             (self.html_restoration_widget.path_field, self._translator.text("restoration.html.path_accessible")),
             (self.batch_restoration_widget.output_field, self._translator.text("batch_restoration.output_accessible")),
-            (self.backup_widget.destination_field, "Destino do novo backup"),
-            (self.backup_widget.restore_file_field, "Arquivo de backup selecionado"),
+            (self.backup_widget.destination_field, self._translator.text("backup.destination_accessible")),
+            (self.backup_widget.restore_file_field, self._translator.text("backup.file_accessible")),
             (self.maintenance_widget.backup_path_field, "Arquivo de backup para validação"),
         )
         for field, accessible_name in path_fields:
