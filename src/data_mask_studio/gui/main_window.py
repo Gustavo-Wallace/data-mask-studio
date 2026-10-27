@@ -134,7 +134,9 @@ class MainWindow(QMainWindow):
         )
         self.backup_widget.busy_changed.connect(self._backup_busy_changed)
         self.backup_widget.environment_restored.connect(self._environment_restored)
-        self.consultant_widget = ConsultantWidget(self._vault_repository_factory)
+        self.consultant_widget = ConsultantWidget(
+            self._vault_repository_factory, translator=self._translator,
+        )
         self.file_restoration_widget = FileRestorationWidget(
             self._restoration_repository_factory, translator=self._translator,
         )
@@ -321,6 +323,7 @@ class MainWindow(QMainWindow):
         self.batch_widget.retranslate(translator)
         self.file_restoration_widget.retranslate(translator)
         self.batch_restoration_widget.retranslate(translator)
+        self.consultant_widget.retranslate(translator)
         if self.about_dialog is not None:
             self.about_dialog.retranslate(translator)
 

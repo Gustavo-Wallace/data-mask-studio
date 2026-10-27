@@ -419,7 +419,7 @@ def test_consultant_missing_or_unsafe_results_do_not_look_like_success(page, mon
         ConsultationResult("NOME-ABCDEFGHI234", status, message="Resultado seguro.")])
     widget.consult()
     assert_feedback(widget.status_label, state)
-    assert widget.status_label.text() == "Consulta concluída: 0 de 1 códigos encontrados."
+    assert widget.status_label.text() == "Consulta concluída: 0 de 1 código encontrado."
     widget.clear_consultation()
     assert_feedback(widget.status_label, "neutral")
     assert widget.status_label.text() == ""
