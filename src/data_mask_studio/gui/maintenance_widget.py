@@ -1,9 +1,9 @@
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PySide6.QtCore import QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QSignalBlocker, QThread, QUrl, Qt, Signal
+from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -42,7 +42,6 @@ from data_mask_studio.gui.components.presentation import (
 from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.integrity import AuditReport
 from data_mask_studio.maintenance import (
-    STATUS_LABELS,
     CleanupResult,
     CompactionResult,
     DiagnosticResult,
@@ -53,7 +52,7 @@ from data_mask_studio.maintenance import (
     VaultCompactor,
     safe_diagnostic_report,
 )
-from data_mask_studio.maintenance.report import safe_integrity_details
+from data_mask_studio.i18n import Translator
 from data_mask_studio.security import KeyProvider
 
 
@@ -77,8 +76,12 @@ class MaintenanceWidget(QWidget):
         vault_key_provider: KeyProvider,
         prepare_operation: Callable[[], bool] | None = None,
         session_directories: Callable[[], Iterable[Path]] | None = None,
+        *, translator: Translator | None = None,
     ) -> None:
         super().__init__()
+        self._translator = translator or Translator("pt-BR")
+        self._overview_message_id: str | None = "maintenance.overview.status.initial"
+        self._last_audit_message_id = "maintenance.overview.audit.not_run"
         self._paths = paths
         self._diagnostics = MaintenanceDiagnostics(
             paths, hmac_key_provider, vault_key_provider
@@ -136,6 +139,84 @@ class MaintenanceWidget(QWidget):
         self.temporary_table.model().rowsInserted.connect(self._update_result_layout)
         self.temporary_table.model().rowsRemoved.connect(self._update_result_layout)
         self._update_result_layout()
+        self.last_audit_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.status_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Relabel Overview and shared structure, never run diagnostics or mutate validity."""
+        self._translator = translator
+        with QSignalBlocker(self.sections):
+            for index, identifier in enumerate(("maintenance.tab.overview", "backup.validate",
+                                                "maintenance.tab.temporaries", "maintenance.tab.compaction")):
+                self.sections.setTabText(index, translator.text(identifier))
+        for widget, identifier in (
+            (self.refresh_button, "maintenance.overview.refresh"),
+            (self.copy_report_button, "maintenance.overview.copy"),
+            (self.cancel_button, "dialog.button.cancel"),
+        ):
+            widget.setText(translator.text(identifier))
+            widget.setAccessibleName(translator.text(identifier))
+        for widget, identifier in (
+            (self.sections, "maintenance.tabs_accessible"),
+            (self.progress, "maintenance.progress_accessible"),
+            (self.status_label, "maintenance.status_accessible"),
+            (self.overview_output, "maintenance.overview.results_accessible"),
+        ):
+            widget.setAccessibleName(translator.text(identifier))
+        copy_description = translator.text("maintenance.overview.copy_description")
+        self.copy_report_button.setToolTip(copy_description)
+        self.copy_report_button.setAccessibleDescription(copy_description)
+        self.overview_output.empty_text = translator.text("maintenance.overview.empty")
+        self.overview_output.setAccessibleDescription(self.overview_output.empty_text)
+        self.overview_output.viewport().update()
+        self._render_last_audit()
+        if self._overview_message_id is not None:
+            message = self._overview_status_text(self._overview_message_id)
+            saved = self._section_feedback.get(0)
+            if saved is not None:
+                self._section_feedback[0] = replace(saved, message=message)
+            if self._feedback_section == 0:
+                self.status_label.setText(message)
+        if self._last_diagnostic is not None:
+            output = self.overview_output
+            cursor = output.textCursor()
+            positions = []
+            for position in (cursor.anchor(), cursor.position()):
+                cursor.setPosition(position)
+                block = cursor.block()
+                positions.append((block.blockNumber(), block.length() - 1 - cursor.positionInBlock()))
+            vertical, horizontal = output.verticalScrollBar().value(), output.horizontalScrollBar().value()
+            with QSignalBlocker(output):
+                output.setPlainText(_render_diagnostic(self._last_diagnostic, translator))
+                cursor = output.textCursor()
+                for index, (number, offset) in enumerate(positions):
+                    block = output.document().findBlockByNumber(number)
+                    cursor.setPosition(block.position() + max(0, block.length() - 1 - offset),
+                                       QTextCursor.MoveMode.MoveAnchor if index == 0 else QTextCursor.MoveMode.KeepAnchor)
+                output.setTextCursor(cursor)
+                output.verticalScrollBar().setValue(vertical)
+                output.horizontalScrollBar().setValue(horizontal)
+
+    def _render_last_audit(self) -> None:
+        if self._last_audit is None:
+            text = self._translator.text(self._last_audit_message_id)
+        else:
+            timestamp = self._last_audit.finished_at.astimezone().strftime("%d/%m/%Y %H:%M:%S")
+            text = self._translator.text("maintenance.overview.audit.last", timestamp=timestamp,
+                status=self._translator.text(f"maintenance.integrity.{self._last_audit.status.value}"))
+        self.last_audit_label.setText(text)
+
+    def _overview_status_text(self, identifier: str) -> str:
+        if identifier == "maintenance.overview.status.completed":
+            return self._translator.text(identifier,
+                status=self._translator.text(f"maintenance.status.{self._last_diagnostic.status.value}"))
+        return self._translator.text(identifier)
+
+    def _set_overview_status_id(self, identifier: str, error: bool = False,
+                                *, state: FeedbackState = "neutral") -> None:
+        self._set_status(self._overview_status_text(identifier), error, state=state)
+        self._overview_message_id = identifier
 
     def _remember_feedback(self) -> None:
         self._section_feedback[self._feedback_section] = _SectionFeedback(
@@ -317,7 +398,7 @@ class MaintenanceWidget(QWidget):
         worker = DiagnosticWorker(self._diagnostics)
         worker.progress.connect(self._diagnostic_progress)
         worker.completed.connect(self._diagnostic_completed)
-        self._start_worker(worker, "Atualizando diagnóstico...")
+        self._start_worker(worker, "", message_id="maintenance.overview.status.running")
 
     def _diagnostic_progress(self, completed: int, total: int) -> None:
         if not self._accept_diagnostic_signal():
@@ -334,10 +415,10 @@ class MaintenanceWidget(QWidget):
         self._select_feedback_section(0)
         self._last_diagnostic = result
         self.set_last_audit(result.audit)
-        self.overview_output.setPlainText(_render_diagnostic(result))
+        self.overview_output.setPlainText(_render_diagnostic(result, self._translator))
         self.copy_report_button.setEnabled(True)
-        self._set_status(
-            f"Diagnóstico concluído: {STATUS_LABELS[result.status]}.",
+        self._set_overview_status_id(
+            "maintenance.overview.status.completed",
             result.status.value == "failure",
             state="warning" if result.status.value == "attention" else "success",
         )
@@ -356,19 +437,21 @@ class MaintenanceWidget(QWidget):
         if isinstance(self._worker, DiagnosticWorker):
             self._worker.request_cancel()
         self._clear_diagnostic_result()
-        message = "Diagnóstico desatualizado. Execute Atualizar diagnóstico."
+        self._overview_message_id = "maintenance.overview.status.invalidated"
+        message = self._overview_status_text(self._overview_message_id)
         self._section_feedback[0] = _SectionFeedback(message, "warning", 0, 1, 0)
         if self._feedback_section == 0:
             self.progress.setRange(0, 1)
             self.progress.setValue(0)
-            self._set_status(message, False, state="warning")
+            self._set_overview_status_id(self._overview_message_id, state="warning")
 
     def _clear_diagnostic_result(self) -> None:
         self._last_diagnostic = None
         self._last_audit = None
         self.copy_report_button.setEnabled(False)
         self.overview_output.clear()
-        self.last_audit_label.setText("Última auditoria nesta sessão: diagnóstico desatualizado")
+        self._last_audit_message_id = "maintenance.overview.audit.invalidated"
+        self._render_last_audit()
 
     def copy_report(self) -> None:
         if self._last_diagnostic is not None:
@@ -378,10 +461,7 @@ class MaintenanceWidget(QWidget):
 
     def set_last_audit(self, report: AuditReport) -> None:
         self._last_audit = report
-        timestamp = report.finished_at.astimezone().strftime("%d/%m/%Y %H:%M:%S")
-        self.last_audit_label.setText(
-            f"Última auditoria nesta sessão: {timestamp} — {report.status.value}"
-        )
+        self._render_last_audit()
 
     def choose_backup(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
@@ -518,11 +598,14 @@ class MaintenanceWidget(QWidget):
             return False
         self._select_feedback_section(section)
         if not self._prepare_operation():
-            self._set_status("Finalize as outras operações antes da manutenção.", True)
+            if section == 0:
+                self._set_overview_status_id("maintenance.overview.error.busy", True)
+            else:
+                self._set_status("Finalize as outras operações antes da manutenção.", True)
             return False
         return True
 
-    def _start_worker(self, worker: QThread, message: str) -> None:
+    def _start_worker(self, worker: QThread, message: str, *, message_id: str | None = None) -> None:
         self._worker = worker
         if hasattr(worker, "cancelled"):
             worker.cancelled.connect(self._cancelled)
@@ -531,7 +614,10 @@ class MaintenanceWidget(QWidget):
         worker.finished.connect(self._finished)
         self._set_busy(True)
         self.progress.setRange(0, 0)
-        self._set_status(message, False)
+        if message_id is not None:
+            self._set_overview_status_id(message_id)
+        else:
+            self._set_status(message, False)
         worker.start()
 
     def cancel(self) -> None:
@@ -541,7 +627,10 @@ class MaintenanceWidget(QWidget):
             if isinstance(worker, DiagnosticWorker):
                 self._clear_diagnostic_result()
             self.cancel_button.setEnabled(False)
-            self._set_status("Cancelamento solicitado...", False)
+            if isinstance(worker, DiagnosticWorker):
+                self._set_overview_status_id("masking.status.cancelling")
+            else:
+                self._set_status("Cancelamento solicitado...", False)
 
     def _cancelled(self) -> None:
         if self.sender() is not self._worker:
@@ -553,7 +642,10 @@ class MaintenanceWidget(QWidget):
             self._clear_diagnostic_result()
             self.progress.setRange(0, 1)
             self.progress.setValue(0)
-        self._set_status("Operação cancelada com segurança.", False, state="warning")
+        if isinstance(self._worker, DiagnosticWorker):
+            self._set_overview_status_id("restoration.csv.status.cancelled", state="warning")
+        else:
+            self._set_status("Operação cancelada com segurança.", False, state="warning")
 
     def _failed(self, error: Exception) -> None:
         if self.sender() is not self._worker:
@@ -572,7 +664,10 @@ class MaintenanceWidget(QWidget):
         )
         if isinstance(self._worker, BackupValidationWorker):
             self.backup_result.setPlainText("Arquivo inválido ou senha incorreta.")
-        self._set_status(message, True)
+        if isinstance(self._worker, DiagnosticWorker) and not isinstance(error, (MaintenanceError, BackupError)):
+            self._set_overview_status_id("maintenance.overview.error.unexpected", True)
+        else:
+            self._set_status(message, True)
 
     def _finished(self) -> None:
         if self.sender() is not self._worker:
@@ -653,42 +748,65 @@ class MaintenanceWidget(QWidget):
     def _set_status(
         self, message: str, error: bool, *, state: FeedbackState = "neutral"
     ) -> None:
+        if self._feedback_section == 0:
+            self._overview_message_id = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if error else state)
         self._remember_feedback()
         self._update_feedback_visibility()
 
 
-def _render_diagnostic(result: DiagnosticResult) -> str:
+def _render_diagnostic(result: DiagnosticResult, translator: Translator | None = None) -> str:
+    translator = translator or Translator("pt-BR")
+    text = translator.text
     stats = result.statistics
     distribution = ", ".join(
         f"{rule}: {count}" for rule, count in stats.normalization_distribution
-    ) or "nenhuma"
+    ) or text("maintenance.value.none")
+    unavailable = text("maintenance.value.unavailable")
     return "\n".join(
         (
-            f"Estado geral: {STATUS_LABELS[result.status]}",
-            f"Chave HMAC: {_check_status(result, 'Disponibilidade da chave HMAC')}",
-            f"Chave AES: {_check_status(result, 'Disponibilidade da chave AES')}",
-            f"Versão do esquema: {stats.schema_version if stats.schema_version is not None else 'indisponível'}",
-            f"Tamanho do vault.db: {_format_bytes(stats.vault_size)}",
-            f"Mapeamentos: {stats.mapping_count}",
-            f"Variações: {stats.variation_count}",
-            f"Total de ocorrências: {stats.total_occurrences}",
-            f"Perfis: {stats.profile_count}",
-            f"Prefixos: {stats.prefix_count}",
-            f"Distribuição por normalização: {distribution}",
-            f"Primeira entrada: {stats.first_entry or 'indisponível'}",
-            f"Última entrada: {stats.last_entry or 'indisponível'}",
-            f"WAL: {'sim' if stats.wal_present else 'não'}; "
-            f"SHM: {'sim' if stats.shm_present else 'não'}; "
-            f"journal: {'sim' if stats.journal_present else 'não'}",
-            f"Espaço do ambiente local: {_format_bytes(stats.environment_size)}",
-            f"Espaço livre na unidade: {_format_bytes(stats.free_space)}",
+            text("maintenance.overview.state", status=text(f"maintenance.status.{result.status.value}")),
+            text("maintenance.overview.hmac", status=text(f"maintenance.integrity.{_check_status(result, 'Disponibilidade da chave HMAC')}")),
+            text("maintenance.overview.aes", status=text(f"maintenance.integrity.{_check_status(result, 'Disponibilidade da chave AES')}")),
+            text("maintenance.overview.schema", version=stats.schema_version if stats.schema_version is not None else unavailable),
+            text("maintenance.overview.vault_size", size=_format_bytes(stats.vault_size)),
+            text("backup.summary.mappings", count=stats.mapping_count),
+            text("maintenance.overview.variations", count=stats.variation_count),
+            text("maintenance.overview.occurrences", count=stats.total_occurrences),
+            text("backup.summary.profiles", count=stats.profile_count),
+            text("maintenance.overview.prefixes", count=stats.prefix_count),
+            text("maintenance.overview.normalization", distribution=distribution),
+            text("maintenance.overview.first_entry", timestamp=stats.first_entry or unavailable),
+            text("maintenance.overview.last_entry", timestamp=stats.last_entry or unavailable),
+            text("maintenance.overview.auxiliaries", wal=text("backup.value.yes" if stats.wal_present else "backup.value.no"),
+                 shm=text("backup.value.yes" if stats.shm_present else "backup.value.no"),
+                 journal=text("backup.value.yes" if stats.journal_present else "backup.value.no")),
+            text("maintenance.overview.environment_size", size=_format_bytes(stats.environment_size)),
+            text("maintenance.overview.free_space", size=_format_bytes(stats.free_space)),
             *stats.errors,
             "",
-            safe_integrity_details(result.audit),
+            _render_integrity_details(result.audit, translator),
         )
     )
+
+
+def _render_integrity_details(report: AuditReport, translator: Translator) -> str:
+    """Same safe check fields as the canonical report; never render paths or values."""
+    text = translator.text
+    lines = [
+        text("maintenance.integrity.overall", status=text(f"maintenance.integrity.{report.status.value}")),
+        text("maintenance.integrity.started", timestamp=report.started_at.astimezone().isoformat(timespec="seconds")),
+        text("maintenance.integrity.finished", timestamp=report.finished_at.astimezone().isoformat(timespec="seconds")),
+        text("maintenance.integrity.checks"),
+    ]
+    for check in report.checks:
+        line = text("maintenance.integrity.check", status=text(f"maintenance.integrity.{check.status.value}"),
+                    check_type=check.check_type, examined=check.examined, failures=check.failures, message=check.message)
+        if check.identifiers:
+            line += text("maintenance.integrity.references", identifiers=", ".join(check.identifiers))
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _check_status(result: DiagnosticResult, name: str) -> str:

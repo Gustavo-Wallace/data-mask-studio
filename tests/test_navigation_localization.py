@@ -97,7 +97,7 @@ def test_explicit_shell_localization_preserves_routes_and_keyboard(locale, tmp_p
     assert window.navigation.buttons[7].hasFocus()
     # Only migrated presentation follows the explicitly injected translator.
     assert window.anonymization_widget.select_button.text() == translator.text("masking.select_csv")
-    assert window.maintenance_widget.refresh_button.text() == "Atualizar diagnóstico"
+    assert window.maintenance_widget.refresh_button.text() == translator.text("maintenance.overview.refresh")
 
 
 def test_normal_startup_ignores_stored_english_and_windows_language(tmp_path):

@@ -159,6 +159,7 @@ class MainWindow(QMainWindow):
             self._vault_key_provider,
             self._prepare_maintenance,
             self._maintenance_directories,
+            translator=self._translator,
         )
         self.maintenance_widget.busy_changed.connect(self._maintenance_busy_changed)
         self.anonymization_widget.profiles_changed.connect(
@@ -326,6 +327,7 @@ class MainWindow(QMainWindow):
         self.batch_restoration_widget.retranslate(translator)
         self.consultant_widget.retranslate(translator)
         self.backup_widget.retranslate(translator)
+        self.maintenance_widget.retranslate(translator)
         if self.about_dialog is not None:
             self.about_dialog.retranslate(translator)
 
