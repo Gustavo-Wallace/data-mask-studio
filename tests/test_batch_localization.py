@@ -457,11 +457,15 @@ def test_main_window_shares_explicit_translator_but_does_not_activate_saved_engl
     create_application([])
     window = build_window(tmp_path)
     assert window.batch_widget.start_button.text() == "Iniciar mascaramento"
+    maintenance_button = window.maintenance_widget.refresh_button
+    assert maintenance_button.text() == "Atualizar diagnóstico"
     translator = Translator("en")
     window.retranslate(translator)
     assert window.batch_widget._translator is translator
     assert window.batch_widget.start_button.text() == "Start masking"
-    assert window.maintenance_widget.refresh_button.text() == "Atualizar diagnóstico"
+    assert window.maintenance_widget._translator is translator
+    assert window.maintenance_widget.refresh_button is maintenance_button
+    assert maintenance_button.text() == "Update diagnostic"
 
 
 def test_freeform_batch_errors_survive_retranslation_without_old_success(batch_pages):
