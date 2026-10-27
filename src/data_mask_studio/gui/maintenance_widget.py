@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from data_mask_studio.backup import (
     BackupError,
+    BackupValidationError,
     BackupValidationResult,
     EnvironmentPaths,
 )
@@ -82,6 +83,10 @@ class MaintenanceWidget(QWidget):
         self._translator = translator or Translator("pt-BR")
         self._overview_message_id: str | None = "maintenance.overview.status.initial"
         self._last_audit_message_id = "maintenance.overview.audit.not_run"
+        self._backup_message_id: str | None = None
+        self._backup_result_message_id: str | None = None
+        self._last_backup_validation: BackupValidationResult | None = None
+        self._backup_accept_result = False
         self._paths = paths
         self._diagnostics = MaintenanceDiagnostics(
             paths, hmac_key_provider, vault_key_provider
@@ -144,7 +149,7 @@ class MaintenanceWidget(QWidget):
         self.retranslate(self._translator)
 
     def retranslate(self, translator: Translator) -> None:
-        """Relabel Overview and shared structure, never run diagnostics or mutate validity."""
+        """Relabel migrated presentation without running operations or mutating validity."""
         self._translator = translator
         with QSignalBlocker(self.sections):
             for index, identifier in enumerate(("maintenance.tab.overview", "backup.validate",
@@ -154,6 +159,11 @@ class MaintenanceWidget(QWidget):
             (self.refresh_button, "maintenance.overview.refresh"),
             (self.copy_report_button, "maintenance.overview.copy"),
             (self.cancel_button, "dialog.button.cancel"),
+            (self.choose_backup_button, "maintenance.backup.select"),
+            (self.validate_backup_button, "backup.validate"),
+            (self.backup_file_label, "maintenance.backup.file_label"),
+            (self.backup_password_label, "masking.package.password_label"),
+            (self.show_backup_password, "restoration.package.show_password"),
         ):
             widget.setText(translator.text(identifier))
             widget.setAccessibleName(translator.text(identifier))
@@ -162,6 +172,9 @@ class MaintenanceWidget(QWidget):
             (self.progress, "maintenance.progress_accessible"),
             (self.status_label, "maintenance.status_accessible"),
             (self.overview_output, "maintenance.overview.results_accessible"),
+            (self.backup_path_field, "maintenance.backup.path_accessible"),
+            (self.backup_password_field, "maintenance.backup.password_accessible"),
+            (self.backup_result, "maintenance.backup.result_accessible"),
         ):
             widget.setAccessibleName(translator.text(identifier))
         copy_description = translator.text("maintenance.overview.copy_description")
@@ -170,6 +183,9 @@ class MaintenanceWidget(QWidget):
         self.overview_output.empty_text = translator.text("maintenance.overview.empty")
         self.overview_output.setAccessibleDescription(self.overview_output.empty_text)
         self.overview_output.viewport().update()
+        self.backup_result.empty_text = translator.text("maintenance.backup.empty")
+        self.backup_result.setAccessibleDescription(self.backup_result.empty_text)
+        self.backup_result.viewport().update()
         self._render_last_audit()
         if self._overview_message_id is not None:
             message = self._overview_status_text(self._overview_message_id)
@@ -178,8 +194,21 @@ class MaintenanceWidget(QWidget):
                 self._section_feedback[0] = replace(saved, message=message)
             if self._feedback_section == 0:
                 self.status_label.setText(message)
+        if self._backup_message_id is not None:
+            message = translator.text(self._backup_message_id)
+            saved = self._section_feedback.get(1)
+            if saved is not None:
+                self._section_feedback[1] = replace(saved, message=message)
+            if self._feedback_section == 1:
+                self.status_label.setText(message)
+        rendered_outputs = []
         if self._last_diagnostic is not None:
-            output = self.overview_output
+            rendered_outputs.append((self.overview_output, _render_diagnostic(self._last_diagnostic, translator)))
+        if self._last_backup_validation is not None:
+            rendered_outputs.append((self.backup_result, _render_backup(self._last_backup_validation, translator)))
+        elif self._backup_result_message_id is not None:
+            rendered_outputs.append((self.backup_result, translator.text(self._backup_result_message_id)))
+        for output, text in rendered_outputs:
             cursor = output.textCursor()
             positions = []
             for position in (cursor.anchor(), cursor.position()):
@@ -188,7 +217,7 @@ class MaintenanceWidget(QWidget):
                 positions.append((block.blockNumber(), block.length() - 1 - cursor.positionInBlock()))
             vertical, horizontal = output.verticalScrollBar().value(), output.horizontalScrollBar().value()
             with QSignalBlocker(output):
-                output.setPlainText(_render_diagnostic(self._last_diagnostic, translator))
+                output.setPlainText(text)
                 cursor = output.textCursor()
                 for index, (number, offset) in enumerate(positions):
                     block = output.document().findBlockByNumber(number)
@@ -217,6 +246,16 @@ class MaintenanceWidget(QWidget):
                                 *, state: FeedbackState = "neutral") -> None:
         self._set_status(self._overview_status_text(identifier), error, state=state)
         self._overview_message_id = identifier
+
+    def _set_backup_status_id(self, identifier: str, error: bool = False,
+                              *, state: FeedbackState = "neutral") -> None:
+        self._set_status(self._translator.text(identifier), error, state=state)
+        self._backup_message_id = identifier
+
+    def _clear_backup_result(self) -> None:
+        self._last_backup_validation = None
+        self._backup_result_message_id = None
+        self.backup_result.clear()
 
     def _remember_feedback(self) -> None:
         self._section_feedback[self._feedback_section] = _SectionFeedback(
@@ -316,9 +355,13 @@ class MaintenanceWidget(QWidget):
         self.backup_result.setReadOnly(True)
         layout = QVBoxLayout(widget)
         layout.setSpacing(METRICS["panel_spacing"])
-        layout.addWidget(QLabel("Arquivo de backup:"))
+        self.backup_file_label = QLabel()
+        self.backup_file_label.setBuddy(self.backup_path_field)
+        self.backup_password_label = QLabel()
+        self.backup_password_label.setBuddy(self.backup_password_field)
+        layout.addWidget(self.backup_file_label)
         layout.addLayout(file_row)
-        layout.addWidget(QLabel("Senha:"))
+        layout.addWidget(self.backup_password_label)
         layout.addWidget(self.backup_password_field)
         layout.addWidget(self.show_backup_password)
         layout.addLayout(actions)
@@ -464,32 +507,48 @@ class MaintenanceWidget(QWidget):
         self._render_last_audit()
 
     def choose_backup(self) -> None:
+        if self._worker is not None:
+            return
         selected, _ = QFileDialog.getOpenFileName(
-            self, "Selecionar backup", "", "Backup (*.dmsbackup)"
+            self, self._translator.text("backup.select"), "", "Backup (*.dmsbackup)"
         )
         if selected:
             self.backup_path_field.setText(selected)
-            self.backup_result.clear()
+            self._clear_backup_result()
+            self._select_feedback_section(1)
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            self._set_backup_status_id("backup.status.validation_pending")
 
     def start_backup_validation(self) -> None:
         if not self.backup_path_field.text():
             if self._worker is None:
                 self._select_feedback_section(1)
-            self._set_status("Selecione um backup e informe sua senha.", True)
+            self._set_backup_status_id("maintenance.backup.error.input", True)
             return
         if not self._begin_allowed(1):
-            self._set_status("Selecione um backup e informe sua senha.", True)
+            self._set_backup_status_id("maintenance.backup.error.input", True)
             return
+        self._clear_backup_result()
+        self._backup_accept_result = True
         worker = BackupValidationWorker(
             self.backup_path_field.text(), self.backup_password_field.text()
         )
         worker.completed.connect(self._backup_completed)
-        self._start_worker(worker, "Validando backup sem restaurá-lo...")
+        self._start_worker(worker, "", message_id="maintenance.backup.status.validating")
 
     def _backup_completed(self, result: BackupValidationResult) -> None:
+        if not (self.sender() is self._worker and isinstance(self._worker, BackupValidationWorker)
+                and self._backup_accept_result and not self._worker.cancellation_requested):
+            if self.sender() is self._worker and self._backup_accept_result:
+                self._cancelled()
+            return
         self._select_feedback_section(1)
-        self.backup_result.setPlainText(_render_backup(result))
-        self._set_status("Backup válido.", False, state="success" if result.is_compatible else "warning")
+        self._last_backup_validation = result
+        self._backup_result_message_id = None
+        self.backup_result.setPlainText(_render_backup(result, self._translator))
+        self._set_backup_status_id("backup.status.validated" if result.is_compatible else "backup.status.incompatible",
+                                   state="success" if result.is_compatible else "warning")
 
     def start_temporary_scan(self) -> None:
         if not self._begin_allowed(2):
@@ -600,6 +659,8 @@ class MaintenanceWidget(QWidget):
         if not self._prepare_operation():
             if section == 0:
                 self._set_overview_status_id("maintenance.overview.error.busy", True)
+            elif section == 1:
+                self._set_backup_status_id("maintenance.overview.error.busy", True)
             else:
                 self._set_status("Finalize as outras operações antes da manutenção.", True)
             return False
@@ -615,7 +676,10 @@ class MaintenanceWidget(QWidget):
         self._set_busy(True)
         self.progress.setRange(0, 0)
         if message_id is not None:
-            self._set_overview_status_id(message_id)
+            if isinstance(worker, BackupValidationWorker):
+                self._set_backup_status_id(message_id)
+            else:
+                self._set_overview_status_id(message_id)
         else:
             self._set_status(message, False)
         worker.start()
@@ -626,14 +690,27 @@ class MaintenanceWidget(QWidget):
             worker.request_cancel()
             if isinstance(worker, DiagnosticWorker):
                 self._clear_diagnostic_result()
+            elif isinstance(worker, BackupValidationWorker):
+                self._clear_backup_result()
             self.cancel_button.setEnabled(False)
             if isinstance(worker, DiagnosticWorker):
                 self._set_overview_status_id("masking.status.cancelling")
+            elif isinstance(worker, BackupValidationWorker):
+                self._set_backup_status_id("masking.status.cancelling")
             else:
                 self._set_status("Cancelamento solicitado...", False)
 
     def _cancelled(self) -> None:
         if self.sender() is not self._worker:
+            return
+        if isinstance(self._worker, BackupValidationWorker):
+            if not self._backup_accept_result:
+                return
+            self._backup_accept_result = False
+            self._clear_backup_result()
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            self._set_backup_status_id("restoration.csv.status.cancelled", state="warning")
             return
         if isinstance(self._worker, DiagnosticWorker):
             if not self._diagnostic_accept_result:
@@ -650,6 +727,22 @@ class MaintenanceWidget(QWidget):
     def _failed(self, error: Exception) -> None:
         if self.sender() is not self._worker:
             return
+        if isinstance(self._worker, BackupValidationWorker):
+            if not self._backup_accept_result:
+                return
+            self._backup_accept_result = False
+            self._clear_backup_result()
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            self._backup_result_message_id = "maintenance.backup.result.invalid"
+            self.backup_result.setPlainText(self._translator.text(self._backup_result_message_id))
+            if isinstance(error, BackupValidationError):
+                self._set_backup_status_id("backup.error.validation", True)
+            elif isinstance(error, (MaintenanceError, BackupError)):
+                self._set_status(str(error), True)
+            else:
+                self._set_backup_status_id("maintenance.overview.error.unexpected", True)
+            return
         if isinstance(self._worker, DiagnosticWorker):
             if not self._diagnostic_accept_result:
                 return
@@ -662,8 +755,6 @@ class MaintenanceWidget(QWidget):
             if isinstance(error, (MaintenanceError, BackupError))
             else "A operação de manutenção falhou com segurança."
         )
-        if isinstance(self._worker, BackupValidationWorker):
-            self.backup_result.setPlainText("Arquivo inválido ou senha incorreta.")
         if isinstance(self._worker, DiagnosticWorker) and not isinstance(error, (MaintenanceError, BackupError)):
             self._set_overview_status_id("maintenance.overview.error.unexpected", True)
         else:
@@ -679,18 +770,23 @@ class MaintenanceWidget(QWidget):
             and self._diagnostic_accept_result
         ):
             self._cancelled()
+        if (isinstance(worker, BackupValidationWorker) and worker.cancellation_requested
+                and self._backup_accept_result):
+            self._cancelled()
         diagnostic_succeeded = (
             self._last_diagnostic is not None
             and self._last_diagnostic.status is not MaintenanceStatus.FAILURE
         )
         self._diagnostic_accept_result = False
+        self._backup_accept_result = False
         self._worker = None
         self.backup_password_field.clear()
         self.show_backup_password.setChecked(False)
         if worker is not None:
             worker.deleteLater()
         self._set_busy(
-            False, completed=not isinstance(worker, DiagnosticWorker) or diagnostic_succeeded
+            False, completed=(self._last_backup_validation is not None if isinstance(worker, BackupValidationWorker)
+                              else not isinstance(worker, DiagnosticWorker) or diagnostic_succeeded)
         )
         self._remember_feedback()
 
@@ -750,6 +846,8 @@ class MaintenanceWidget(QWidget):
     ) -> None:
         if self._feedback_section == 0:
             self._overview_message_id = None
+        elif self._feedback_section == 1:
+            self._backup_message_id = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if error else state)
         self._remember_feedback()
@@ -814,17 +912,18 @@ def _check_status(result: DiagnosticResult, name: str) -> str:
     return check.status.value
 
 
-def _render_backup(result: BackupValidationResult) -> str:
+def _render_backup(result: BackupValidationResult, translator: Translator | None = None) -> str:
+    text = (translator or Translator("pt-BR")).text
     return "\n".join(
         (
-            "Arquivo válido: sim",
-            f"Data de criação: {result.created_at.astimezone().isoformat(timespec='seconds')}",
-            f"Versão da aplicação: {result.application_version}",
-            f"Versão do formato: {result.format_version}",
-            f"Versão do esquema: {result.vault_schema_version}",
-            f"Mapeamentos: {result.mapping_count}",
-            f"Perfis: {result.profile_count}",
-            f"Compatível: {'sim' if result.is_compatible else 'não'}",
+            text("maintenance.backup.summary.valid_file"),
+            text("maintenance.backup.summary.created", timestamp=result.created_at.astimezone().isoformat(timespec="seconds")),
+            text("backup.summary.application", version=result.application_version),
+            text("backup.summary.format", version=result.format_version),
+            text("maintenance.overview.schema", version=result.vault_schema_version),
+            text("backup.summary.mappings", count=result.mapping_count),
+            text("backup.summary.profiles", count=result.profile_count),
+            text("maintenance.backup.summary.compatible_yes" if result.is_compatible else "maintenance.backup.summary.compatible_no"),
         )
     )
 

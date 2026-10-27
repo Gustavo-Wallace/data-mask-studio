@@ -327,7 +327,7 @@ def test_diagnostics_use_existing_status_without_turning_attention_green(page, t
 
 
 @pytest.mark.parametrize("compatible", [False, True])
-def test_backup_validation_keeps_compatibility_rules_and_clear_resets_neutral(page, compatible):
+def test_backup_validation_keeps_compatibility_rules_and_clear_resets_neutral(page, compatible, monkeypatch):
     _, window = page
     result = BackupValidationResult(datetime.now(timezone.utc), "1.2.0", 1, 4, 1, 0, True,
         BackupCompatibility.COMPATIBLE if compatible else BackupCompatibility.INCOMPATIBLE)
@@ -338,8 +338,16 @@ def test_backup_validation_keeps_compatibility_rules_and_clear_resets_neutral(pa
     assert (widget._validated_result is not None) is compatible
     widget._invalidate_validation()
     assert_feedback(widget.restore_status, "neutral")
-    window.maintenance_widget._backup_completed(result)
-    assert_feedback(window.maintenance_widget.status_label, "success" if compatible else "warning")
+    from data_mask_studio.gui.backup_worker import BackupValidationWorker
+    maintenance = window.maintenance_widget
+    maintenance.backup_path_field.setText("synthetic.dmsbackup")
+    maintenance.backup_password_field.setText("synthetic password")
+    monkeypatch.setattr(BackupValidationWorker, "start", lambda self: None)
+    maintenance.start_backup_validation()
+    worker = maintenance._worker
+    worker.completed.emit(result)
+    worker.finished.emit()
+    assert_feedback(maintenance.status_label, "success" if compatible else "warning")
     widget._cancelled()
     assert_feedback(widget.create_status, "warning")
     assert_feedback(widget.restore_status, "warning")

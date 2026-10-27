@@ -368,7 +368,7 @@ class MainWindow(QMainWindow):
             (self.batch_restoration_widget.output_field, self._translator.text("batch_restoration.output_accessible")),
             (self.backup_widget.destination_field, self._translator.text("backup.destination_accessible")),
             (self.backup_widget.restore_file_field, self._translator.text("backup.file_accessible")),
-            (self.maintenance_widget.backup_path_field, "Arquivo de backup para validação"),
+            (self.maintenance_widget.backup_path_field, self._translator.text("maintenance.backup.path_accessible")),
         )
         for field, accessible_name in path_fields:
             configure_path_field(field, accessible_name)

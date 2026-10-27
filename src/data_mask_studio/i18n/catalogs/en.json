@@ -614,6 +614,19 @@
     "maintenance.integrity.finished": "Audit finished: {timestamp}",
     "maintenance.integrity.checks": "Checks (counts per check, not unique records):",
     "maintenance.integrity.check": "[{status}] {check_type}: examined={examined}; failures={failures}; {message}",
-    "maintenance.integrity.references": "; references={identifiers}"
+    "maintenance.integrity.references": "; references={identifiers}",
+    "maintenance.backup.select": "Select .dmsbackup",
+    "maintenance.backup.file_label": "Backup file:",
+    "maintenance.backup.path_accessible": "Backup file for validation",
+    "maintenance.backup.password_accessible": "Backup validation password",
+    "maintenance.backup.result_accessible": "Safe backup validation summary",
+    "maintenance.backup.empty": "Validation does not restore or modify local files.",
+    "maintenance.backup.error.input": "Select a backup and enter its password.",
+    "maintenance.backup.status.validating": "Validating backup without restoring it...",
+    "maintenance.backup.result.invalid": "Invalid file or incorrect password.",
+    "maintenance.backup.summary.valid_file": "Valid file: yes",
+    "maintenance.backup.summary.created": "Created: {timestamp}",
+    "maintenance.backup.summary.compatible_yes": "Compatible: yes",
+    "maintenance.backup.summary.compatible_no": "Compatible: no"
   }
 }

@@ -79,6 +79,10 @@ class BackupValidationWorker(_CancellableWorker):
         self._backup_path = backup_path
         self._password = password
 
+    @property
+    def cancellation_requested(self) -> bool:
+        return self._cancellation.is_requested()
+
     def run(self) -> None:
         try:
             result = validate_backup(

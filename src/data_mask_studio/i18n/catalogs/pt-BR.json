@@ -614,6 +614,19 @@
     "maintenance.integrity.finished": "Fim da auditoria: {timestamp}",
     "maintenance.integrity.checks": "Verificações (contagens por verificação, não registros únicos):",
     "maintenance.integrity.check": "[{status}] {check_type}: examinados={examined}; falhas={failures}; {message}",
-    "maintenance.integrity.references": "; referências={identifiers}"
+    "maintenance.integrity.references": "; referências={identifiers}",
+    "maintenance.backup.select": "Selecionar .dmsbackup",
+    "maintenance.backup.file_label": "Arquivo de backup:",
+    "maintenance.backup.path_accessible": "Arquivo de backup para validação",
+    "maintenance.backup.password_accessible": "Senha para validar o backup",
+    "maintenance.backup.result_accessible": "Resumo seguro da validação do backup",
+    "maintenance.backup.empty": "A validação não restaura nem modifica arquivos locais.",
+    "maintenance.backup.error.input": "Selecione um backup e informe sua senha.",
+    "maintenance.backup.status.validating": "Validando backup sem restaurá-lo...",
+    "maintenance.backup.result.invalid": "Arquivo inválido ou senha incorreta.",
+    "maintenance.backup.summary.valid_file": "Arquivo válido: sim",
+    "maintenance.backup.summary.created": "Data de criação: {timestamp}",
+    "maintenance.backup.summary.compatible_yes": "Compatível: sim",
+    "maintenance.backup.summary.compatible_no": "Compatível: não"
   }
 }
