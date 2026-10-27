@@ -70,11 +70,7 @@ def test_batch_restoration_widget_analyzes_and_restores_offscreen(
     assert widget.files[0].columns[0].selected
     assert not widget.files[0].columns[1].selected
     widget.output_field.setText(str(output))
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
-    )
+    monkeypatch.setattr(widget, "_confirm_restoration", lambda: QMessageBox.StandardButton.Yes)
 
     widget.start_restoration()
     processing_worker = widget._processing_worker
@@ -131,7 +127,7 @@ def test_real_batch_completion_counts_six_restored_and_one_incompatible_file(
         widget.file_table.selectRow(index)
         widget.select_candidate_columns()
     widget.output_field.setText(str(output))
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, "_confirm_restoration", lambda: QMessageBox.StandardButton.Yes)
     widget.start_restoration()
     worker = widget._processing_worker
     assert worker is not None and worker.wait(5000)

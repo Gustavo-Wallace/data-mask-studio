@@ -33,7 +33,7 @@ def page(tmp_path, monkeypatch):
     widget.output_field.setText(str(output))
     monkeypatch.setattr(BatchRestorationAnalysisWorker, "start", lambda self: None)
     monkeypatch.setattr(BatchRestorationProcessingWorker, "start", lambda self: None)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, "_confirm_restoration", lambda: QMessageBox.StandardButton.Yes)
     return app, widget, output
 
 

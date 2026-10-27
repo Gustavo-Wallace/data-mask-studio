@@ -326,7 +326,7 @@ def test_batch_real_restoration_uses_hidden_options_and_preserves_column_review(
     output = tmp_path / "output"
     output.mkdir()
     widget.output_field.setText(str(output))
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, "_confirm_restoration", lambda: QMessageBox.StandardButton.Yes)
     widget.start_button.click()
     worker = widget._processing_worker
     assert worker is not None and not widget.options_toggle.isEnabled()

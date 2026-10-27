@@ -45,6 +45,8 @@ def page(request, tmp_path, monkeypatch):
                         BatchRestorationAnalysisWorker, BatchRestorationProcessingWorker):
         monkeypatch.setattr(worker_type, "start", lambda self: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    if request.param == "restoration":
+        monkeypatch.setattr(widget, "_confirm_restoration", lambda: QMessageBox.StandardButton.Yes)
     opened = []
     monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(Path(url.toLocalFile())) or True)
     for name in ("a.csv", "b.csv"):

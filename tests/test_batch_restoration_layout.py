@@ -275,7 +275,7 @@ def test_real_csv_and_html_restoration_keep_output_content_counters_and_sources(
     widget.output_field.setText(str(output))
     widget.representation_combo.setCurrentIndex(widget.representation_combo.findData(representation.value))
     assert not widget.options_controls.isVisible() and widget.start_button.isEnabled()
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(widget, "_confirm_restoration", lambda: QMessageBox.StandardButton.Yes)
     widget.start_button.click()
     worker = widget._processing_worker
     assert worker is not None and widget.cancel_button.isVisible()

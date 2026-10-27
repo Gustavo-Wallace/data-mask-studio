@@ -1,8 +1,8 @@
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QTextCursor
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 
 from PySide6.QtWidgets import (
@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.batch_restoration import (
-    STATUS_LABELS,
     BatchMissingCodePolicy,
     BatchRestorationError,
     BatchRestorationFile,
@@ -50,10 +49,19 @@ from data_mask_studio.gui.components.presentation import (
     set_button_role, set_feedback_state,
 )
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
+from data_mask_studio.gui.dialog_localization import localize_standard_buttons
+from data_mask_studio.i18n import Translator
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
 
 RepositoryFactory = Callable[[], VaultRepository]
+
+_STATUS_IDS = {
+    status: ("batch_restoration.file_status." + status.value
+             if status in (BatchRestorationStatus.PENDING, BatchRestorationStatus.REVIEW_REQUIRED)
+             else "batch.file_status." + status.value)
+    for status in BatchRestorationStatus
+}
 
 
 class BatchRestorationWidget(QWidget):
@@ -63,8 +71,15 @@ class BatchRestorationWidget(QWidget):
         self,
         repository_factory: RepositoryFactory,
         prepare_operation: Callable[[], bool] | None = None,
+        *, translator: Translator | None = None,
     ) -> None:
         super().__init__()
+        self._translator = translator or Translator("pt-BR")
+        self._status_message = None
+        self._current_progress: BatchRestorationProgress | None = None
+        self._current_idle = True
+        self._displayed_summary: BatchRestorationSummary | None = None
+        self._confirmation_dialog: QMessageBox | None = None
         self._service = BatchRestorationService(repository_factory)
         self._prepare_operation = prepare_operation or (lambda: True)
         self.files: list[BatchRestorationFile] = []
@@ -144,7 +159,8 @@ class BatchRestorationWidget(QWidget):
         column_layout = QVBoxLayout(self._column_panel)
         column_layout.setContentsMargins(0, 0, 0, 0)
         column_layout.setSpacing(METRICS["panel_spacing"])
-        column_layout.addWidget(QLabel("Revisão das colunas do CSV selecionado:"))
+        self.column_title = QLabel("Revisão das colunas do CSV selecionado:")
+        column_layout.addWidget(self.column_title)
         column_layout.addLayout(column_actions)
         column_layout.addWidget(self.column_table)
 
@@ -164,7 +180,8 @@ class BatchRestorationWidget(QWidget):
         self.choose_output_button = QPushButton("Escolher pasta")
         self.choose_output_button.clicked.connect(self._choose_output_directory)
         output_row = QHBoxLayout()
-        output_row.addWidget(QLabel("Pasta de saída:"))
+        self.output_label = QLabel("Pasta de saída:")
+        output_row.addWidget(self.output_label)
         output_row.addWidget(self.output_field, stretch=1)
         output_row.addWidget(self.choose_output_button)
 
@@ -193,6 +210,10 @@ class BatchRestorationWidget(QWidget):
         options.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         options.addRow("Representação restaurada:", self.representation_combo)
         options.addRow("Códigos ausentes:", self.missing_policy_combo)
+        self._option_labels = (
+            (options.labelForField(self.representation_combo), "batch_restoration.representation.label"),
+            (options.labelForField(self.missing_policy_combo), "batch_restoration.missing.label"),
+        )
         self.options_toggle = QPushButton("Opções de restauração")
         self.options_toggle.setCheckable(True)
         self.options_toggle.setAccessibleName("Mostrar ou ocultar opções de restauração")
@@ -236,6 +257,10 @@ class BatchRestorationWidget(QWidget):
         progress_layout.setVerticalSpacing(METRICS["panel_spacing"])
         progress_layout.addRow("Progresso do arquivo atual:", self.current_progress)
         progress_layout.addRow("Progresso geral:", self.overall_progress)
+        self._progress_labels = (
+            (progress_layout.labelForField(self.current_progress), "batch_restoration.progress.file_label"),
+            (progress_layout.labelForField(self.overall_progress), "batch_restoration.progress.overall_label"),
+        )
         self.current_progress_label = QLabel("Nenhum processamento em andamento.")
         self.summary_output = EmptyStateTextEdit(
             "O resumo final aparecerá aqui."
@@ -245,6 +270,8 @@ class BatchRestorationWidget(QWidget):
         configure_result_area(self.summary_output, self.summary_output.minimumHeight())
         self.status_label = QLabel("Adicione arquivos CSV ou HTML para começar.")
         self.status_label.setWordWrap(True)
+        for label in (self.current_progress_label, self.status_label, self.options_summary):
+            label.setTextFormat(Qt.TextFormat.PlainText)
         set_feedback_state(self.status_label, "neutral")
 
         layout = QVBoxLayout(self)
@@ -277,6 +304,117 @@ class BatchRestorationWidget(QWidget):
         self._update_options_summary()
         self._update_options_disclosure()
         self._update_actions()
+        self._set_status_id("batch_restoration.status.initial")
+        self.retranslate(self._translator)
+
+    def retranslate(self, translator: Translator) -> None:
+        """Update existing presentation, never files, gates, checkboxes or workers."""
+        self._translator = translator
+        for widget, message_id in (
+            (self.add_files_button, "batch.add_files"), (self.add_folder_button, "batch.add_folder"),
+            (self.remove_button, "batch.remove"), (self.clear_button, "batch.clear"),
+            (self.column_title, "batch_restoration.columns.title"),
+            (self.select_candidates_button, "batch_restoration.columns.select_candidates"),
+            (self.unselect_columns_button, "restoration.csv.deselect_all"),
+            (self.output_label, "batch.output_folder"), (self.choose_output_button, "batch.choose_folder"),
+            (self.analyze_button, "batch_restoration.analyze"), (self.start_button, "batch_restoration.start"),
+            (self.cancel_button, "dialog.button.cancel"), (self.open_output_button, "batch.open_output"),
+            *self._option_labels, *self._progress_labels,
+        ):
+            widget.setText(translator.text(message_id))
+        for widget, message_id in (
+            (self.output_field, "batch_restoration.output_accessible"),
+            (self.representation_combo, "batch_restoration.representation.accessible"),
+            (self.missing_policy_combo, "batch_restoration.missing.accessible"),
+            (self.options_toggle, "restoration.csv.options.accessible"),
+        ):
+            widget.setAccessibleName(translator.text(message_id))
+        self.output_field.setPlaceholderText(translator.text("batch.output_placeholder"))
+        for combo, identifiers in (
+            (self.representation_combo, {"first_original": "restoration.csv.representation.first",
+                                         "canonical": "restoration.csv.representation.canonical_summary"}),
+            (self.missing_policy_combo, {"keep": "restoration.csv.policy.keep",
+                "abort_file": "batch_restoration.policy.abort_file", "abort_batch": "batch_restoration.policy.abort_batch"}),
+        ):
+            with QSignalBlocker(combo):
+                for index in range(combo.count()):
+                    combo.setItemText(index, translator.text(identifiers[combo.itemData(index)]))
+        for view, message_id in (
+            (self.file_table, "batch.files_empty"),
+            (self.column_table, "batch_restoration.columns.empty"),
+            (self.summary_output, "batch_restoration.summary.empty"),
+        ):
+            view.empty_text = translator.text(message_id)
+            view.setAccessibleDescription(view.empty_text)
+            view.viewport().update()
+        for table, identifiers in (
+            (self.file_table, ("batch.table.file", "batch_restoration.table.type", "batch_restoration.table.encoding",
+                "batch.table.status", "batch_restoration.table.codes", "batch_restoration.table.in_vault",
+                "batch_restoration.table.missing", "batch.table.result")),
+            (self.column_table, ("restoration.csv.table.restore", "restoration.csv.table.header",
+                "batch_restoration.columns.valid_codes", "batch_restoration.columns.found_missing")),
+        ):
+            with QSignalBlocker(table):
+                for index, message_id in enumerate(identifiers):
+                    table.horizontalHeaderItem(index).setText(translator.text(message_id))
+        with QSignalBlocker(self.file_table):
+            for row, item in enumerate(self.files):
+                self.file_table.item(row, 3).setText(translator.text(_STATUS_IDS[item.status]))
+                text = self._result_text(item)
+                self.file_table.item(row, 7).setText(text)
+                self.file_table.item(row, 7).setToolTip(text)
+        self._translate_column_accessibility()
+        self._render_options_title()
+        self._update_options_summary()
+        if self._status_message is not None:
+            message_id, parameters, plural = self._status_message
+            self.status_label.setText(self._status_text(message_id, parameters, plural))
+        self._render_current_progress()
+        if self._displayed_summary is not None:
+            cursor = self.summary_output.textCursor()
+            anchor, position = cursor.anchor(), cursor.position()
+            scroll = self.summary_output.verticalScrollBar().value(), self.summary_output.horizontalScrollBar().value()
+            with QSignalBlocker(self.summary_output):
+                self.summary_output.setPlainText(_render_summary(self._displayed_summary, translator))
+                end = self.summary_output.document().characterCount() - 1
+                cursor.setPosition(min(anchor, end))
+                cursor.setPosition(min(position, end), QTextCursor.MoveMode.KeepAnchor)
+                self.summary_output.setTextCursor(cursor)
+            self.summary_output.verticalScrollBar().setValue(scroll[0])
+            self.summary_output.horizontalScrollBar().setValue(scroll[1])
+        if self._confirmation_dialog is not None:
+            self._render_confirmation()
+
+    def _set_status_id(self, message_id: str, *, is_error: bool = False, state: FeedbackState = "neutral",
+                       plural: bool = False, **parameters: str | int | float) -> None:
+        self._set_status(self._status_text(message_id, parameters, plural), is_error, state=state)
+        self._status_message = (message_id, parameters, plural)
+
+    def _status_text(self, message_id: str, parameters: dict, plural: bool) -> str:
+        if plural:
+            return self._translator.plural(message_id, parameters["count"], **{
+                name: value for name, value in parameters.items() if name != "count"})
+        return self._translator.text(message_id, **parameters)
+
+    def _clear_summary(self) -> None:
+        self._displayed_summary = None
+        self.summary_output.clear()
+
+    def _result_text(self, item: BatchRestorationFile) -> str:
+        if item.status is BatchRestorationStatus.COMPLETED and item.output_path is not None:
+            return self._translator.text("batch_restoration.result.output", filename=item.output_path.name)
+        # All other service messages can carry untyped warnings or error details.
+        return item.result_message
+
+    def _translate_column_accessibility(self) -> None:
+        item = self._selected_file()
+        if item is None or item.file_type is not BatchRestorationFileType.CSV:
+            return
+        for row, column in enumerate(item.columns):
+            checkbox = self.column_table.cellWidget(row, 0)
+            if checkbox is not None:
+                checkbox.setAccessibleName(self._translator.text("restoration.csv.column_accessible",
+                    header=column.header, number=column.index + 1))
 
     def _update_information_layout(self) -> None:
         has_files = self.file_table.rowCount() > 0
@@ -332,38 +470,38 @@ class BatchRestorationWidget(QWidget):
         expanded = self.options_toggle.isChecked()
         self.options_controls.setVisible(expanded)
         self.options_summary.setVisible(not expanded)
-        self.options_toggle.setText(
-            "Ocultar opções de restauração" if expanded else "Opções de restauração"
-        )
+        self._render_options_title()
         if options_have_focus and not expanded and self.isVisible():
             self.options_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _render_options_title(self) -> None:
+        self.options_toggle.setText(self._translator.text(
+            "restoration.csv.options.hide" if self.options_toggle.isChecked() else "restoration.csv.options.show"))
+
     def _update_options_summary(self, *_args: object) -> None:
-        self.options_summary.setText(
-            f"Não encontrados: {self.missing_policy_combo.currentText()}. "
-            f"Valor: {self.representation_combo.currentText()}."
-        )
+        self.options_summary.setText(self._translator.text("restoration.csv.options.summary",
+            missing=self.missing_policy_combo.currentText(), representation=self.representation_combo.currentText()))
 
     def add_paths(self, paths: Iterable[str | Path]) -> int:
         added = add_files(self.files, paths)
         if added:
             self._refresh_file_table()
-            self._set_status(f"{added} arquivo(s) adicionado(s).", False)
+            self._set_status_id("batch.files_added", count=added, plural=True)
         self._update_actions()
         return added
 
     def _choose_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Adicionar arquivos anonimizados",
+            self._translator.text("batch_restoration.files_title"),
             "",
-            "Arquivos CSV e HTML (*.csv *.html *.htm)",
+            self._translator.text("batch_restoration.file_filter"),
         )
         if paths:
             self.add_paths(paths)
 
     def _choose_folder(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "Adicionar pasta")
+        directory = QFileDialog.getExistingDirectory(self, self._translator.text("batch.add_folder"))
         if not directory:
             return
         try:
@@ -372,7 +510,7 @@ class BatchRestorationWidget(QWidget):
             self._set_status(str(error), True)
             return
         if not found:
-            self._set_status("Nenhum CSV ou HTML foi encontrado na pasta.", False)
+            self._set_status_id("batch_restoration.status.folder_empty")
             return
         self.add_paths(found)
 
@@ -392,13 +530,13 @@ class BatchRestorationWidget(QWidget):
         self.files.clear()
         self._refresh_file_table()
         self._refresh_column_table(None)
-        self.summary_output.clear()
+        self._clear_summary()
         self._output_directory = None
         self.open_output_button.setEnabled(False)
         self.overall_progress.setRange(0, 1)
         self.overall_progress.setValue(0)
         self._reset_current_progress()
-        self._set_status("Adicione arquivos CSV ou HTML para começar.", False)
+        self._set_status_id("batch_restoration.status.initial")
         self._update_actions()
 
     def invalidate_analysis(self) -> None:
@@ -409,11 +547,14 @@ class BatchRestorationWidget(QWidget):
 
     def analyze_files(self) -> None:
         if not self.files:
-            self._set_status("Adicione ao menos um arquivo.", True)
+            self._set_status_id("batch_restoration.error.no_files", is_error=True)
             return
         if not self._prepare_operation():
-            self._set_status("Finalize as outras operações antes da análise.", True)
+            self._set_status_id("batch_restoration.error.analysis_busy", is_error=True)
             return
+        # A new analysis must not present the previous run's totals as current.
+        # Keep genuine published output references available until the next run.
+        self._clear_summary()
         invalidate_files(self.files)
         self._refresh_file_table()
         worker = BatchRestorationAnalysisWorker(self._service, self.files)
@@ -424,7 +565,8 @@ class BatchRestorationWidget(QWidget):
         worker.cancelled.connect(self._analysis_cancelled)
         worker.failed.connect(self._worker_failed)
         worker.finished.connect(self._analysis_finished)
-        self._set_busy(True, "Analisando arquivos...")
+        self._set_busy(True)
+        self._set_status_id("batch_restoration.status.analyzing")
         self.overall_progress.setRange(0, len(self.files))
         self.overall_progress.setValue(0)
         worker.start()
@@ -435,7 +577,7 @@ class BatchRestorationWidget(QWidget):
 
     def _analysis_cancelled(self) -> None:
         self._reset_current_progress()
-        self._set_status("Análise cancelada com segurança.", False, state="warning")
+        self._set_status_id("batch_restoration.status.analysis_cancelled", state="warning")
 
     def _analysis_completed(self) -> None:
         self._reset_current_progress()
@@ -445,9 +587,9 @@ class BatchRestorationWidget(QWidget):
         review = sum(
             item.status is BatchRestorationStatus.REVIEW_REQUIRED for item in self.files
         )
-        self._set_status(
-            f"Análise concluída: {compatible} compatível(is), {review} para revisão.",
-            compatible + review == 0,
+        self._set_status_id(
+            "batch_restoration.status.analyzed", compatible=compatible, review=review,
+            is_error=compatible + review == 0,
             state="warning" if review or compatible < len(self.files) else "success",
         )
 
@@ -483,32 +625,22 @@ class BatchRestorationWidget(QWidget):
         self._update_actions()
 
     def _choose_output_directory(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "Escolher pasta de saída")
+        directory = QFileDialog.getExistingDirectory(self, self._translator.text("batch.output.choose_title"))
         if directory:
             self.output_field.setText(directory)
 
     def start_restoration(self) -> None:
         if not self._can_start():
-            self._set_status(
-                "Analise os arquivos, confirme as colunas CSV e escolha a pasta de saída.",
-                True,
-            )
+            self._set_status_id("batch_restoration.error.not_ready", is_error=True)
             return
         if not self._prepare_operation():
-            self._set_status("Finalize as outras operações antes da restauração.", True)
+            self._set_status_id("batch_restoration.error.processing_busy", is_error=True)
             return
         output = Path(self.output_field.text().strip()).expanduser()
         if not output.is_dir():
-            self._set_status("A pasta de saída não existe ou é inválida.", True)
+            self._set_status_id("batch_restoration.error.output", is_error=True)
             return
-        if QMessageBox.warning(
-            self,
-            "Confirmar restauração em lote",
-            "Os arquivos gerados poderão conter dados pessoais ou sensíveis. "
-            "Deseja iniciar a restauração?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        ) != QMessageBox.StandardButton.Yes:
+        if self._confirm_restoration() != QMessageBox.StandardButton.Yes:
             return
         # A configured destination is not evidence that this run published files.
         self._output_directory = None
@@ -535,7 +667,7 @@ class BatchRestorationWidget(QWidget):
         # The final summary includes these files; worker counters do not.
         self.overall_progress.setRange(0, eligible + self._restoration_ignored_files)
         self.overall_progress.setValue(self._restoration_ignored_files)
-        self.summary_output.clear()
+        self._clear_summary()
         worker = BatchRestorationProcessingWorker(
             self._service, self.files, str(output.absolute()), options
         )
@@ -545,15 +677,36 @@ class BatchRestorationWidget(QWidget):
         worker.completed.connect(self._processing_completed)
         worker.failed.connect(self._worker_failed)
         worker.finished.connect(self._processing_finished)
-        self._set_busy(True, "Restaurando arquivos sequencialmente...")
+        self._set_busy(True)
+        self._set_status_id("batch_restoration.status.restoring")
         worker.start()
+
+    def _confirm_restoration(self) -> int:
+        dialog = QMessageBox(QMessageBox.Icon.Warning, "", "",
+                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        dialog.setEscapeButton(QMessageBox.StandardButton.No)
+        self._confirmation_dialog = dialog
+        self._render_confirmation()
+        try:
+            return dialog.exec()
+        finally:
+            self._confirmation_dialog = None
+            dialog.deleteLater()
+
+    def _render_confirmation(self) -> None:
+        dialog = self._confirmation_dialog
+        dialog.setWindowTitle(self._translator.text("batch_restoration.confirm.title"))
+        dialog.setText(self._translator.text("batch_restoration.confirm.text"))
+        localize_standard_buttons(dialog, self._translator)
 
     def cancel(self) -> None:
         worker = self._processing_worker or self._analysis_worker
         if worker:
             worker.request_cancel()
             self.cancel_button.setEnabled(False)
-            self._set_status("Cancelamento solicitado...", False)
+            self._set_status_id("restoration.csv.status.cancelling")
 
     def _progress_changed(self, progress: BatchRestorationProgress) -> None:
         self.overall_progress.setValue(
@@ -564,10 +717,16 @@ class BatchRestorationWidget(QWidget):
             self.current_progress.setValue(progress.current_value)
         else:
             self.current_progress.setRange(0, 0)
-        self.current_progress_label.setText(
-            f"Arquivo {progress.current_file} de {progress.total_files}: "
-            f"{progress.file_name}"
-        )
+        self._current_progress = progress
+        self._render_current_progress()
+
+    def _render_current_progress(self) -> None:
+        if self._current_progress is not None:
+            self.current_progress_label.setText(self._translator.text("batch_restoration.current.progress",
+                current=self._current_progress.current_file, total=self._current_progress.total_files,
+                filename=self._current_progress.file_name))
+        else:
+            self.current_progress_label.setText(self._translator.text("batch.current.idle") if self._current_idle else "")
 
     def _processing_completed(self, summary: BatchRestorationSummary) -> None:
         # Cancellation skips unfinished files too; do not count them as processed.
@@ -579,13 +738,13 @@ class BatchRestorationWidget(QWidget):
             summary.completed_files + summary.error_files + ignored
         )
         self._reset_current_progress()
-        self.summary_output.setPlainText(_render_summary(summary))
+        self._displayed_summary = summary
+        self.summary_output.setPlainText(_render_summary(summary, self._translator))
         if summary.completed_files > 0:
             self._output_directory = summary.output_directory
         self.open_output_button.setEnabled(self._output_directory is not None)
-        message = "Lote cancelado com segurança." if summary.cancelled else "Lote concluído."
-        self._set_status(
-            message, False,
+        self._set_status_id(
+            "batch_restoration.status.cancelled" if summary.cancelled else "batch_restoration.status.completed",
             state="error" if summary.error_files else "warning"
             if summary.cancelled or summary.cancelled_files or summary.skipped_files
             or summary.missing_occurrences else "success",
@@ -600,12 +759,10 @@ class BatchRestorationWidget(QWidget):
 
     def _worker_failed(self, error: Exception) -> None:
         self._reset_current_progress()
-        message = (
-            str(error)
-            if isinstance(error, BatchRestorationError)
-            else "A operação em lote falhou com segurança."
-        )
-        self._set_status(message, True)
+        if isinstance(error, BatchRestorationError):
+            self._set_status(str(error), True)
+        else:
+            self._set_status_id("batch_restoration.error.unexpected", is_error=True)
         self._refresh_file_table()
 
     def _file_changed(self, _item: BatchRestorationFile) -> None:
@@ -637,11 +794,11 @@ class BatchRestorationWidget(QWidget):
                 item.path.name,
                 item.file_type.value.upper(),
                 item.encoding or "—",
-                STATUS_LABELS[item.status],
+                self._translator.text(_STATUS_IDS[item.status]),
                 str(item.codes_found),
                 str(item.codes_in_vault),
                 str(item.missing_codes),
-                item.result_message,
+                self._result_text(item),
             )
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
@@ -674,17 +831,21 @@ class BatchRestorationWidget(QWidget):
         enabled = bool(columns) and not self.has_running_workers()
         self.select_candidates_button.setEnabled(enabled)
         self.unselect_columns_button.setEnabled(enabled)
+        self._translate_column_accessibility()
 
     def _reset_current_progress(self) -> None:
         """Sem arquivo ativo: encerra a animação sem representar sucesso."""
         self.current_progress.setRange(0, 1)
         self.current_progress.setValue(0)
-        self.current_progress_label.setText("Nenhum processamento em andamento.")
+        self._current_progress = None
+        self._current_idle = True
+        self._render_current_progress()
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self._reset_current_progress()
         if busy:
             self.current_progress.setRange(0, 0)
+            self._current_idle = False
             self.current_progress_label.clear()
         for control in (
             self.add_files_button,
@@ -760,21 +921,23 @@ class BatchRestorationWidget(QWidget):
     def _set_status(
         self, message: str, is_error: bool, *, state: FeedbackState = "neutral"
     ) -> None:
+        self._status_message = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if is_error else state)
 
 
-def _render_summary(summary: BatchRestorationSummary) -> str:
+def _render_summary(summary: BatchRestorationSummary, translator: Translator | None = None) -> str:
+    translator = translator or Translator("pt-BR")
     return "\n".join(
         (
-            f"Arquivos selecionados: {summary.selected_files}",
-            f"Concluídos: {summary.completed_files}",
-            f"Com erro: {summary.error_files}",
-            f"Ignorados: {summary.skipped_files}",
-            f"Cancelados: {summary.cancelled_files}",
-            f"Ocorrências restauradas: {summary.restored_occurrences}",
-            f"Códigos ausentes: {summary.missing_occurrences}",
-            f"Tempo aproximado: {summary.duration_seconds:.2f} s",
-            f"Pasta de saída: {summary.output_directory}",
+            translator.text("batch.summary.selected", count=summary.selected_files),
+            translator.text("batch_restoration.summary.completed", count=summary.completed_files),
+            translator.text("batch_restoration.summary.errors", count=summary.error_files),
+            translator.text("batch_restoration.summary.skipped", count=summary.skipped_files),
+            translator.text("batch_restoration.summary.cancelled", count=summary.cancelled_files),
+            translator.text("batch_restoration.summary.restored", count=summary.restored_occurrences),
+            translator.text("batch_restoration.summary.missing", count=summary.missing_occurrences),
+            translator.text("batch.summary.duration", seconds=f"{summary.duration_seconds:.2f}"),
+            translator.text("batch.summary.output", path=str(summary.output_directory)),
         )
     )
