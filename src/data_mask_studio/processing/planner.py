@@ -18,6 +18,13 @@ from data_mask_studio.processing.models import (
 class PlanningError(ValueError):
     """Configuração ou binding inválido; nenhuma linha foi processada."""
 
+    def __init__(self, *args: object, missing_headers: tuple[str, ...] = (),
+                 extra_headers: tuple[str, ...] = ()) -> None:
+        super().__init__(*args)
+        # Optional structural evidence; no dependency on GUI or translated text.
+        self.missing_headers = missing_headers
+        self.extra_headers = extra_headers
+
 
 def bind_execution_sources(plan: ProcessingPlan, inspection: CSVInspectionResult) -> tuple[int, ...]:
     """Map opened physical positions into the immutable plan's logical row view.

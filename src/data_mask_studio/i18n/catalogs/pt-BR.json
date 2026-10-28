@@ -675,6 +675,12 @@
     "batch_restoration.result.no_columns_selected": "Nenhuma coluna foi confirmada para restauração.",
     "batch_restoration.result.batch_interrupted": "Ignorado porque o lote foi interrompido.",
     "batch_restoration.result.vault_access_failure": "Falha estrutural ao acessar o cofre local.",
-    "batch_restoration.result.missing_token_abort": "Arquivo interrompido porque há código ausente no cofre."
+    "batch_restoration.result.missing_token_abort": "Arquivo interrompido porque há código ausente no cofre.",
+    "batch.result.compatible": "Arquivo compatível com o perfil.",
+    "batch.result.processing": "Processando arquivo.",
+    "batch.result.cancelled": "Processamento cancelado.",
+    "batch.result.not_processed_cancelled": "Não processado devido ao cancelamento.",
+    "batch.result.skipped_structural": "Ignorado devido a uma falha estrutural.",
+    "batch.result.structural_failure": "Falha estrutural no lote."
   }
 }

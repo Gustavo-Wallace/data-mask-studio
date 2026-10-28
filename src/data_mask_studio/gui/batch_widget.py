@@ -26,6 +26,8 @@ from data_mask_studio.batch import (
     BatchError,
     BatchFile,
     BatchFileStatus,
+    BatchExplanation,
+    BatchReason,
     BatchProgress,
     BatchService,
     BatchSummary,
@@ -53,6 +55,17 @@ from data_mask_studio.security import KeyProvider
 from data_mask_studio.vault import VaultRepository
 
 VaultRepositoryFactory = Callable[[], VaultRepository]
+
+_RESULT_REASONS = {
+    BatchReason.COMPATIBLE: ("batch.result.compatible", BatchFileStatus.COMPATIBLE),
+    BatchReason.HEADER_MISMATCH: (None, BatchFileStatus.INCOMPATIBLE),
+    BatchReason.PROCESSING: ("batch.result.processing", BatchFileStatus.PROCESSING),
+    BatchReason.COMPLETED: ("batch.result.completed", BatchFileStatus.COMPLETED),
+    BatchReason.CANCELLED: ("batch.result.cancelled", BatchFileStatus.CANCELLED),
+    BatchReason.NOT_PROCESSED_CANCELLED: ("batch.result.not_processed_cancelled", BatchFileStatus.CANCELLED),
+    BatchReason.SKIPPED_STRUCTURAL: ("batch.result.skipped_structural", BatchFileStatus.SKIPPED),
+    BatchReason.STRUCTURAL_FAILURE: ("batch.result.structural_failure", BatchFileStatus.ERROR),
+}
 
 
 class BatchWidget(QWidget):
@@ -300,8 +313,35 @@ class BatchWidget(QWidget):
             )
 
     def _result_text(self, item: BatchFile) -> str:
-        # A real successful result has structured fallback data. Validation and
-        # error messages may contain service warnings unavailable as typed fields.
+        explanation = item.result_explanation
+        if explanation is not None:
+            presentation = (_RESULT_REASONS.get(explanation.reason)
+                            if isinstance(explanation, BatchExplanation)
+                            and isinstance(explanation.reason, BatchReason) else None)
+            if presentation is None or item.status is not presentation[1]:
+                return item.result_message
+            if explanation.reason is BatchReason.HEADER_MISMATCH:
+                parts = []
+                if explanation.missing_headers:
+                    parts.append(self._translator.text("masking.error.missing_headers",
+                        headers=", ".join(explanation.missing_headers)))
+                if explanation.extra_headers:
+                    parts.append(self._translator.text("masking.error.unknown_columns",
+                        columns=", ".join(explanation.extra_headers)))
+                if not parts:
+                    return item.result_message
+                text = " ".join(parts)
+            elif explanation.reason is not BatchReason.COMPLETED:
+                text = self._translator.text(presentation[0])
+            else:
+                if item.processing_result is None:
+                    return item.result_message
+                text = self._completed_result_text(item)
+            return text + (" " + explanation.detail if explanation.detail else "")
+        # Legacy successful results already provide typed normalization data.
+        return self._completed_result_text(item)
+
+    def _completed_result_text(self, item: BatchFile) -> str:
         if item.status is not BatchFileStatus.COMPLETED or item.processing_result is None:
             return item.result_message
         text = self._translator.text("batch.result.completed")

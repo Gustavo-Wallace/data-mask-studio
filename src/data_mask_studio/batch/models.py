@@ -35,6 +35,28 @@ class BatchErrorType(StrEnum):
     CANCELLATION = "cancellation"
 
 
+class BatchReason(StrEnum):
+    """In-memory presentation reasons, never validation or processing decisions."""
+
+    COMPATIBLE = "compatible"
+    HEADER_MISMATCH = "header_mismatch"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    NOT_PROCESSED_CANCELLED = "not_processed_cancelled"
+    SKIPPED_STRUCTURAL = "skipped_structural"
+    STRUCTURAL_FAILURE = "structural_failure"
+
+
+@dataclass(frozen=True, slots=True)
+class BatchExplanation:
+    reason: BatchReason
+    missing_headers: tuple[str, ...] = ()
+    extra_headers: tuple[str, ...] = ()
+    # Untyped supplemental warnings and safe service evidence stay literal.
+    detail: str = ""
+
+
 @dataclass(slots=True)
 class BatchFile:
     path: Path
@@ -52,6 +74,7 @@ class BatchFile:
     normalization_fallbacks: tuple[NormalizationFallback, ...] = ()
     error_type: BatchErrorType | None = None
     processing_result: AnonymizationResult | None = field(default=None, repr=False)
+    result_explanation: BatchExplanation | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +95,7 @@ class BatchFileResult:
     message: str = ""
     records_processed: int = 0
     processing_result: AnonymizationResult | None = field(default=None, repr=False)
+    result_explanation: BatchExplanation | None = None
 
 
 @dataclass(frozen=True, slots=True)

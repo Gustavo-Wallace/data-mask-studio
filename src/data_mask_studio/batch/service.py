@@ -15,6 +15,8 @@ from data_mask_studio.anonymization import (
 from data_mask_studio.batch.exceptions import BatchError, BatchStructuralError
 from data_mask_studio.batch.models import (
     BatchErrorType,
+    BatchExplanation,
+    BatchReason,
     BatchFile,
     BatchFileResult,
     BatchFileStatus,
@@ -24,7 +26,7 @@ from data_mask_studio.batch.models import (
 )
 from data_mask_studio.batch.output_naming import reserve_output_file
 from data_mask_studio.batch.reservation import OutputReservation
-from data_mask_studio.batch.validation import validate_file, validate_output_directory
+from data_mask_studio.batch.validation import planning_explanation, validate_file, validate_output_directory
 from data_mask_studio.csv_tools import CSVInspectionError, ProcessingCancelled, anonymize_csv, inspect_csv
 from data_mask_studio.csv_tools.csv_anonymizer import CSVAnonymizationError
 from data_mask_studio.processing.planner import PlanningError
@@ -98,11 +100,13 @@ class BatchService:
             except PlanningError as error:
                 item.status = BatchFileStatus.INCOMPATIBLE
                 item.result_message = str(error)
+                item.result_explanation = planning_explanation(error)
                 _notify_file(item, file_callback)
             except CSVInspectionError as error:
                 item.status = BatchFileStatus.ERROR
                 item.error_type = BatchErrorType.FILE
                 item.result_message = str(error)
+                item.result_explanation = None
                 _notify_file(item, file_callback)
         if not plans:
             return _summary(files, 0, Path(output_directory), started_at)
@@ -138,6 +142,7 @@ class BatchService:
                     break
                 item.status = BatchFileStatus.PROCESSING
                 item.result_message = "Processando arquivo."
+                item.result_explanation = BatchExplanation(BatchReason.PROCESSING)
                 _notify_file(item, file_callback)
                 reservation: OutputReservation | None = None
                 try:
@@ -167,6 +172,7 @@ class BatchService:
                     item.status = BatchFileStatus.CANCELLED
                     item.error_type = BatchErrorType.CANCELLATION
                     item.result_message = "Processamento cancelado."
+                    item.result_explanation = BatchExplanation(BatchReason.CANCELLED)
                     _notify_file(item, file_callback)
                     _mark_remaining_cancelled(compatible[current_index:], file_callback)
                     break
@@ -178,6 +184,10 @@ class BatchService:
                         BatchErrorType.STRUCTURAL if structural else BatchErrorType.FILE
                     )
                     item.result_message = _safe_error_message(error)
+                    item.result_explanation = (
+                        BatchExplanation(BatchReason.STRUCTURAL_FAILURE, detail=item.result_message)
+                        if structural else None
+                    )
                     _notify_file(item, file_callback)
                     if structural:
                         _mark_remaining_skipped(compatible[current_index:], file_callback)
@@ -194,6 +204,7 @@ class BatchService:
                 item.normalization_fallbacks = result.normalization_fallbacks
                 item.processing_result = result
                 item.result_message = _completed_message(result.normalization_fallbacks)
+                item.result_explanation = BatchExplanation(BatchReason.COMPLETED)
                 _notify_file(item, file_callback)
                 if progress_callback is not None:
                     progress_callback(_progress(files, item, current_index, len(compatible)))
@@ -247,6 +258,7 @@ def _mark_remaining_cancelled(
         item.status = BatchFileStatus.CANCELLED
         item.error_type = BatchErrorType.CANCELLATION
         item.result_message = "Não processado devido ao cancelamento."
+        item.result_explanation = BatchExplanation(BatchReason.NOT_PROCESSED_CANCELLED)
         _notify_file(item, callback)
 
 
@@ -258,6 +270,7 @@ def _mark_remaining_skipped(
             continue
         item.status = BatchFileStatus.SKIPPED
         item.result_message = "Ignorado devido a uma falha estrutural."
+        item.result_explanation = BatchExplanation(BatchReason.SKIPPED_STRUCTURAL)
         _notify_file(item, callback)
 
 
@@ -311,6 +324,7 @@ def _summary(
                 message=item.result_message,
                 records_processed=item.records_processed,
                 processing_result=item.processing_result,
+                result_explanation=item.result_explanation,
             )
             for item in files
         ),

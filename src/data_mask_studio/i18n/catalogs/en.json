@@ -675,6 +675,12 @@
     "batch_restoration.result.no_columns_selected": "No columns were confirmed for restoration.",
     "batch_restoration.result.batch_interrupted": "Skipped because the batch was interrupted.",
     "batch_restoration.result.vault_access_failure": "Structural failure accessing the local vault.",
-    "batch_restoration.result.missing_token_abort": "File stopped because a token is missing from the vault."
+    "batch_restoration.result.missing_token_abort": "File stopped because a token is missing from the vault.",
+    "batch.result.compatible": "File compatible with the profile.",
+    "batch.result.processing": "Processing file.",
+    "batch.result.cancelled": "Processing cancelled.",
+    "batch.result.not_processed_cancelled": "Not processed because of cancellation.",
+    "batch.result.skipped_structural": "Skipped because of a structural failure.",
+    "batch.result.structural_failure": "Structural batch failure."
   }
 }

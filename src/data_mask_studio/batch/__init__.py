@@ -2,6 +2,8 @@ from data_mask_studio.batch.exceptions import BatchError, BatchStructuralError
 from data_mask_studio.batch.models import (
     STATUS_LABELS,
     BatchErrorType,
+    BatchExplanation,
+    BatchReason,
     BatchFile,
     BatchFileResult,
     BatchFileStatus,
@@ -26,6 +28,8 @@ __all__ = [
     "STATUS_LABELS",
     "BatchError",
     "BatchErrorType",
+    "BatchExplanation",
+    "BatchReason",
     "BatchFile",
     "BatchFileResult",
     "BatchFileStatus",

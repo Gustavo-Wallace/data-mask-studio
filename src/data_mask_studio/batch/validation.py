@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from data_mask_studio.batch.exceptions import BatchError
-from data_mask_studio.batch.models import BatchFile, BatchFileStatus
+from data_mask_studio.batch.models import BatchExplanation, BatchFile, BatchFileStatus, BatchReason
 from data_mask_studio.csv_tools import (
     CSVInspectionError,
     format_header_replacement_warning,
@@ -54,6 +54,7 @@ def invalidate_files(files: list[BatchFile]) -> None:
         item.headers = ()
         item.missing_headers = ()
         item.result_message = ""
+        item.result_explanation = None
         item.output_path = None
         item.records_processed = 0
         item.new_mappings = 0
@@ -75,6 +76,7 @@ def validate_file(
     item.headers = ()
     item.missing_headers = ()
     item.result_message = ""
+    item.result_explanation = None
     item.output_path = None
     item.records_processed = 0
     item.new_mappings = 0
@@ -100,11 +102,20 @@ def validate_file(
     except PlanningError as error:
         item.status = BatchFileStatus.INCOMPATIBLE
         item.result_message = str(error)
+        item.result_explanation = planning_explanation(error, detail=warning)
     else:
         item.status = BatchFileStatus.COMPATIBLE
         item.result_message = "Arquivo compatível com o perfil."
+        item.result_explanation = BatchExplanation(BatchReason.COMPATIBLE, detail=warning)
     if warning:
         item.result_message = f"{item.result_message} {warning}"
+
+
+def planning_explanation(error: PlanningError, *, detail: str = "") -> BatchExplanation | None:
+    if not error.missing_headers and not error.extra_headers:
+        return None
+    return BatchExplanation(BatchReason.HEADER_MISMATCH,
+                            error.missing_headers, error.extra_headers, detail)
 
 
 def validate_output_directory(directory: str | Path) -> Path:

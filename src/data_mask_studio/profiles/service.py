@@ -52,7 +52,10 @@ class ProfileService:
         # A capacidade do consumidor não faz parte da compatibilidade estrutural.
         structural = replace(application, composites=())
         if not structural.is_complete:
-            raise PlanningError(structural.compatibility_message or "Perfil incompatível com o CSV.")
+            raise PlanningError(
+                structural.compatibility_message or "Perfil incompatível com o CSV.",
+                missing_headers=structural.missing_headers, extra_headers=structural.extra_headers,
+            )
         configurations = [ColumnConfig(
             column.header, prefix=column.prefix, action=column.action,
             normalization_rule=column.normalization_rule, output_name=column.output_name,
