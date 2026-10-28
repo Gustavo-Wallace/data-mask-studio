@@ -644,6 +644,19 @@
     "maintenance.temporary.confirm.title": "Confirmar limpeza",
     "maintenance.temporary.confirm.text": "Excluir {count} temporário(s) antigo(s) selecionado(s)?",
     "maintenance.temporary.status.cleaning": "Removendo temporários selecionados...",
-    "maintenance.temporary.status.cleaned": "Limpeza concluída: {removed} removido(s), {preserved} preservado(s), {failed} falha(s)."
+    "maintenance.temporary.status.cleaned": "Limpeza concluída: {removed} removido(s), {preserved} preservado(s), {failed} falha(s).",
+    "maintenance.compaction.start": "Compactar cofre",
+    "maintenance.compaction.warning": "A compactação pode recuperar pouco espaço. Crie antes um backup .dmsbackup, embora ele não seja obrigatório.",
+    "maintenance.compaction.result_accessible": "Resultado seguro da compactação do cofre",
+    "maintenance.compaction.empty": "O resultado seguro da compactação aparecerá aqui.",
+    "maintenance.compaction.error.no_vault": "O cofre local ainda não existe.",
+    "maintenance.compaction.confirm.title": "Confirmar compactação",
+    "maintenance.compaction.confirm.text": "Tamanho atual: {size}. A redução pode ser pequena. Recomenda-se criar antes um backup .dmsbackup. Deseja continuar?",
+    "maintenance.compaction.status.preparing": "Preparando compactação segura...",
+    "maintenance.compaction.status.completed": "Compactação concluída com segurança.",
+    "maintenance.compaction.summary.before": "Tamanho anterior: {size}",
+    "maintenance.compaction.summary.after": "Tamanho final: {size}",
+    "maintenance.compaction.summary.recovered": "Espaço recuperado: {size}",
+    "maintenance.compaction.summary.audit": "Auditoria posterior concluída sem falhas."
   }
 }

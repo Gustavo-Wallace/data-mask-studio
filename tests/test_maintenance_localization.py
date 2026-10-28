@@ -64,11 +64,10 @@ def assert_checks_visible(text, result, translator):
 
 
 @pytest.mark.parametrize("locale", ["en", "pt-BR"])
-def test_initial_structure_accessibility_and_reserved_tab_contents_remain_untouched(overview, locale):
+def test_initial_structure_accessibility_and_translated_compaction_controls(overview, locale):
     _, widget, _, _ = overview
     translator = Translator(locale)
     identities = tuple(widget.sections.widget(index) for index in range(4))
-    other_texts = (widget.compact_button.text(), widget.compaction_result.empty_text)
     widget.retranslate(translator)
     assert [widget.sections.tabText(index) for index in range(4)] == [translator.text(identifier) for identifier in
         ("maintenance.tab.overview", "backup.validate", "maintenance.tab.temporaries", "maintenance.tab.compaction")]
@@ -87,7 +86,8 @@ def test_initial_structure_accessibility_and_reserved_tab_contents_remain_untouc
     assert widget.overview_output.isReadOnly() and not widget.overview_output.toPlainText()
     assert widget.progress.accessibleName() == translator.text("maintenance.progress_accessible")
     assert widget.sections.accessibleName() == translator.text("maintenance.tabs_accessible")
-    assert other_texts == (widget.compact_button.text(), widget.compaction_result.empty_text)
+    assert widget.compact_button.text() == translator.text("maintenance.compaction.start")
+    assert widget.compaction_result.empty_text == translator.text("maintenance.compaction.empty")
 
 
 @pytest.mark.parametrize("locale", ["en", "pt-BR"])

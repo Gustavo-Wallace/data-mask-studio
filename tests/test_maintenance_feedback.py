@@ -125,7 +125,7 @@ def test_other_operations_keep_progress_cancel_and_terminal_feedback(
     widget.sections.setCurrentIndex(tab)
     widget.backup_path_field.setText("synthetic.dmsbackup")
     monkeypatch.setattr(worker_type, "start", lambda self: None)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Yes)
     getattr(widget, button).click()
     worker = widget._worker
     assert worker is not None

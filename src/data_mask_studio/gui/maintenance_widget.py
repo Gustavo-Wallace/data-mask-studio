@@ -29,6 +29,7 @@ from data_mask_studio.backup import (
     EnvironmentPaths,
 )
 from data_mask_studio.gui.backup_worker import BackupValidationWorker
+from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.gui.maintenance_worker import (
     CompactionWorker,
     DiagnosticWorker,
@@ -90,6 +91,9 @@ class MaintenanceWidget(QWidget):
         self._temporary_message: tuple[str, dict[str, int]] | None = None
         self._temporary_accept_result = False
         self._temporary_succeeded = False
+        self._compaction_message_id: str | None = None
+        self._last_compaction: CompactionResult | None = None
+        self._compaction_accept_result = False
         self._paths = paths
         self._diagnostics = MaintenanceDiagnostics(
             paths, hmac_key_provider, vault_key_provider
@@ -170,6 +174,8 @@ class MaintenanceWidget(QWidget):
             (self.locate_button, "maintenance.temporary.locate"),
             (self.cleanup_button, "maintenance.temporary.delete"),
             (self.temporary_info, "maintenance.temporary.instructions"),
+            (self.compact_button, "maintenance.compaction.start"),
+            (self.compaction_info, "maintenance.compaction.warning"),
         ):
             widget.setText(translator.text(identifier))
             widget.setAccessibleName(translator.text(identifier))
@@ -182,6 +188,7 @@ class MaintenanceWidget(QWidget):
             (self.backup_password_field, "maintenance.backup.password_accessible"),
             (self.backup_result, "maintenance.backup.result_accessible"),
             (self.temporary_table, "maintenance.temporary.table_accessible"),
+            (self.compaction_result, "maintenance.compaction.result_accessible"),
         ):
             widget.setAccessibleName(translator.text(identifier))
         copy_description = translator.text("maintenance.overview.copy_description")
@@ -193,6 +200,9 @@ class MaintenanceWidget(QWidget):
         self.backup_result.empty_text = translator.text("maintenance.backup.empty")
         self.backup_result.setAccessibleDescription(self.backup_result.empty_text)
         self.backup_result.viewport().update()
+        self.compaction_result.empty_text = translator.text("maintenance.compaction.empty")
+        self.compaction_result.setAccessibleDescription(self.compaction_result.empty_text)
+        self.compaction_result.viewport().update()
         self.temporary_table.empty_text = translator.text("maintenance.temporary.empty")
         self.temporary_table.setAccessibleDescription(translator.text("maintenance.temporary.instructions"))
         self.temporary_table.viewport().update()
@@ -232,6 +242,13 @@ class MaintenanceWidget(QWidget):
                 self._section_feedback[2] = replace(saved, message=message)
             if self._feedback_section == 2:
                 self.status_label.setText(message)
+        if self._compaction_message_id is not None:
+            message = translator.text(self._compaction_message_id)
+            saved = self._section_feedback.get(3)
+            if saved is not None:
+                self._section_feedback[3] = replace(saved, message=message)
+            if self._feedback_section == 3:
+                self.status_label.setText(message)
         rendered_outputs = []
         if self._last_diagnostic is not None:
             rendered_outputs.append((self.overview_output, _render_diagnostic(self._last_diagnostic, translator)))
@@ -239,6 +256,8 @@ class MaintenanceWidget(QWidget):
             rendered_outputs.append((self.backup_result, _render_backup(self._last_backup_validation, translator)))
         elif self._backup_result_message_id is not None:
             rendered_outputs.append((self.backup_result, translator.text(self._backup_result_message_id)))
+        if self._last_compaction is not None:
+            rendered_outputs.append((self.compaction_result, _render_compaction(self._last_compaction, translator)))
         for output, text in rendered_outputs:
             cursor = output.textCursor()
             positions = []
@@ -292,6 +311,15 @@ class MaintenanceWidget(QWidget):
                                  *, state: FeedbackState = "neutral", **parameters: int) -> None:
         self._set_status(self._translator.text(identifier, **parameters), error, state=state)
         self._temporary_message = (identifier, parameters)
+
+    def _set_compaction_status_id(self, identifier: str, error: bool = False,
+                                  *, state: FeedbackState = "neutral") -> None:
+        self._set_status(self._translator.text(identifier), error, state=state)
+        self._compaction_message_id = identifier
+
+    def _clear_compaction_result(self) -> None:
+        self._last_compaction = None
+        self.compaction_result.clear()
 
     def _remember_feedback(self) -> None:
         self._section_feedback[self._feedback_section] = _SectionFeedback(
@@ -658,48 +686,58 @@ class MaintenanceWidget(QWidget):
         if self._worker is None:
             self._select_feedback_section(3)
         if not self._paths.vault_database_path.is_file():
-            self._set_status("O cofre local ainda não existe.", True)
+            self._set_compaction_status_id("maintenance.compaction.error.no_vault", True)
             return
         if not self._begin_allowed(3):
             return
         size = self._paths.vault_database_path.stat().st_size
-        answer = QMessageBox.warning(
-            self,
-            "Confirmar compactação",
-            f"Tamanho atual: {_format_bytes(size)}. A redução pode ser pequena. "
-            "Recomenda-se criar antes um backup .dmsbackup. Deseja continuar?",
+        message = QMessageBox(
+            QMessageBox.Icon.Warning,
+            self._translator.text("maintenance.compaction.confirm.title"), "",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            self,
         )
+        message.setTextFormat(Qt.TextFormat.PlainText)
+        message.setText(self._translator.text("maintenance.compaction.confirm.text", size=_format_bytes(size)))
+        localize_standard_buttons(message, self._translator)
+        message.setDefaultButton(QMessageBox.StandardButton.No)
+        message.setEscapeButton(QMessageBox.StandardButton.No)
+        try:
+            answer = message.exec()
+        finally:
+            message.deleteLater()
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.invalidate_diagnostic()
+        self._clear_compaction_result()
+        self._compaction_accept_result = True
         worker = CompactionWorker(self._compactor)
         worker.phase_changed.connect(self._compaction_phase)
         worker.completed.connect(self._compaction_completed)
-        self._start_worker(worker, "Preparando compactação segura...")
+        self._start_worker(worker, "", message_id="maintenance.compaction.status.preparing")
 
     def _compaction_phase(self, stage: str, cancellation_allowed: bool) -> None:
+        if not self._accept_compaction_signal():
+            return
         self._select_feedback_section(3)
         self.progress.setRange(0, 0)
         self.cancel_button.setEnabled(cancellation_allowed)
         self._set_status(stage, False)
 
     def _compaction_completed(self, result: CompactionResult) -> None:
+        if not self._accept_compaction_signal():
+            return
+        self._compaction_accept_result = False
+        self._last_compaction = result
         self._select_feedback_section(3)
         self.set_last_audit(result.audit)
-        self.compaction_result.setPlainText(
-            "\n".join(
-                (
-                    f"Tamanho anterior: {_format_bytes(result.size_before)}",
-                    f"Tamanho final: {_format_bytes(result.size_after)}",
-                    f"Espaço recuperado: {_format_bytes(result.recovered_bytes)}",
-                    "Auditoria posterior concluída sem falhas.",
-                )
-            )
-        )
+        self.compaction_result.setPlainText(_render_compaction(result, self._translator))
         self.environment_changed.emit()
-        self._set_status("Compactação concluída com segurança.", False, state="success")
+        self._set_compaction_status_id("maintenance.compaction.status.completed", state="success")
+
+    def _accept_compaction_signal(self) -> bool:
+        return (self.sender() is self._worker and isinstance(self._worker, CompactionWorker)
+                and self._compaction_accept_result)
 
     def _begin_allowed(self, section: int) -> bool:
         if self._worker is not None:
@@ -713,7 +751,7 @@ class MaintenanceWidget(QWidget):
             elif section == 2:
                 self._set_temporary_status_id("maintenance.overview.error.busy", True)
             else:
-                self._set_status("Finalize as outras operações antes da manutenção.", True)
+                self._set_compaction_status_id("maintenance.overview.error.busy", True)
             return False
         return True
 
@@ -731,6 +769,8 @@ class MaintenanceWidget(QWidget):
                 self._set_backup_status_id(message_id)
             elif isinstance(worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
                 self._set_temporary_status_id(message_id)
+            elif isinstance(worker, CompactionWorker):
+                self._set_compaction_status_id(message_id)
             else:
                 self._set_overview_status_id(message_id)
         else:
@@ -752,11 +792,22 @@ class MaintenanceWidget(QWidget):
                 self._set_backup_status_id("masking.status.cancelling")
             elif isinstance(worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
                 self._set_temporary_status_id("masking.status.cancelling")
+            elif isinstance(worker, CompactionWorker):
+                self._set_compaction_status_id("masking.status.cancelling")
             else:
                 self._set_status("Cancelamento solicitado...", False)
 
     def _cancelled(self) -> None:
         if self.sender() is not self._worker:
+            return
+        if isinstance(self._worker, CompactionWorker):
+            if not self._compaction_accept_result:
+                return
+            self._compaction_accept_result = False
+            self._clear_compaction_result()
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            self._set_compaction_status_id("restoration.csv.status.cancelled", state="warning")
             return
         if isinstance(self._worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
             if not self._temporary_accept_result:
@@ -790,6 +841,18 @@ class MaintenanceWidget(QWidget):
 
     def _failed(self, error: Exception) -> None:
         if self.sender() is not self._worker:
+            return
+        if isinstance(self._worker, CompactionWorker):
+            if not self._compaction_accept_result:
+                return
+            self._compaction_accept_result = False
+            self._clear_compaction_result()
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            if isinstance(error, (MaintenanceError, BackupError)):
+                self._set_status(str(error), True)
+            else:
+                self._set_compaction_status_id("maintenance.overview.error.unexpected", True)
             return
         if isinstance(self._worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
             if not self._temporary_accept_result:
@@ -856,6 +919,7 @@ class MaintenanceWidget(QWidget):
         self._diagnostic_accept_result = False
         self._backup_accept_result = False
         self._temporary_accept_result = False
+        self._compaction_accept_result = False
         self._worker = None
         self.backup_password_field.clear()
         self.show_backup_password.setChecked(False)
@@ -864,6 +928,7 @@ class MaintenanceWidget(QWidget):
         self._set_busy(
             False, completed=(self._last_backup_validation is not None if isinstance(worker, BackupValidationWorker)
                               else self._temporary_succeeded if isinstance(worker, (TemporaryScanWorker, TemporaryCleanupWorker))
+                              else self._last_compaction is not None if isinstance(worker, CompactionWorker)
                               else not isinstance(worker, DiagnosticWorker) or diagnostic_succeeded)
         )
         self._remember_feedback()
@@ -932,6 +997,8 @@ class MaintenanceWidget(QWidget):
             self._backup_message_id = None
         elif self._feedback_section == 2:
             self._temporary_message = None
+        elif self._feedback_section == 3:
+            self._compaction_message_id = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if error else state)
         self._remember_feedback()
@@ -1010,6 +1077,15 @@ def _render_backup(result: BackupValidationResult, translator: Translator | None
             text("maintenance.backup.summary.compatible_yes" if result.is_compatible else "maintenance.backup.summary.compatible_no"),
         )
     )
+
+
+def _render_compaction(result: CompactionResult, translator: Translator) -> str:
+    return "\n".join((
+        translator.text("maintenance.compaction.summary.before", size=_format_bytes(result.size_before)),
+        translator.text("maintenance.compaction.summary.after", size=_format_bytes(result.size_after)),
+        translator.text("maintenance.compaction.summary.recovered", size=_format_bytes(result.recovered_bytes)),
+        translator.text("maintenance.compaction.summary.audit"),
+    ))
 
 
 def _format_bytes(value: int) -> str:

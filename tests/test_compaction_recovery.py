@@ -230,7 +230,7 @@ def test_compound_failure_reaches_gui_as_safe_error_with_retained_snapshot(envir
     paths, _, _, _, created, _ = environment
     app = create_application([])
     widget = MaintenanceWidget(paths, FixedKeyProvider(HMAC_KEY), FixedKeyProvider(VAULT_KEY))
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Yes)
     original_error = OSError("SYNTHETIC_PRIVATE_COMPACTION_DETAIL")
     fail_after_real_replacement(monkeypatch, original_error, fail_rollback=True)
     changes = []

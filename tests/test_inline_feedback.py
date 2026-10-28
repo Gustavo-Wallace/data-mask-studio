@@ -22,7 +22,7 @@ from data_mask_studio.batch_restoration.models import (
 )
 from data_mask_studio.consultant import ConsultationResult, ConsultationStatus
 from data_mask_studio.gui.components.presentation import set_feedback_state
-from data_mask_studio.gui.maintenance_worker import TemporaryCleanupWorker
+from data_mask_studio.gui.maintenance_worker import CompactionWorker, TemporaryCleanupWorker
 from data_mask_studio.gui.styles import application_stylesheet
 from data_mask_studio.gui.visual_tokens import COLORS
 from data_mask_studio.html_restoration import (
@@ -320,11 +320,17 @@ def test_diagnostics_use_existing_status_without_turning_attention_green(page, t
     assert widget.copy_report_button.isEnabled()
     assert_feedback(widget.status_label, state)
     assert "Diagnóstico concluído:" in widget.status_label.text()
-    widget._compaction_phase("Etapa segura em andamento", True)
+    monkeypatch.setattr(CompactionWorker, "start", lambda self: None)
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Yes)
+    window._vault_repository_factory()  # Materialize this fixture's isolated synthetic vault.
+    widget.start_compaction()
+    worker = widget._worker
+    worker.phase_changed.emit("Etapa segura em andamento", True)
     assert_feedback(widget.status_label, "neutral")
     assert widget.status_label.text() == "Etapa segura em andamento"
-    widget._cancelled()
+    worker.cancelled.emit()
     assert_feedback(widget.status_label, "warning")
+    worker.finished.emit()
 
 
 @pytest.mark.parametrize("compatible", [False, True])

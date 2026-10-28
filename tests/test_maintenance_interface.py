@@ -146,7 +146,7 @@ def test_compaction_confirmation_runs_offscreen_and_emits_change(
     widget.environment_changed.connect(lambda: changed.append(True))
     monkeypatch.setattr(
         QMessageBox,
-        "warning",
+        "exec",
         lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
     )
 

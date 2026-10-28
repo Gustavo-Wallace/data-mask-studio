@@ -354,7 +354,7 @@ def test_compaction_invalidates_diagnostic_without_losing_its_own_feedback(
     app, widget, _, _ = diagnostic_gui
     complete_diagnostic(app, widget)
     previous = widget._last_diagnostic
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Yes)
     monkeypatch.setattr(CompactionWorker, "start", lambda self: None)
     widget.sections.setCurrentIndex(3)
     widget.start_compaction()

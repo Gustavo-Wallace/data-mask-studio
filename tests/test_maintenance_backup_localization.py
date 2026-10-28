@@ -401,7 +401,7 @@ def test_missing_input_and_freeform_service_errors_remain_safe_and_unparsed(page
             assert widget.status_label.property("feedbackState") == "error" and widget.progress.value() == 0
 
 
-def test_backup_state_and_05j1_report_survive_other_tabs_without_unintended_translation(page, archive):
+def test_backup_state_and_05j1_report_survive_other_tabs_without_reinterpreting_freeform_feedback(page, archive):
     app, widget, _ = page
     destination, _, _, _ = archive
     widget.sections.setCurrentIndex(0)
@@ -422,13 +422,13 @@ def test_backup_state_and_05j1_report_survive_other_tabs_without_unintended_tran
         widget.progress.setValue(3)
         widget._remember_feedback()
         snapshot = widget._section_feedback[index]
-        reserved_controls = (widget.compact_button.text(), widget.compaction_result.empty_text)
         for language in ("en", "pt-BR", "en"):
             widget.retranslate(Translator(language))
             assert widget.sections.currentIndex() == index and widget._section_feedback[index] == snapshot
             assert widget.progress.value() == 3 and widget.progress.maximum() == 7
             assert widget.status_label.text() == snapshot.message
-            assert reserved_controls == (widget.compact_button.text(), widget.compaction_result.empty_text)
+            assert widget.compact_button.text() == Translator(language).text("maintenance.compaction.start")
+            assert widget.compaction_result.empty_text == Translator(language).text("maintenance.compaction.empty")
         widget.sections.setCurrentIndex(1)
         assert widget._last_backup_validation is result and widget.progress.value() == 1
         assert widget.status_label.text() == Translator("en").text("backup.status.validated")

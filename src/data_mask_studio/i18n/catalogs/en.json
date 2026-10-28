@@ -644,6 +644,19 @@
     "maintenance.temporary.confirm.title": "Confirm cleanup",
     "maintenance.temporary.confirm.text": "Delete {count} selected old temporary file(s)?",
     "maintenance.temporary.status.cleaning": "Removing selected temporary files...",
-    "maintenance.temporary.status.cleaned": "Cleanup completed: {removed} removed, {preserved} preserved, {failed} failed."
+    "maintenance.temporary.status.cleaned": "Cleanup completed: {removed} removed, {preserved} preserved, {failed} failed.",
+    "maintenance.compaction.start": "Compact vault",
+    "maintenance.compaction.warning": "Compaction may recover little space. Create a .dmsbackup first, although it is not required.",
+    "maintenance.compaction.result_accessible": "Safe vault compaction result",
+    "maintenance.compaction.empty": "The safe compaction result will appear here.",
+    "maintenance.compaction.error.no_vault": "The local vault does not exist yet.",
+    "maintenance.compaction.confirm.title": "Confirm compaction",
+    "maintenance.compaction.confirm.text": "Current size: {size}. The reduction may be small. Creating a .dmsbackup first is recommended. Do you want to continue?",
+    "maintenance.compaction.status.preparing": "Preparing safe compaction...",
+    "maintenance.compaction.status.completed": "Compaction completed safely.",
+    "maintenance.compaction.summary.before": "Previous size: {size}",
+    "maintenance.compaction.summary.after": "Final size: {size}",
+    "maintenance.compaction.summary.recovered": "Space recovered: {size}",
+    "maintenance.compaction.summary.audit": "Post-compaction audit completed without failures."
   }
 }

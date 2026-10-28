@@ -456,10 +456,10 @@ def test_hidden_temporary_feedback_retranslates_without_overwriting_other_tabs(p
         widget.progress.setValue(4)
         widget._remember_feedback()
         original = widget._section_feedback[tab]
-        compaction = widget.compact_button.text(), widget.compaction_result.empty_text
         widget.retranslate(Translator("en"))
         assert widget.sections.currentIndex() == tab and widget._section_feedback[tab] == original
-        assert (widget.compact_button.text(), widget.compaction_result.empty_text) == compaction
+        assert widget.compact_button.text() == Translator("en").text("maintenance.compaction.start")
+        assert widget.compaction_result.empty_text == Translator("en").text("maintenance.compaction.empty")
         assert widget.progress.value() == 4 and widget.status_label.text() == original.message
         widget.sections.setCurrentIndex(2)
         assert widget.status_label.text() == Translator("en").text("maintenance.temporary.status.found", count=0)
