@@ -627,6 +627,23 @@
     "maintenance.backup.summary.valid_file": "Valid file: yes",
     "maintenance.backup.summary.created": "Created: {timestamp}",
     "maintenance.backup.summary.compatible_yes": "Compatible: yes",
-    "maintenance.backup.summary.compatible_no": "Compatible: no"
+    "maintenance.backup.summary.compatible_no": "Compatible: no",
+    "maintenance.temporary.locate": "Find temporary files",
+    "maintenance.temporary.delete": "Delete selected",
+    "maintenance.temporary.instructions": "The search is limited to controlled application and session folders.",
+    "maintenance.temporary.table_accessible": "Known DMS temporary files",
+    "maintenance.temporary.empty": "No temporary files found.",
+    "maintenance.temporary.size": "Size",
+    "maintenance.temporary.age": "Age",
+    "maintenance.temporary.select_accessible": "Select temporary file in row {row}",
+    "maintenance.temporary.recent": "Recent — preserved",
+    "maintenance.temporary.in_use": "Possibly in use",
+    "maintenance.temporary.available": "Available for selection",
+    "maintenance.temporary.status.scanning": "Finding known temporary files...",
+    "maintenance.temporary.status.found": "Known temporary files found: {count}.",
+    "maintenance.temporary.confirm.title": "Confirm cleanup",
+    "maintenance.temporary.confirm.text": "Delete {count} selected old temporary file(s)?",
+    "maintenance.temporary.status.cleaning": "Removing selected temporary files...",
+    "maintenance.temporary.status.cleaned": "Cleanup completed: {removed} removed, {preserved} preserved, {failed} failed."
   }
 }

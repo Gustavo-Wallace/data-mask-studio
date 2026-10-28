@@ -22,6 +22,7 @@ from data_mask_studio.batch_restoration.models import (
 )
 from data_mask_studio.consultant import ConsultationResult, ConsultationStatus
 from data_mask_studio.gui.components.presentation import set_feedback_state
+from data_mask_studio.gui.maintenance_worker import TemporaryCleanupWorker
 from data_mask_studio.gui.styles import application_stylesheet
 from data_mask_studio.gui.visual_tokens import COLORS
 from data_mask_studio.html_restoration import (
@@ -406,16 +407,23 @@ def test_batch_validations_distinguish_review_partial_success_and_failure(page, 
         assert_feedback(widget.status_label, "error")
 
 
-def test_maintenance_cleanup_preserves_report_text_and_warning_for_preserved_files(page):
+def test_maintenance_cleanup_preserves_report_text_and_warning_for_preserved_files(page, monkeypatch):
     _, window = page
     widget = window.maintenance_widget
+    monkeypatch.setattr(TemporaryCleanupWorker, "start", lambda self: None)
     for result, state in ((CleanupResult(1, 0, 0, 0), "success"),
                           (CleanupResult(1, 1, 0, 0), "warning"),
                           (CleanupResult(0, 0, 1, 0), "error")):
-        widget._cleanup_completed(result)
+        worker = TemporaryCleanupWorker([], widget._paths.directory, ())
+        worker.completed.connect(widget._cleanup_completed)
+        widget._select_feedback_section(2)
+        widget._temporary_accept_result = True
+        widget._start_worker(worker, "synthetic cleanup")
+        worker.completed.emit(result)
         assert_feedback(widget.status_label, state)
         assert widget.status_label.text() == (f"Limpeza concluída: {result.removed} removido(s), "
                                              f"{result.preserved} preservado(s), {result.failed} falha(s).")
+        worker.finished.emit()
 
 
 @pytest.mark.parametrize("status,state", [(ConsultationStatus.NOT_FOUND, "warning"),

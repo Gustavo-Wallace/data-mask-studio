@@ -87,6 +87,9 @@ class MaintenanceWidget(QWidget):
         self._backup_result_message_id: str | None = None
         self._last_backup_validation: BackupValidationResult | None = None
         self._backup_accept_result = False
+        self._temporary_message: tuple[str, dict[str, int]] | None = None
+        self._temporary_accept_result = False
+        self._temporary_succeeded = False
         self._paths = paths
         self._diagnostics = MaintenanceDiagnostics(
             paths, hmac_key_provider, vault_key_provider
@@ -164,6 +167,9 @@ class MaintenanceWidget(QWidget):
             (self.backup_file_label, "maintenance.backup.file_label"),
             (self.backup_password_label, "masking.package.password_label"),
             (self.show_backup_password, "restoration.package.show_password"),
+            (self.locate_button, "maintenance.temporary.locate"),
+            (self.cleanup_button, "maintenance.temporary.delete"),
+            (self.temporary_info, "maintenance.temporary.instructions"),
         ):
             widget.setText(translator.text(identifier))
             widget.setAccessibleName(translator.text(identifier))
@@ -175,6 +181,7 @@ class MaintenanceWidget(QWidget):
             (self.backup_path_field, "maintenance.backup.path_accessible"),
             (self.backup_password_field, "maintenance.backup.password_accessible"),
             (self.backup_result, "maintenance.backup.result_accessible"),
+            (self.temporary_table, "maintenance.temporary.table_accessible"),
         ):
             widget.setAccessibleName(translator.text(identifier))
         copy_description = translator.text("maintenance.overview.copy_description")
@@ -186,6 +193,22 @@ class MaintenanceWidget(QWidget):
         self.backup_result.empty_text = translator.text("maintenance.backup.empty")
         self.backup_result.setAccessibleDescription(self.backup_result.empty_text)
         self.backup_result.viewport().update()
+        self.temporary_table.empty_text = translator.text("maintenance.temporary.empty")
+        self.temporary_table.setAccessibleDescription(translator.text("maintenance.temporary.instructions"))
+        self.temporary_table.viewport().update()
+        with QSignalBlocker(self.temporary_table):
+            vertical = self.temporary_table.verticalScrollBar().value()
+            horizontal = self.temporary_table.horizontalScrollBar().value()
+            for column, identifier in enumerate(("masking.composite.delete", "batch.table.path",
+                    "maintenance.temporary.size", "maintenance.temporary.age", "batch.table.status")):
+                self.temporary_table.horizontalHeaderItem(column).setText(translator.text(identifier))
+            # Relabel in place: never rebuild rows, checkboxes, selection or results.
+            for row, item in enumerate(self.temporary_items):
+                checkbox = self.temporary_table.cellWidget(row, 0)
+                checkbox.setAccessibleName(translator.text("maintenance.temporary.select_accessible", row=row + 1))
+                self.temporary_table.item(row, 4).setText(self._temporary_status(item))
+            self.temporary_table.verticalScrollBar().setValue(vertical)
+            self.temporary_table.horizontalScrollBar().setValue(horizontal)
         self._render_last_audit()
         if self._overview_message_id is not None:
             message = self._overview_status_text(self._overview_message_id)
@@ -200,6 +223,14 @@ class MaintenanceWidget(QWidget):
             if saved is not None:
                 self._section_feedback[1] = replace(saved, message=message)
             if self._feedback_section == 1:
+                self.status_label.setText(message)
+        if self._temporary_message is not None:
+            identifier, parameters = self._temporary_message
+            message = translator.text(identifier, **parameters)
+            saved = self._section_feedback.get(2)
+            if saved is not None:
+                self._section_feedback[2] = replace(saved, message=message)
+            if self._feedback_section == 2:
                 self.status_label.setText(message)
         rendered_outputs = []
         if self._last_diagnostic is not None:
@@ -256,6 +287,11 @@ class MaintenanceWidget(QWidget):
         self._last_backup_validation = None
         self._backup_result_message_id = None
         self.backup_result.clear()
+
+    def _set_temporary_status_id(self, identifier: str, error: bool = False,
+                                 *, state: FeedbackState = "neutral", **parameters: int) -> None:
+        self._set_status(self._translator.text(identifier, **parameters), error, state=state)
+        self._temporary_message = (identifier, parameters)
 
     def _remember_feedback(self) -> None:
         self._section_feedback[self._feedback_section] = _SectionFeedback(
@@ -398,11 +434,9 @@ class MaintenanceWidget(QWidget):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         layout = QVBoxLayout(widget)
         layout.setSpacing(METRICS["panel_spacing"])
-        layout.addWidget(
-            QLabel(
-                "A busca é limitada às pastas controladas da aplicação e da sessão."
-            )
-        )
+        self.temporary_info = QLabel()
+        self.temporary_info.setWordWrap(True)
+        layout.addWidget(self.temporary_info)
         layout.addLayout(actions)
         layout.addWidget(self.temporary_table)
         return widget
@@ -557,13 +591,20 @@ class MaintenanceWidget(QWidget):
             self._paths.directory, tuple(self._session_directories())
         )
         worker.completed.connect(self._temporaries_completed)
-        self._start_worker(worker, "Localizando temporários conhecidos...")
+        self._temporary_accept_result = True
+        self._temporary_succeeded = False
+        self._start_worker(worker, "", message_id="maintenance.temporary.status.scanning")
 
     def _temporaries_completed(self, items: list[TemporaryItem]) -> None:
+        if not (self.sender() is self._worker and isinstance(self._worker, TemporaryScanWorker)
+                and self._temporary_accept_result):
+            return
+        self._temporary_accept_result = False
+        self._temporary_succeeded = True
         self._select_feedback_section(2)
         self.temporary_items = items
         self._refresh_temporary_table()
-        self._set_status(f"{len(items)} temporário(s) conhecido(s) localizado(s).", False, state="success")
+        self._set_temporary_status_id("maintenance.temporary.status.found", state="success", count=len(items))
 
     def _temporary_toggled(self, row: int, checked: bool) -> None:
         if row < len(self.temporary_items):
@@ -580,8 +621,9 @@ class MaintenanceWidget(QWidget):
             return
         answer = confirm_destructive_action(
             self,
-            "Confirmar limpeza",
-            f"Excluir {len(selected)} temporário(s) antigo(s) selecionado(s)?",
+            self._translator.text("maintenance.temporary.confirm.title"),
+            self._translator.text("maintenance.temporary.confirm.text", count=len(selected)),
+            translator=self._translator,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -591,18 +633,25 @@ class MaintenanceWidget(QWidget):
             tuple(self._session_directories()),
         )
         worker.completed.connect(self._cleanup_completed)
-        self._start_worker(worker, "Removendo temporários selecionados...")
+        self._temporary_accept_result = True
+        self._temporary_succeeded = False
+        self._start_worker(worker, "", message_id="maintenance.temporary.status.cleaning")
 
     def _cleanup_completed(self, result: CleanupResult) -> None:
+        if not (self.sender() is self._worker and isinstance(self._worker, TemporaryCleanupWorker)
+                and self._temporary_accept_result):
+            return
+        self._temporary_accept_result = False
+        self._temporary_succeeded = result.failed == 0
         self._select_feedback_section(2)
         if result.removed:
             self.invalidate_diagnostic()
         self._refresh_temporary_table()
-        self._set_status(
-            f"Limpeza concluída: {result.removed} removido(s), "
-            f"{result.preserved} preservado(s), {result.failed} falha(s).",
+        self._set_temporary_status_id(
+            "maintenance.temporary.status.cleaned",
             result.failed > 0,
             state="warning" if result.preserved else "success",
+            removed=result.removed, preserved=result.preserved, failed=result.failed,
         )
 
     def start_compaction(self) -> None:
@@ -661,6 +710,8 @@ class MaintenanceWidget(QWidget):
                 self._set_overview_status_id("maintenance.overview.error.busy", True)
             elif section == 1:
                 self._set_backup_status_id("maintenance.overview.error.busy", True)
+            elif section == 2:
+                self._set_temporary_status_id("maintenance.overview.error.busy", True)
             else:
                 self._set_status("Finalize as outras operações antes da manutenção.", True)
             return False
@@ -678,6 +729,8 @@ class MaintenanceWidget(QWidget):
         if message_id is not None:
             if isinstance(worker, BackupValidationWorker):
                 self._set_backup_status_id(message_id)
+            elif isinstance(worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
+                self._set_temporary_status_id(message_id)
             else:
                 self._set_overview_status_id(message_id)
         else:
@@ -697,11 +750,22 @@ class MaintenanceWidget(QWidget):
                 self._set_overview_status_id("masking.status.cancelling")
             elif isinstance(worker, BackupValidationWorker):
                 self._set_backup_status_id("masking.status.cancelling")
+            elif isinstance(worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
+                self._set_temporary_status_id("masking.status.cancelling")
             else:
                 self._set_status("Cancelamento solicitado...", False)
 
     def _cancelled(self) -> None:
         if self.sender() is not self._worker:
+            return
+        if isinstance(self._worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
+            if not self._temporary_accept_result:
+                return
+            self._temporary_accept_result = False
+            self._temporary_succeeded = False
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            self._set_temporary_status_id("restoration.csv.status.cancelled", state="warning")
             return
         if isinstance(self._worker, BackupValidationWorker):
             if not self._backup_accept_result:
@@ -726,6 +790,18 @@ class MaintenanceWidget(QWidget):
 
     def _failed(self, error: Exception) -> None:
         if self.sender() is not self._worker:
+            return
+        if isinstance(self._worker, (TemporaryScanWorker, TemporaryCleanupWorker)):
+            if not self._temporary_accept_result:
+                return
+            self._temporary_accept_result = False
+            self._temporary_succeeded = False
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            if isinstance(error, (MaintenanceError, BackupError)):
+                self._set_status(str(error), True)
+            else:
+                self._set_temporary_status_id("maintenance.overview.error.unexpected", True)
             return
         if isinstance(self._worker, BackupValidationWorker):
             if not self._backup_accept_result:
@@ -779,6 +855,7 @@ class MaintenanceWidget(QWidget):
         )
         self._diagnostic_accept_result = False
         self._backup_accept_result = False
+        self._temporary_accept_result = False
         self._worker = None
         self.backup_password_field.clear()
         self.show_backup_password.setChecked(False)
@@ -786,6 +863,7 @@ class MaintenanceWidget(QWidget):
             worker.deleteLater()
         self._set_busy(
             False, completed=(self._last_backup_validation is not None if isinstance(worker, BackupValidationWorker)
+                              else self._temporary_succeeded if isinstance(worker, (TemporaryScanWorker, TemporaryCleanupWorker))
                               else not isinstance(worker, DiagnosticWorker) or diagnostic_succeeded)
         )
         self._remember_feedback()
@@ -819,13 +897,8 @@ class MaintenanceWidget(QWidget):
                 lambda checked, current=row: self._temporary_toggled(current, checked)
             )
             self.temporary_table.setCellWidget(row, 0, checkbox)
-            status = item.result or (
-                "Recente — preservado"
-                if item.recent
-                else "Possivelmente em uso"
-                if item.in_use
-                else "Disponível para seleção"
-            )
+            checkbox.setAccessibleName(self._translator.text("maintenance.temporary.select_accessible", row=row + 1))
+            status = self._temporary_status(item)
             values = (
                 str(item.path),
                 _format_bytes(item.size),
@@ -841,6 +914,15 @@ class MaintenanceWidget(QWidget):
             any(item.selected and item.removable for item in self.temporary_items)
         )
 
+    def _temporary_status(self, item: TemporaryItem) -> str:
+        # Service outcomes are free-form, not a typed translation contract.
+        if item.result:
+            return item.result
+        identifier = ("maintenance.temporary.recent" if item.recent
+                      else "maintenance.temporary.in_use" if item.in_use
+                      else "maintenance.temporary.available")
+        return self._translator.text(identifier)
+
     def _set_status(
         self, message: str, error: bool, *, state: FeedbackState = "neutral"
     ) -> None:
@@ -848,6 +930,8 @@ class MaintenanceWidget(QWidget):
             self._overview_message_id = None
         elif self._feedback_section == 1:
             self._backup_message_id = None
+        elif self._feedback_section == 2:
+            self._temporary_message = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if error else state)
         self._remember_feedback()

@@ -627,6 +627,23 @@
     "maintenance.backup.summary.valid_file": "Arquivo válido: sim",
     "maintenance.backup.summary.created": "Data de criação: {timestamp}",
     "maintenance.backup.summary.compatible_yes": "Compatível: sim",
-    "maintenance.backup.summary.compatible_no": "Compatível: não"
+    "maintenance.backup.summary.compatible_no": "Compatível: não",
+    "maintenance.temporary.locate": "Localizar temporários",
+    "maintenance.temporary.delete": "Excluir selecionados",
+    "maintenance.temporary.instructions": "A busca é limitada às pastas controladas da aplicação e da sessão.",
+    "maintenance.temporary.table_accessible": "Arquivos temporários conhecidos do DMS",
+    "maintenance.temporary.empty": "Nenhum arquivo temporário localizado.",
+    "maintenance.temporary.size": "Tamanho",
+    "maintenance.temporary.age": "Idade",
+    "maintenance.temporary.select_accessible": "Selecionar temporário na linha {row}",
+    "maintenance.temporary.recent": "Recente — preservado",
+    "maintenance.temporary.in_use": "Possivelmente em uso",
+    "maintenance.temporary.available": "Disponível para seleção",
+    "maintenance.temporary.status.scanning": "Localizando temporários conhecidos...",
+    "maintenance.temporary.status.found": "{count} temporário(s) conhecido(s) localizado(s).",
+    "maintenance.temporary.confirm.title": "Confirmar limpeza",
+    "maintenance.temporary.confirm.text": "Excluir {count} temporário(s) antigo(s) selecionado(s)?",
+    "maintenance.temporary.status.cleaning": "Removendo temporários selecionados...",
+    "maintenance.temporary.status.cleaned": "Limpeza concluída: {removed} removido(s), {preserved} preservado(s), {failed} falha(s)."
   }
 }

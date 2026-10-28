@@ -422,7 +422,7 @@ def test_removing_known_residue_invalidates_old_attention_result(diagnostic_gui,
     widget.temporary_items[0].selected = True
     monkeypatch.setattr(
         "data_mask_studio.gui.maintenance_widget.confirm_destructive_action",
-        lambda *args: QMessageBox.StandardButton.Yes,
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
     )
     widget.start_cleanup()
     wait(app, widget)
