@@ -657,6 +657,14 @@
     "maintenance.compaction.summary.before": "Previous size: {size}",
     "maintenance.compaction.summary.after": "Final size: {size}",
     "maintenance.compaction.summary.recovered": "Space recovered: {size}",
-    "maintenance.compaction.summary.audit": "Post-compaction audit completed without failures."
+    "maintenance.compaction.summary.audit": "Post-compaction audit completed without failures.",
+    "shell.environment_restored": "Local environment restored successfully.",
+    "shell.close.masking": "Wait for processing to be cancelled before closing.",
+    "shell.close.batch": "Wait for the batch to be cancelled before closing.",
+    "shell.close.backup": "Wait for backup or restoration to finish safely.",
+    "shell.close.csv": "Wait for CSV restoration to be cancelled.",
+    "shell.close.html": "Wait for HTML restoration to be cancelled.",
+    "shell.close.batch_restoration": "Wait for batch restoration to be cancelled.",
+    "shell.close.maintenance": "Wait for maintenance to finish safely."
   }
 }

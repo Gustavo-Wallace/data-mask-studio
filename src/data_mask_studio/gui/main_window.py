@@ -447,9 +447,8 @@ class MainWindow(QMainWindow):
         return tuple(paths)
 
     def _environment_restored(self) -> None:
-        self.anonymization_widget.clear_selection(
-            status="Ambiente local restaurado com sucesso."
-        )
+        self.anonymization_widget.clear_selection()
+        self.anonymization_widget._set_status_id("shell.environment_restored")
         self.consultant_widget.clear_consultation()
         self.anonymization_widget.refresh_profiles()
         self.maintenance_widget.invalidate_diagnostic()
@@ -464,37 +463,37 @@ class MainWindow(QMainWindow):
         workers = (
             (
                 self.anonymization_widget.stop_worker,
-                "Aguarde o cancelamento do processamento antes de fechar.",
+                "shell.close.masking",
             ),
             (
                 self.batch_widget.stop_workers,
-                "Aguarde o cancelamento do lote antes de fechar.",
+                "shell.close.batch",
             ),
             (
                 self.backup_widget.stop_worker,
-                "Aguarde a conclusão segura do backup ou restauração.",
+                "shell.close.backup",
             ),
             (
                 self.restoration_widget.stop_worker,
-                "Aguarde o cancelamento da restauração de CSV.",
+                "shell.close.csv",
             ),
             (
                 self.html_restoration_widget.stop_worker,
-                "Aguarde o cancelamento da restauração de HTML.",
+                "shell.close.html",
             ),
             (
                 self.batch_restoration_widget.stop_workers,
-                "Aguarde o cancelamento da restauração em lote.",
+                "shell.close.batch_restoration",
             ),
             (
                 self.maintenance_widget.stop_worker,
-                "Aguarde a conclusão segura da manutenção.",
+                "shell.close.maintenance",
             ),
         )
-        for stop_worker, message in workers:
+        for stop_worker, message_id in workers:
             if not stop_worker():
                 event.ignore()
-                self.anonymization_widget._set_status(message, is_error=False)
+                self.anonymization_widget._set_status_id(message_id)
                 return
         self.consultant_widget.clear_consultation()
         super().closeEvent(event)
