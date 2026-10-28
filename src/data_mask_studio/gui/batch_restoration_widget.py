@@ -29,6 +29,8 @@ from data_mask_studio.batch_restoration import (
     BatchMissingCodePolicy,
     BatchRestorationError,
     BatchRestorationFile,
+    BatchRestorationExplanation,
+    BatchRestorationReason,
     BatchRestorationFileType,
     BatchRestorationOptions,
     BatchRestorationProgress,
@@ -61,6 +63,20 @@ _STATUS_IDS = {
              if status in (BatchRestorationStatus.PENDING, BatchRestorationStatus.REVIEW_REQUIRED)
              else "batch.file_status." + status.value)
     for status in BatchRestorationStatus
+}
+
+_RESULT_REASONS = {
+    BatchRestorationReason.ANALYZED: ("batch_restoration.result.analyzed", BatchRestorationStatus.COMPATIBLE),
+    BatchRestorationReason.MISSING_TOKENS: ("batch_restoration.result.missing_tokens", BatchRestorationStatus.REVIEW_REQUIRED),
+    BatchRestorationReason.NO_VALID_TOKENS: ("batch_restoration.result.no_valid_tokens", BatchRestorationStatus.INCOMPATIBLE),
+    BatchRestorationReason.OUTPUT_PUBLISHED: ("batch_restoration.result.output", BatchRestorationStatus.COMPLETED),
+    BatchRestorationReason.ANALYSIS_CANCELLED: ("batch_restoration.result.analysis_cancelled", BatchRestorationStatus.CANCELLED),
+    BatchRestorationReason.RESTORATION_CANCELLED: ("batch_restoration.result.restoration_cancelled", BatchRestorationStatus.CANCELLED),
+    BatchRestorationReason.CANCELLED_WITHOUT_PARTIAL: ("batch_restoration.result.cancelled_without_partial", BatchRestorationStatus.CANCELLED),
+    BatchRestorationReason.NO_COLUMNS_SELECTED: ("batch_restoration.result.no_columns_selected", BatchRestorationStatus.SKIPPED),
+    BatchRestorationReason.BATCH_INTERRUPTED: ("batch_restoration.result.batch_interrupted", BatchRestorationStatus.SKIPPED),
+    BatchRestorationReason.VAULT_ACCESS_FAILURE: ("batch_restoration.result.vault_access_failure", BatchRestorationStatus.ERROR),
+    BatchRestorationReason.MISSING_TOKEN_ABORT: ("batch_restoration.result.missing_token_abort", BatchRestorationStatus.ERROR),
 }
 
 
@@ -401,9 +417,31 @@ class BatchRestorationWidget(QWidget):
         self.summary_output.clear()
 
     def _result_text(self, item: BatchRestorationFile) -> str:
+        explanation = item.result_explanation
+        if explanation is not None:
+            presentation = (_RESULT_REASONS.get(explanation.reason)
+                            if isinstance(explanation, BatchRestorationExplanation)
+                            and isinstance(explanation.reason, BatchRestorationReason) else None)
+            if presentation is None:
+                return item.result_message
+            # Processing retains the preceding analysis evidence until replaced.
+            analysis_in_progress = (
+                item.status is BatchRestorationStatus.PROCESSING
+                and explanation.reason in (BatchRestorationReason.ANALYZED, BatchRestorationReason.MISSING_TOKENS)
+            )
+            if item.status is not presentation[1] and not analysis_in_progress:
+                return item.result_message
+            message_id = presentation[0]
+            if explanation.reason is BatchRestorationReason.OUTPUT_PUBLISHED:
+                if item.output_path is None:
+                    return item.result_message
+                text = self._translator.text(message_id, filename=item.output_path.name)
+            else:
+                text = self._translator.text(message_id)
+            return text + (" " + explanation.detail if explanation.detail else "")
         if item.status is BatchRestorationStatus.COMPLETED and item.output_path is not None:
             return self._translator.text("batch_restoration.result.output", filename=item.output_path.name)
-        # All other service messages can carry untyped warnings or error details.
+        # Legacy consumers and unclassified errors keep their literal safe evidence.
         return item.result_message
 
     def _translate_column_accessibility(self) -> None:

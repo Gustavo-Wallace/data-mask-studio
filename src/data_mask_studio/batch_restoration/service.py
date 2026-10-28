@@ -11,6 +11,8 @@ from data_mask_studio.batch_restoration.models import (
     BatchCSVColumn,
     BatchMissingCodePolicy,
     BatchRestorationFile,
+    BatchRestorationExplanation,
+    BatchRestorationReason,
     BatchRestorationFileType,
     BatchRestorationOptions,
     BatchRestorationProgress,
@@ -64,8 +66,10 @@ class BatchRestorationService:
     ) -> bool:
         was_cancelled = False
         for item in files:
+            item.result_explanation = None
             if _cancelled(should_cancel):
                 item.status = BatchRestorationStatus.CANCELLED
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.ANALYSIS_CANCELLED)
                 if file_callback:
                     file_callback(item)
                 was_cancelled = True
@@ -80,12 +84,14 @@ class BatchRestorationService:
             ) as error:
                 item.status = BatchRestorationStatus.ERROR
                 item.result_message = "Falha estrutural ao acessar o cofre local."
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.VAULT_ACCESS_FAILURE)
                 if file_callback:
                     file_callback(item)
                 raise BatchRestorationStructuralError(item.result_message) from error
             except (RestorationCancelled, HTMLRestorationCancelled):
                 item.status = BatchRestorationStatus.CANCELLED
                 item.result_message = "Análise cancelada."
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.ANALYSIS_CANCELLED)
                 if file_callback:
                     file_callback(item)
                 was_cancelled = True
@@ -103,6 +109,7 @@ class BatchRestorationService:
         should_cancel: CancellationCheck | None,
     ) -> None:
         item.result_message = ""
+        item.result_explanation = None
         header_warning = ""
         if item.file_type is BatchRestorationFileType.CSV:
             inspection = inspect_csv(item.path)
@@ -150,14 +157,18 @@ class BatchRestorationService:
         if item.codes_found == 0:
             item.status = BatchRestorationStatus.INCOMPATIBLE
             item.result_message = "Nenhum código válido foi encontrado no arquivo."
+            reason = BatchRestorationReason.NO_VALID_TOKENS
         elif item.missing_codes:
             item.status = BatchRestorationStatus.REVIEW_REQUIRED
             item.result_message = "Há códigos ausentes que exigem revisão da política."
+            reason = BatchRestorationReason.MISSING_TOKENS
         else:
             item.status = BatchRestorationStatus.COMPATIBLE
             item.result_message = "Arquivo analisado com sucesso."
+            reason = BatchRestorationReason.ANALYZED
         if header_warning:
             item.result_message = f"{item.result_message} {header_warning}"
+        item.result_explanation = BatchRestorationExplanation(reason, header_warning)
 
     def restore_files(
         self,
@@ -188,6 +199,7 @@ class BatchRestorationService:
             if _cancelled(should_cancel):
                 item.status = BatchRestorationStatus.CANCELLED
                 item.result_message = "Restauração cancelada."
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.RESTORATION_CANCELLED)
                 cancelled_count += 1
                 was_cancelled = True
                 if file_callback:
@@ -200,6 +212,7 @@ class BatchRestorationService:
             ):
                 item.status = BatchRestorationStatus.SKIPPED
                 item.result_message = "Nenhuma coluna foi confirmada para restauração."
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.NO_COLUMNS_SELECTED)
                 skipped += 1
                 if file_callback:
                     file_callback(item)
@@ -229,12 +242,14 @@ class BatchRestorationService:
                 item.output_path = destination
                 item.status = BatchRestorationStatus.COMPLETED
                 item.result_message = f"Saída: {destination.name}"
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.OUTPUT_PUBLISHED)
                 completed += 1
                 restored += result[0]
                 missing += result[1]
             except (RestorationCancelled, HTMLRestorationCancelled):
                 item.status = BatchRestorationStatus.CANCELLED
                 item.result_message = "Restauração cancelada sem publicar saída parcial."
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.CANCELLED_WITHOUT_PARTIAL)
                 cancelled_count += 1
                 was_cancelled = True
                 _skip_remaining(eligible[position:], file_callback)
@@ -245,6 +260,7 @@ class BatchRestorationService:
             except (MissingCodeError, HTMLMissingCodeError) as error:
                 item.status = BatchRestorationStatus.ERROR
                 item.result_message = _safe_error(error)
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.MISSING_TOKEN_ABORT)
                 errors += 1
                 if options.missing_code_policy is BatchMissingCodePolicy.ABORT_BATCH:
                     _skip_remaining(eligible[position:], file_callback)
@@ -260,6 +276,7 @@ class BatchRestorationService:
             ) as error:
                 item.status = BatchRestorationStatus.ERROR
                 item.result_message = "Falha estrutural ao acessar o cofre local."
+                item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.VAULT_ACCESS_FAILURE)
                 errors += 1
                 if file_callback:
                     file_callback(item)
@@ -268,6 +285,7 @@ class BatchRestorationService:
             except (RestorationError, HTMLRestorationError, OSError) as error:
                 item.status = BatchRestorationStatus.ERROR
                 item.result_message = _safe_error(error)
+                item.result_explanation = None
                 errors += 1
             if file_callback:
                 file_callback(item)
@@ -378,6 +396,7 @@ def _skip_remaining(
     for item in files:
         item.status = BatchRestorationStatus.SKIPPED
         item.result_message = "Ignorado porque o lote foi interrompido."
+        item.result_explanation = BatchRestorationExplanation(BatchRestorationReason.BATCH_INTERRUPTED)
         if callback:
             callback(item)
 

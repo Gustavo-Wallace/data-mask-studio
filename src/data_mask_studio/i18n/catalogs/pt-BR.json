@@ -665,6 +665,16 @@
     "shell.close.csv": "Aguarde o cancelamento da restauração de CSV.",
     "shell.close.html": "Aguarde o cancelamento da restauração de HTML.",
     "shell.close.batch_restoration": "Aguarde o cancelamento da restauração em lote.",
-    "shell.close.maintenance": "Aguarde a conclusão segura da manutenção."
+    "shell.close.maintenance": "Aguarde a conclusão segura da manutenção.",
+    "batch_restoration.result.analyzed": "Arquivo analisado com sucesso.",
+    "batch_restoration.result.missing_tokens": "Há códigos ausentes que exigem revisão da política.",
+    "batch_restoration.result.no_valid_tokens": "Nenhum código válido foi encontrado no arquivo.",
+    "batch_restoration.result.analysis_cancelled": "Análise cancelada.",
+    "batch_restoration.result.restoration_cancelled": "Restauração cancelada.",
+    "batch_restoration.result.cancelled_without_partial": "Restauração cancelada sem publicar saída parcial.",
+    "batch_restoration.result.no_columns_selected": "Nenhuma coluna foi confirmada para restauração.",
+    "batch_restoration.result.batch_interrupted": "Ignorado porque o lote foi interrompido.",
+    "batch_restoration.result.vault_access_failure": "Falha estrutural ao acessar o cofre local.",
+    "batch_restoration.result.missing_token_abort": "Arquivo interrompido porque há código ausente no cofre."
   }
 }

@@ -665,6 +665,16 @@
     "shell.close.csv": "Wait for CSV restoration to be cancelled.",
     "shell.close.html": "Wait for HTML restoration to be cancelled.",
     "shell.close.batch_restoration": "Wait for batch restoration to be cancelled.",
-    "shell.close.maintenance": "Wait for maintenance to finish safely."
+    "shell.close.maintenance": "Wait for maintenance to finish safely.",
+    "batch_restoration.result.analyzed": "File analyzed successfully.",
+    "batch_restoration.result.missing_tokens": "Missing tokens require a policy review.",
+    "batch_restoration.result.no_valid_tokens": "No valid tokens were found in the file.",
+    "batch_restoration.result.analysis_cancelled": "Analysis cancelled.",
+    "batch_restoration.result.restoration_cancelled": "Restoration cancelled.",
+    "batch_restoration.result.cancelled_without_partial": "Restoration cancelled without publishing partial output.",
+    "batch_restoration.result.no_columns_selected": "No columns were confirmed for restoration.",
+    "batch_restoration.result.batch_interrupted": "Skipped because the batch was interrupted.",
+    "batch_restoration.result.vault_access_failure": "Structural failure accessing the local vault.",
+    "batch_restoration.result.missing_token_abort": "File stopped because a token is missing from the vault."
   }
 }

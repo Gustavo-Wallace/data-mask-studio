@@ -63,6 +63,7 @@ def invalidate_files(files: Iterable[BatchRestorationFile]) -> None:
         item.codes_in_vault = 0
         item.missing_codes = 0
         item.result_message = ""
+        item.result_explanation = None
         item.output_path = None
 
 

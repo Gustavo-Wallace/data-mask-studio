@@ -28,6 +28,29 @@ class BatchMissingCodePolicy(StrEnum):
     ABORT_BATCH = "abort_batch"
 
 
+class BatchRestorationReason(StrEnum):
+    """In-memory explanations only; never eligibility or persisted format values."""
+
+    ANALYZED = "analyzed"
+    MISSING_TOKENS = "missing_tokens"
+    NO_VALID_TOKENS = "no_valid_tokens"
+    OUTPUT_PUBLISHED = "output_published"
+    ANALYSIS_CANCELLED = "analysis_cancelled"
+    RESTORATION_CANCELLED = "restoration_cancelled"
+    CANCELLED_WITHOUT_PARTIAL = "cancelled_without_partial"
+    NO_COLUMNS_SELECTED = "no_columns_selected"
+    BATCH_INTERRUPTED = "batch_interrupted"
+    VAULT_ACCESS_FAILURE = "vault_access_failure"
+    MISSING_TOKEN_ABORT = "missing_token_abort"
+
+
+@dataclass(frozen=True, slots=True)
+class BatchRestorationExplanation:
+    reason: BatchRestorationReason
+    # Preserve untyped supplemental evidence, such as a header-replacement warning.
+    detail: str = ""
+
+
 STATUS_LABELS = {
     BatchRestorationStatus.PENDING: "Aguardando análise",
     BatchRestorationStatus.COMPATIBLE: "Compatível",
@@ -69,6 +92,7 @@ class BatchRestorationFile:
     missing_codes: int = 0
     result_message: str = ""
     output_path: Path | None = None
+    result_explanation: BatchRestorationExplanation | None = None
 
 
 @dataclass(frozen=True, slots=True)
