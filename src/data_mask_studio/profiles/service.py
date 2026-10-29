@@ -18,7 +18,9 @@ from data_mask_studio.anonymization import (
     validate_configuration,
 )
 from data_mask_studio.normalization import NormalizationRule
-from data_mask_studio.profiles.exceptions import ProfileValidationError, ProfileStorageError
+from data_mask_studio.profiles.exceptions import (
+    ProfileExplanation, ProfileReason, ProfileValidationError, ProfileStorageError,
+)
 from data_mask_studio.profiles.models import (
     PROFILE_FORMAT_VERSION,
     ConfigurationProfile,
@@ -206,7 +208,8 @@ class ProfileService:
             profile.identifier != excluding and profile_name_key(profile.name) == key
             for profile in profiles
         ):
-            raise ProfileValidationError("Já existe um perfil com esse nome.")
+            raise ProfileValidationError("Já existe um perfil com esse nome.",
+                                         explanation=ProfileExplanation(ProfileReason.DUPLICATE_NAME))
 
 
 def _selected_profile_columns(
@@ -216,7 +219,8 @@ def _selected_profile_columns(
 ) -> tuple[ProfileColumn, ...]:
     headers = [config.header for config in configurations]
     if inspection is not None and headers != inspection.headers:
-        raise ProfileValidationError("Configuração incompatível com a inspeção de origem.")
+        raise ProfileValidationError("Configuração incompatível com a inspeção de origem.",
+                                     explanation=ProfileExplanation(ProfileReason.SOURCE_MISMATCH))
     if inspection is None and any(may_be_synthetic_name(h) or headers.count(h) != 1 for h in headers):
         raise ProfileValidationError("Inspecione o CSV para confirmar a proveniência das colunas.")
     if not (has_composites and configurations and all(c.action is ColumnAction.EXCLUDE for c in configurations)):
@@ -242,4 +246,5 @@ def _profile_index(profiles: Sequence[ConfigurationProfile], identifier: str) ->
     for index, profile in enumerate(profiles):
         if profile.identifier == identifier:
             return index
-    raise ProfileValidationError("O perfil selecionado não existe mais.")
+    raise ProfileValidationError("O perfil selecionado não existe mais.",
+                                 explanation=ProfileExplanation(ProfileReason.PROFILE_NOT_FOUND))

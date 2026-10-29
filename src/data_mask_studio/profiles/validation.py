@@ -7,7 +7,7 @@ from data_mask_studio.anonymization.models import ColumnAction, ColumnConfig
 from data_mask_studio.anonymization.column_config import output_header_errors
 from data_mask_studio.anonymization.prefix_rules import validate_prefix
 from data_mask_studio.normalization import NormalizationRule
-from data_mask_studio.profiles.exceptions import ProfileValidationError
+from data_mask_studio.profiles.exceptions import ProfileExplanation, ProfileReason, ProfileValidationError
 from data_mask_studio.profiles.models import (
     PROFILE_FORMAT_VERSION,
     ConfigurationProfile,
@@ -22,16 +22,19 @@ def validate_profile_name(name: str) -> str:
         raise ProfileValidationError("O nome do perfil é inválido.")
     if any(unicodedata.category(character) == "Cc" for character in name):
         raise ProfileValidationError(
-            "O nome do perfil não pode conter caracteres de controle."
+            "O nome do perfil não pode conter caracteres de controle.",
+            explanation=ProfileExplanation(ProfileReason.NAME_CONTROL_CHARACTERS),
         )
     normalized = name.strip()
     if len(normalized) < 3:
         raise ProfileValidationError(
-            "O nome do perfil deve ter entre 3 e 60 caracteres."
+            "O nome do perfil deve ter entre 3 e 60 caracteres.",
+            explanation=ProfileExplanation(ProfileReason.NAME_LENGTH),
         )
     if len(normalized) > 60:
         raise ProfileValidationError(
-            "O nome do perfil deve ter entre 3 e 60 caracteres."
+            "O nome do perfil deve ter entre 3 e 60 caracteres.",
+            explanation=ProfileExplanation(ProfileReason.NAME_LENGTH),
         )
     return normalized
 

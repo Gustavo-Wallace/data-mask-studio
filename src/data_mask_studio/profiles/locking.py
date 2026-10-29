@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
 
-from data_mask_studio.profiles.exceptions import ProfileStorageError
+from data_mask_studio.profiles.exceptions import ProfileExplanation, ProfileReason, ProfileStorageError
 
 _local = threading.local()
 
@@ -46,7 +46,8 @@ def profile_write_lock(path: Path) -> Iterator[None]:
         except OSError as error:
             raise ProfileStorageError(
                 "Os perfis estão em uso ou sendo atualizados por outra instância. "
-                "Tente novamente após a operação concluir."
+                "Tente novamente após a operação concluir.",
+                explanation=ProfileExplanation(ProfileReason.WRITE_BUSY),
             ) from error
         held.add(name)
         try:

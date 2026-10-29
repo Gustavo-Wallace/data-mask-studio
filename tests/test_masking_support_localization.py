@@ -110,8 +110,12 @@ def test_profiles_persist_equivalent_configuration_in_both_languages(masking_pag
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-@pytest.mark.parametrize("name", ["x", "control\ncharacter", NAME])
-def test_profile_service_validation_stays_authoritative_and_does_not_write(masking_pages, monkeypatch, locale, name):
+@pytest.mark.parametrize("name,message_id,legacy", [
+    ("x", "profile.error.name_length", "O nome do perfil deve ter entre 3 e 60 caracteres."),
+    ("control\ncharacter", "profile.error.name_control_characters", "O nome do perfil não pode conter caracteres de controle."),
+    (NAME, "profile.error.duplicate_name", "Já existe um perfil com esse nome."),
+])
+def test_profile_service_validation_stays_authoritative_and_does_not_write(masking_pages, monkeypatch, locale, name, message_id, legacy):
     _, page, _, _, _ = masking_pages(locale)
     configure(page)
     service = page._profile_service
@@ -123,11 +127,14 @@ def test_profile_service_validation_stays_authoritative_and_does_not_write(maski
                        composites=page.composite_section.configurations)
     monkeypatch.setattr(page, "_ask_profile_name", lambda **kwargs: (name, True))
     page.save_as_profile()
-    assert page.status_label.text() == str(expected.value)
+    assert str(expected.value) == legacy
+    assert page.status_label.text() == Translator(locale).text(message_id)
     assert page.status_label.property("feedbackState") == "error"
     assert service.repository.path.read_bytes() == before
-    page.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
-    assert page.status_label.text() == str(expected.value)
+    target = Translator("en" if locale == "pt-BR" else "pt-BR")
+    page.retranslate(target)
+    assert page.status_label.text() == target.text(message_id)
+    assert str(expected.value) == legacy and service.repository.path.read_bytes() == before
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])

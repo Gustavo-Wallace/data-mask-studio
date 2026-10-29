@@ -1,5 +1,7 @@
 from data_mask_studio.profiles.exceptions import (
     ProfileError,
+    ProfileExplanation,
+    ProfileReason,
     ProfileFormatError,
     ProfileStorageError,
     ProfileValidationError,
@@ -24,6 +26,8 @@ __all__ = [
     "ProfileColumn",
     "UnknownColumnPolicy",
     "ProfileError",
+    "ProfileExplanation",
+    "ProfileReason",
     "ProfileFormatError",
     "ProfileRepository",
     "ProfileService",

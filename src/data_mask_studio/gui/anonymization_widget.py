@@ -77,6 +77,8 @@ from data_mask_studio.normalization import (
 from data_mask_studio.profiles import (
     ConfigurationProfile,
     ProfileError,
+    ProfileExplanation,
+    ProfileReason,
     ProfileColumn,
     ProfileRepository,
     ProfileService,
@@ -104,6 +106,15 @@ ACTION_OPTIONS = (
     (ColumnAction.MASK, "Mascarar"),
     (ColumnAction.EXCLUDE, "Excluir"),
 )
+
+_PROFILE_ERROR_IDS = {
+    ProfileReason.NAME_LENGTH: "profile.error.name_length",
+    ProfileReason.NAME_CONTROL_CHARACTERS: "profile.error.name_control_characters",
+    ProfileReason.DUPLICATE_NAME: "profile.error.duplicate_name",
+    ProfileReason.PROFILE_NOT_FOUND: "profile.error.not_found",
+    ProfileReason.WRITE_BUSY: "profile.error.write_busy",
+    ProfileReason.SOURCE_MISMATCH: "profile.error.source_mismatch",
+}
 
 
 
@@ -1065,7 +1076,7 @@ class AnonymizationWidget(QWidget):
             self._profiles = []
             self.profile_combo.clear()
             self._update_profile_actions()
-            self._set_status(str(error), is_error=True)
+            self._set_profile_error(error)
             self.profiles_changed.emit()
             return
 
@@ -1084,6 +1095,16 @@ class AnonymizationWidget(QWidget):
     def refresh_profiles(self, selected_identifier: str | None = None) -> None:
         """Atualiza os perfis exibidos por este widget."""
         self._refresh_profiles(selected_identifier)
+
+    def _set_profile_error(self, error: ProfileError) -> None:
+        explanation = getattr(error, "explanation", None)
+        message_id = (_PROFILE_ERROR_IDS.get(explanation.reason)
+                      if isinstance(explanation, ProfileExplanation)
+                      and isinstance(explanation.reason, ProfileReason) else None)
+        if message_id is None:
+            self._set_status(str(error), is_error=True)
+        else:
+            self._set_status_id(message_id, is_error=True)
 
     def _selected_profile(self) -> ConfigurationProfile | None:
         identifier = self.profile_combo.currentData()
@@ -1119,7 +1140,7 @@ class AnonymizationWidget(QWidget):
                                                    inspection=self._inspection_result,
                                                    composites=self.composite_section.configurations)
         except ProfileError as error:
-            self._set_status(str(error), is_error=True)
+            self._set_profile_error(error)
             return
         self._refresh_profiles(profile.identifier)
         self._set_status_id("profile.saved", name=profile.name, state="success")
@@ -1144,7 +1165,7 @@ class AnonymizationWidget(QWidget):
                 composites=self.composite_section.configurations,
             )
         except ProfileError as error:
-            self._set_status(str(error), is_error=True)
+            self._set_profile_error(error)
             return
         self._refresh_profiles(updated.identifier)
         self._set_status_id("profile.updated", name=updated.name, state="success")
@@ -1234,7 +1255,7 @@ class AnonymizationWidget(QWidget):
         try:
             renamed = self._profile_service.rename(profile.identifier, name)
         except ProfileError as error:
-            self._set_status(str(error), is_error=True)
+            self._set_profile_error(error)
             return
         self._refresh_profiles(renamed.identifier)
         self._set_status_id("profile.renamed", name=renamed.name, state="success")
@@ -1254,7 +1275,7 @@ class AnonymizationWidget(QWidget):
         try:
             self._profile_service.delete(profile.identifier)
         except ProfileError as error:
-            self._set_status(str(error), is_error=True)
+            self._set_profile_error(error)
             return
         self._refresh_profiles()
         self._set_status_id("profile.deleted", name=profile.name, state="success")

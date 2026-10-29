@@ -681,6 +681,12 @@
     "batch.result.cancelled": "Processamento cancelado.",
     "batch.result.not_processed_cancelled": "Não processado devido ao cancelamento.",
     "batch.result.skipped_structural": "Ignorado devido a uma falha estrutural.",
-    "batch.result.structural_failure": "Falha estrutural no lote."
+    "batch.result.structural_failure": "Falha estrutural no lote.",
+    "profile.error.name_length": "O nome do perfil deve ter entre 3 e 60 caracteres.",
+    "profile.error.name_control_characters": "O nome do perfil não pode conter caracteres de controle.",
+    "profile.error.duplicate_name": "Já existe um perfil com esse nome.",
+    "profile.error.not_found": "O perfil selecionado não existe mais.",
+    "profile.error.write_busy": "Os perfis estão em uso ou sendo atualizados por outra instância. Tente novamente após a operação concluir.",
+    "profile.error.source_mismatch": "Configuração incompatível com a inspeção de origem."
   }
 }

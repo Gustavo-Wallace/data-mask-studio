@@ -681,6 +681,12 @@
     "batch.result.cancelled": "Processing cancelled.",
     "batch.result.not_processed_cancelled": "Not processed because of cancellation.",
     "batch.result.skipped_structural": "Skipped because of a structural failure.",
-    "batch.result.structural_failure": "Structural batch failure."
+    "batch.result.structural_failure": "Structural batch failure.",
+    "profile.error.name_length": "The profile name must contain between 3 and 60 characters.",
+    "profile.error.name_control_characters": "The profile name cannot contain control characters.",
+    "profile.error.duplicate_name": "A profile with this name already exists.",
+    "profile.error.not_found": "The selected profile no longer exists.",
+    "profile.error.write_busy": "Profiles are in use or being updated by another instance. Try again after the operation finishes.",
+    "profile.error.source_mismatch": "The configuration does not match the source inspection."
   }
 }
