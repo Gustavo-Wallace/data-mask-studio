@@ -351,7 +351,7 @@ def test_cross_flow_file_dialog_captions_filters_and_cancel_are_locale_explicit(
     assert [(field.text(), field.echoMode()) for field in fields] == before and worker_references(window) == workers
 
 
-def test_freeform_batch_reasons_and_detection_evidence_are_not_heuristically_translated(main, tmp_path):
+def test_freeform_batch_fallbacks_and_typed_detection_preserve_legacy_evidence(main, tmp_path):
     _, window = main
     source = tmp_path / "synthetic.csv"
     source.write_text("Nome,CPF\nAlice,123.456.789-00\nBob,987.654.321-00\n", encoding="utf-8")
@@ -378,5 +378,9 @@ def test_freeform_batch_reasons_and_detection_evidence_are_not_heuristically_tra
         assert batch.file_table.item(0, 4).text() == mask_item.result_message
         assert restore.file_table.item(0, 7).text() == restore_item.result_message
         assert mask_item.status is BatchFileStatus.INCOMPATIBLE and restore_item.status is BatchRestorationStatus.REVIEW_REQUIRED
-        assert tuple(dialog.table.item(row, 7).text() for row in range(len(reasons))) == reasons
+        assert tuple(item.reason for item in detection.suggestions) == reasons
+        assert tuple(dialog.table.item(row, 7).text() for row in range(len(reasons))) == tuple(
+            Translator(locale).text("detection.reason." + item.explanation.reason.value)
+            for item in detection.suggestions
+        )
         assert dialog._suggestions is detection.suggestions and mask._detection_dialog is dialog

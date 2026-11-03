@@ -687,6 +687,22 @@
     "profile.error.duplicate_name": "Já existe um perfil com esse nome.",
     "profile.error.not_found": "O perfil selecionado não existe mais.",
     "profile.error.write_busy": "Os perfis estão em uso ou sendo atualizados por outra instância. Tente novamente após a operação concluir.",
-    "profile.error.source_mismatch": "Configuração incompatível com a inspeção de origem."
+    "profile.error.source_mismatch": "Configuração incompatível com a inspeção de origem.",
+    "detection.reason.datetime_header_no_sample": "O cabeçalho indica data ou hora, mas não há amostra para confirmar.",
+    "detection.reason.datetime_header_strong": "O cabeçalho e a maior parte da amostra indicam data ou hora.",
+    "detection.reason.datetime_header_partial": "O cabeçalho e parte relevante da amostra indicam data ou hora.",
+    "detection.reason.datetime_header_inconsistent": "O cabeçalho indica data ou hora, mas a amostra é inconsistente.",
+    "detection.reason.datetime_sample": "A maior parte da amostra possui formatos válidos de data ou hora.",
+    "detection.reason.common_header_conflict": "O cabeçalho parece comum, mas a amostra possui outro padrão.",
+    "detection.reason.common_text_header": "O cabeçalho indica texto comum sem padrão sensível consistente.",
+    "detection.reason.name_header": "O cabeçalho indica uma coluna de nome.",
+    "detection.reason.header_no_sample": "O cabeçalho sugere o tipo, mas não há valores para confirmar.",
+    "detection.reason.header_conflict": "O cabeçalho e o padrão agregado da amostra são conflitantes.",
+    "detection.reason.header_strong": "O cabeçalho e a maior parte da amostra indicam o mesmo tipo.",
+    "detection.reason.header_partial": "O cabeçalho é compatível com parte relevante da amostra.",
+    "detection.reason.header_inconsistent": "O cabeçalho sugere o tipo, mas a amostra é inconsistente.",
+    "detection.reason.sample_strong": "A maior parte da amostra possui um padrão estrutural consistente.",
+    "detection.reason.sample_partial": "Parte da amostra possui um possível padrão estrutural.",
+    "detection.reason.unrecognized_pattern": "Não foi identificado um padrão confiável no cabeçalho ou na amostra."
   }
 }

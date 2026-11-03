@@ -10,6 +10,8 @@ from data_mask_studio.detection.models import (
     ColumnSuggestion,
     ConfidenceLevel,
     DetectionResult,
+    DetectionExplanation,
+    DetectionReason,
     SuggestedType,
 )
 from data_mask_studio.detection.value_detectors import matches_type
@@ -109,15 +111,19 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
         if not values:
             confidence = ConfidenceLevel.LOW
             reason = "O cabeçalho indica data ou hora, mas não há amostra para confirmar."
+            reason_code = DetectionReason.DATETIME_HEADER_NO_SAMPLE
         elif datetime_ratio >= STRONG_MATCH_RATIO:
             confidence = ConfidenceLevel.HIGH
             reason = "O cabeçalho e a maior parte da amostra indicam data ou hora."
+            reason_code = DetectionReason.DATETIME_HEADER_STRONG
         elif datetime_ratio >= HEADER_SUPPORT_RATIO:
             confidence = ConfidenceLevel.MEDIUM
             reason = "O cabeçalho e parte relevante da amostra indicam data ou hora."
+            reason_code = DetectionReason.DATETIME_HEADER_PARTIAL
         else:
             confidence = ConfidenceLevel.LOW
             reason = "O cabeçalho indica data ou hora, mas a amostra é inconsistente."
+            reason_code = DetectionReason.DATETIME_HEADER_INCONSISTENT
         return _build(
             header,
             SuggestedType.DATETIME,
@@ -125,6 +131,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             values,
             datetime_ratio,
             reason,
+            reason_code,
         )
 
     if datetime_ratio >= STRONG_MATCH_RATIO:
@@ -135,6 +142,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             values,
             datetime_ratio,
             "A maior parte da amostra possui formatos válidos de data ou hora.",
+            DetectionReason.DATETIME_SAMPLE,
         )
 
     if header_type is SuggestedType.COMMON_TEXT:
@@ -146,6 +154,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
                 values,
                 ratios[best_type],
                 "O cabeçalho parece comum, mas a amostra possui outro padrão.",
+                DetectionReason.COMMON_HEADER_CONFLICT,
             )
         return _build(
             header,
@@ -154,6 +163,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             values,
             0.0,
             "O cabeçalho indica texto comum sem padrão sensível consistente.",
+            DetectionReason.COMMON_TEXT_HEADER,
         )
 
     if header_type is SuggestedType.NAME:
@@ -165,6 +175,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             values,
             0.0,
             "O cabeçalho indica uma coluna de nome.",
+            DetectionReason.NAME_HEADER,
         )
 
     if header_type is not None:
@@ -172,6 +183,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
         if not values:
             confidence = ConfidenceLevel.LOW
             reason = "O cabeçalho sugere o tipo, mas não há valores para confirmar."
+            reason_code = DetectionReason.HEADER_NO_SAMPLE
         elif (
             best_type is not header_type
             and best_ratio >= STRONG_MATCH_RATIO
@@ -179,16 +191,20 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
         ):
             confidence = ConfidenceLevel.LOW
             reason = "O cabeçalho e o padrão agregado da amostra são conflitantes."
+            reason_code = DetectionReason.HEADER_CONFLICT
         elif own_ratio >= STRONG_MATCH_RATIO:
             confidence = ConfidenceLevel.HIGH
             reason = "O cabeçalho e a maior parte da amostra indicam o mesmo tipo."
+            reason_code = DetectionReason.HEADER_STRONG
         elif own_ratio >= HEADER_SUPPORT_RATIO:
             confidence = ConfidenceLevel.MEDIUM
             reason = "O cabeçalho é compatível com parte relevante da amostra."
+            reason_code = DetectionReason.HEADER_PARTIAL
         else:
             confidence = ConfidenceLevel.LOW
             reason = "O cabeçalho sugere o tipo, mas a amostra é inconsistente."
-        return _build(header, header_type, confidence, values, own_ratio, reason)
+            reason_code = DetectionReason.HEADER_INCONSISTENT
+        return _build(header, header_type, confidence, values, own_ratio, reason, reason_code)
 
     if best_ratio >= STRONG_MATCH_RATIO and best_type is not SuggestedType.GENERIC_ID:
         return _build(
@@ -198,6 +214,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             values,
             best_ratio,
             "A maior parte da amostra possui um padrão estrutural consistente.",
+            DetectionReason.SAMPLE_STRONG,
         )
     if best_ratio >= PARTIAL_MATCH_RATIO:
         return _build(
@@ -207,6 +224,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
             values,
             best_ratio,
             "Parte da amostra possui um possível padrão estrutural.",
+            DetectionReason.SAMPLE_PARTIAL,
         )
     return _build(
         header,
@@ -215,6 +233,7 @@ def _suggest_column(header: str, values: Sequence[str]) -> ColumnSuggestion:
         values,
         0.0,
         "Não foi identificado um padrão confiável no cabeçalho ou na amostra.",
+        DetectionReason.UNRECOGNIZED_PATTERN,
     )
 
 
@@ -231,6 +250,7 @@ def _build(
     values: Sequence[str],
     ratio: float,
     reason: str,
+    reason_code: DetectionReason | None = None,
 ) -> ColumnSuggestion:
     anonymize = suggested_type not in {
         SuggestedType.DATETIME,
@@ -251,4 +271,5 @@ def _build(
         reason=reason,
         sampled_values=len(values),
         compatible_values=round(len(values) * ratio),
+        explanation=DetectionExplanation(reason_code) if reason_code is not None else None,
     )

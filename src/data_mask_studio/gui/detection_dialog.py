@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
 from data_mask_studio.detection import (
     ColumnSuggestion,
     ConfidenceLevel,
+    DetectionExplanation,
+    DetectionReason,
     SuggestedType,
 )
 from data_mask_studio.gui.components.empty_state_table import EmptyStateTable
@@ -23,6 +25,8 @@ from data_mask_studio.i18n import Translator
 from data_mask_studio.gui.components.presentation import (
     configure_dialog_layout, set_button_role, set_feedback_state,
 )
+
+_REASON_IDS = {reason: "detection.reason." + reason.value for reason in DetectionReason}
 
 
 class DetectionDialog(QDialog):
@@ -94,7 +98,7 @@ class DetectionDialog(QDialog):
             actions.setDirection(QBoxLayout.Direction.TopToBottom)
 
     def retranslate(self, translator: Translator) -> None:
-        """Translate typed presentation, never classifications, reasons or selections."""
+        """Translate presentation, never classifications, legacy evidence or selections."""
         self._translator = translator
         self.setWindowTitle(translator.text("detection.title"))
         self.explanation.setText(translator.text("detection.instructions", count=self._rows_analyzed))
@@ -120,9 +124,11 @@ class DetectionDialog(QDialog):
                 3: translator.text("detection.yes" if suggestion.anonymize else "detection.no"),
                 5: translator.text(f"masking.normalization.{suggestion.normalization_rule.value}"),
                 6: translator.text(f"detection.confidence.{suggestion.confidence.value}"),
+                7: self._reason_text(suggestion),
             }
             for column, value in values.items():
                 self.table.item(row, column).setText(value)
+            self.table.item(row, 7).setToolTip(values[7])
             self._acceptance_fields[row].setAccessibleName(translator.text(
                 "detection.accept_accessible", header=suggestion.header,
             ))
@@ -135,6 +141,13 @@ class DetectionDialog(QDialog):
             if self.layout().minimumSize().width() > self.screen().availableGeometry().width()
             else QBoxLayout.Direction.LeftToRight
         )
+
+    def _reason_text(self, suggestion: ColumnSuggestion) -> str:
+        explanation = suggestion.explanation
+        message_id = (_REASON_IDS.get(explanation.reason)
+                      if isinstance(explanation, DetectionExplanation)
+                      and isinstance(explanation.reason, DetectionReason) else None)
+        return self._translator.text(message_id) if message_id is not None else suggestion.reason
 
     def _populate_table(self) -> None:
         self.table.setRowCount(len(self._suggestions))

@@ -6,6 +6,8 @@ from data_mask_studio.detection.models import (
     ColumnSuggestion,
     ConfidenceLevel,
     DetectionResult,
+    DetectionExplanation,
+    DetectionReason,
     SuggestedType,
 )
 
@@ -15,6 +17,8 @@ __all__ = [
     "DetectionCancelled",
     "DetectionError",
     "DetectionResult",
+    "DetectionExplanation",
+    "DetectionReason",
     "SuggestedType",
     "analyze_csv_columns",
 ]

@@ -687,6 +687,22 @@
     "profile.error.duplicate_name": "A profile with this name already exists.",
     "profile.error.not_found": "The selected profile no longer exists.",
     "profile.error.write_busy": "Profiles are in use or being updated by another instance. Try again after the operation finishes.",
-    "profile.error.source_mismatch": "The configuration does not match the source inspection."
+    "profile.error.source_mismatch": "The configuration does not match the source inspection.",
+    "detection.reason.datetime_header_no_sample": "The header indicates a date or time, but there is no sample to confirm it.",
+    "detection.reason.datetime_header_strong": "The header and most of the sample indicate a date or time.",
+    "detection.reason.datetime_header_partial": "The header and a substantial part of the sample indicate a date or time.",
+    "detection.reason.datetime_header_inconsistent": "The header indicates a date or time, but the sample is inconsistent.",
+    "detection.reason.datetime_sample": "Most of the sample has valid date or time formats.",
+    "detection.reason.common_header_conflict": "The header appears to describe common text, but the sample has another pattern.",
+    "detection.reason.common_text_header": "The header indicates common text without a consistent sensitive pattern.",
+    "detection.reason.name_header": "The header indicates a name column.",
+    "detection.reason.header_no_sample": "The header suggests the type, but there are no values to confirm it.",
+    "detection.reason.header_conflict": "The header and the aggregate sample pattern conflict.",
+    "detection.reason.header_strong": "The header and most of the sample indicate the same type.",
+    "detection.reason.header_partial": "The header matches a substantial part of the sample.",
+    "detection.reason.header_inconsistent": "The header suggests the type, but the sample is inconsistent.",
+    "detection.reason.sample_strong": "Most of the sample has a consistent structural pattern.",
+    "detection.reason.sample_partial": "Part of the sample has a possible structural pattern.",
+    "detection.reason.unrecognized_pattern": "No reliable pattern was identified in the header or sample."
   }
 }
