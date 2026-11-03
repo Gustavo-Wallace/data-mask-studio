@@ -24,7 +24,6 @@ from data_mask_studio.backup import (
     BackupCreationResult,
     BackupError,
     BackupValidationResult,
-    BackupValidationError,
     EnvironmentPaths,
     RestoreResult,
     suggested_backup_name,
@@ -35,6 +34,7 @@ from data_mask_studio.gui.backup_worker import (
     BackupRestoreWorker,
     BackupValidationWorker,
 )
+from data_mask_studio.gui.backup_error_presentation import backup_error_message_id
 from data_mask_studio.gui.components import EmptyStateTextEdit
 from data_mask_studio.gui.components.presentation import (
     FeedbackState, configure_result_area, confirm_destructive_action,
@@ -346,7 +346,7 @@ class BackupWidget(QWidget):
                 self._status_id(self.create_status, "backup.error.destination", error=True)
                 return
         except BackupError as error:
-            self._status(self.create_status, str(error), True)
+            self._show_backup_error(self.create_status, error)
             return
         overwrite = destination.exists()
         if overwrite:
@@ -472,10 +472,8 @@ class BackupWidget(QWidget):
         if not self._accept_worker_signal():
             return
         target = self.create_status if isinstance(self._worker, BackupCreationWorker) else self.restore_status
-        if isinstance(self._worker, BackupValidationWorker) and isinstance(error, BackupValidationError):
-            self._status_id(target, "backup.error.validation", error=True)
-        elif isinstance(error, BackupError):
-            self._status(target, str(error), True)
+        if isinstance(error, BackupError):
+            self._show_backup_error(target, error)
         else:
             self._status_id(target, "backup.error.unexpected", error=True)
         progress = self.create_progress if target is self.create_status else self.restore_progress
@@ -568,6 +566,13 @@ class BackupWidget(QWidget):
     def _clear_all_passwords(self) -> None:
         self._clear_create_passwords()
         self.restore_password_field.clear()
+
+    def _show_backup_error(self, label: QLabel, error: BackupError) -> None:
+        identifier = backup_error_message_id(error)
+        if identifier is None:
+            self._status(label, str(error), True)
+        else:
+            self._status_id(label, identifier, error=True)
 
     def _status(
         self, label: QLabel, message: str, error: bool, *, state: FeedbackState = "neutral"

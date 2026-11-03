@@ -19,7 +19,7 @@ from data_mask_studio.backup.crypto import (
     derive_key,
     validate_password,
 )
-from data_mask_studio.backup.exceptions import BackupError
+from data_mask_studio.backup.exceptions import BackupError, BackupExplanation, BackupReason
 from data_mask_studio.backup.format import FORMAT_VERSION, build_prefix
 from data_mask_studio.backup.models import (
     BackupCreationResult,
@@ -62,15 +62,19 @@ def create_backup(
     validate_password(password, confirmation)
     destination = Path(destination_path).expanduser().absolute()
     if destination.suffix.lower() != ".dmsbackup":
-        raise BackupError("Use a extensão .dmsbackup para o arquivo de backup.")
+        raise BackupError("Use a extensão .dmsbackup para o arquivo de backup.",
+                          explanation=BackupExplanation(BackupReason.DESTINATION_EXTENSION))
     if not destination.parent.is_dir():
-        raise BackupError("A pasta de destino do backup não existe.")
+        raise BackupError("A pasta de destino do backup não existe.",
+                          explanation=BackupExplanation(BackupReason.DESTINATION_FOLDER_MISSING))
     if any(paths_refer_to_same_file(destination, source) for source in (
         paths.hmac_key_path, paths.vault_key_path, paths.vault_database_path, paths.profiles_path,
     )):
-        raise BackupError("O backup não pode substituir um arquivo do ambiente local.")
+        raise BackupError("O backup não pode substituir um arquivo do ambiente local.",
+                          explanation=BackupExplanation(BackupReason.DESTINATION_ALIAS))
     if destination.exists() and not overwrite:
-        raise BackupError("O arquivo de backup já existe.")
+        raise BackupError("O arquivo de backup já existe.",
+                          explanation=BackupExplanation(BackupReason.DESTINATION_EXISTS))
 
     cancellation = cancellation or CancellationRequest()
     temporary_output: Path | None = None
@@ -84,7 +88,8 @@ def create_backup(
         hmac_key = hmac_key_provider.get_key()
         vault_key = vault_key_provider.get_key()
         if len(hmac_key) != KEY_SIZE or len(vault_key) != KEY_SIZE:
-            raise BackupError("Uma chave local possui formato inválido.")
+            raise BackupError("Uma chave local possui formato inválido.",
+                              explanation=BackupExplanation(BackupReason.LOCAL_KEY_INVALID))
 
         with tempfile.TemporaryDirectory(
             prefix=".dms-backup-", dir=destination.parent
@@ -102,7 +107,8 @@ def create_backup(
                 )
                 schema_version, mapping_count = inspect_snapshot(snapshot_path)
                 if schema_version != SCHEMA_VERSION:
-                    raise BackupError("A versão do cofre local não é compatível.")
+                    raise BackupError("A versão do cofre local não é compatível.",
+                                      explanation=BackupExplanation(BackupReason.LOCAL_SCHEMA_INCOMPATIBLE))
 
             profiles_data: bytes | None = None
             profile_count = 0
@@ -176,9 +182,11 @@ def create_backup(
     except BackupError:
         raise
     except OSError as error:
-        raise BackupError("Não foi possível criar o arquivo de backup.") from error
+        raise BackupError("Não foi possível criar o arquivo de backup.",
+                          explanation=BackupExplanation(BackupReason.CREATE_OUTPUT_FAILED)) from error
     except Exception as error:
-        raise BackupError("Não foi possível criar o backup seguro.") from error
+        raise BackupError("Não foi possível criar o backup seguro.",
+                          explanation=BackupExplanation(BackupReason.CREATE_FAILED)) from error
     finally:
         if temporary_output is not None:
             try:

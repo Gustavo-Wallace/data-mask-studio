@@ -29,6 +29,7 @@ from data_mask_studio.backup import (
     EnvironmentPaths,
 )
 from data_mask_studio.gui.backup_worker import BackupValidationWorker
+from data_mask_studio.gui.backup_error_presentation import backup_error_message_id
 from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.gui.maintenance_worker import (
     CompactionWorker,
@@ -878,7 +879,11 @@ class MaintenanceWidget(QWidget):
             if isinstance(error, BackupValidationError):
                 self._set_backup_status_id("backup.error.validation", True)
             elif isinstance(error, (MaintenanceError, BackupError)):
-                self._set_status(str(error), True)
+                identifier = backup_error_message_id(error) if isinstance(error, BackupError) else None
+                if identifier is None:
+                    self._set_status(str(error), True)
+                else:
+                    self._set_backup_status_id(identifier, True)
             else:
                 self._set_backup_status_id("maintenance.overview.error.unexpected", True)
             return

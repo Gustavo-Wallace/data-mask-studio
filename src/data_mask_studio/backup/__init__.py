@@ -4,6 +4,8 @@ from data_mask_studio.backup.exceptions import (
     BackupCancelled,
     BackupCompatibilityError,
     BackupError,
+    BackupExplanation,
+    BackupReason,
     BackupValidationError,
     VALIDATION_FAILURE_MESSAGE,
 )
@@ -35,6 +37,8 @@ __all__ = [
     "BackupCompatibilityError",
     "BackupCreationResult",
     "BackupError",
+    "BackupExplanation",
+    "BackupReason",
     "BackupHeader",
     "BackupProgress",
     "BackupStage",

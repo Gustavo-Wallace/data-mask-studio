@@ -17,6 +17,8 @@ from data_mask_studio.backup.exceptions import (
     BackupCancelled,
     BackupCompatibilityError,
     BackupError,
+    BackupExplanation,
+    BackupReason,
     BackupValidationError,
     VALIDATION_FAILURE_MESSAGE,
 )
@@ -310,7 +312,8 @@ def _validate_extracted(
         raise BackupValidationError(VALIDATION_FAILURE_MESSAGE) from error
 
     if schema_version not in RESTORABLE_SCHEMA_VERSIONS:
-        raise BackupCompatibilityError("O esquema do cofre não é compatível.")
+        raise BackupCompatibilityError("O esquema do cofre não é compatível.",
+                                       explanation=BackupExplanation(BackupReason.SCHEMA_INCOMPATIBLE))
 
     mapping_count = 0
     if extracted.vault_snapshot_path is not None:
@@ -321,7 +324,8 @@ def _validate_extracted(
             actual_schema != schema_version
             or schema_version not in RESTORABLE_SCHEMA_VERSIONS
         ):
-            raise BackupCompatibilityError("O esquema do cofre não é compatível.")
+            raise BackupCompatibilityError("O esquema do cofre não é compatível.",
+                                           explanation=BackupExplanation(BackupReason.SCHEMA_INCOMPATIBLE))
     elif vault_present:
         raise BackupValidationError(VALIDATION_FAILURE_MESSAGE)
     if mapping_count != declared_mappings:

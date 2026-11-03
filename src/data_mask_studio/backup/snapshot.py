@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 from data_mask_studio.environment import guarded
 
-from data_mask_studio.backup.exceptions import BackupError
+from data_mask_studio.backup.exceptions import BackupError, BackupExplanation, BackupReason
 from data_mask_studio.backup.models import CancellationRequest
 
 
@@ -19,7 +19,8 @@ def create_sqlite_snapshot(
     destination_connection: sqlite3.Connection | None = None
     try:
         if not source.is_file():
-            raise BackupError("O cofre local não foi encontrado.")
+            raise BackupError("O cofre local não foi encontrado.",
+                              explanation=BackupExplanation(BackupReason.VAULT_MISSING))
         destination.parent.mkdir(parents=True, exist_ok=True)
         # A live writable vault can acquire WAL state after this connection opens.
         # Keep SQLite locking/change detection so paged backup restarts safely
@@ -39,7 +40,8 @@ def create_sqlite_snapshot(
     except BackupError:
         raise
     except (OSError, sqlite3.Error) as error:
-        raise BackupError("Não foi possível criar o snapshot consistente do cofre.") from error
+        raise BackupError("Não foi possível criar o snapshot consistente do cofre.",
+                          explanation=BackupExplanation(BackupReason.SNAPSHOT_FAILED)) from error
     finally:
         if destination_connection is not None:
             destination_connection.close()
@@ -53,7 +55,8 @@ def inspect_snapshot(path: str | Path) -> tuple[int, int]:
         try:
             integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
             if integrity.lower() != "ok":
-                raise BackupError("O snapshot do cofre não passou na verificação.")
+                raise BackupError("O snapshot do cofre não passou na verificação.",
+                                  explanation=BackupExplanation(BackupReason.SNAPSHOT_CHECK_FAILED))
             schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
             mapping_count = int(
                 connection.execute("SELECT COUNT(*) FROM vault_mappings").fetchone()[0]
@@ -77,9 +80,11 @@ def inspect_snapshot(path: str | Path) -> tuple[int, int]:
                     LIMIT 1
                 """).fetchone()
                 if inconsistent is not None:
-                    raise BackupError("O snapshot do cofre contém contagens inconsistentes.")
+                    raise BackupError("O snapshot do cofre contém contagens inconsistentes.",
+                                      explanation=BackupExplanation(BackupReason.SNAPSHOT_COUNTERS_INCONSISTENT))
             return schema_version, mapping_count
         finally:
             connection.close()
     except sqlite3.Error as error:
-        raise BackupError("O snapshot do cofre é inválido.") from error
+        raise BackupError("O snapshot do cofre é inválido.",
+                          explanation=BackupExplanation(BackupReason.SNAPSHOT_INVALID)) from error

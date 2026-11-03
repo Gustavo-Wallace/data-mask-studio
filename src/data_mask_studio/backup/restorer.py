@@ -7,6 +7,8 @@ from pathlib import Path
 from data_mask_studio.backup.exceptions import (
     BackupCompatibilityError,
     BackupError,
+    BackupExplanation,
+    BackupReason,
 )
 from data_mask_studio.backup.models import (
     BackupCompatibility,
@@ -52,7 +54,8 @@ def restore_backup(
             validation = _validate_extracted(extracted, current_version)
             if validation.compatibility is not BackupCompatibility.COMPATIBLE:
                 raise BackupCompatibilityError(
-                    "O backup foi criado por uma versão incompatível."
+                    "O backup foi criado por uma versão incompatível.",
+                    explanation=BackupExplanation(BackupReason.APPLICATION_INCOMPATIBLE),
                 )
             cancellation.raise_if_requested()
             protected_hmac = protector.protect(extracted.hmac_key)
@@ -109,12 +112,14 @@ def restore_backup(
                         recover_restore(paths.directory, protector)
                     except Exception as rollback_error:
                         raise BackupError(
-                            "A restauração falhou e o ambiente local exige revisão."
+                            "A restauração falhou e o ambiente local exige revisão.",
+                            explanation=BackupExplanation(BackupReason.RESTORE_REVIEW_REQUIRED),
                         ) from rollback_error
                     if isinstance(error, BackupError):
                         raise
                     raise BackupError(
-                        "A restauração falhou e o ambiente anterior foi recuperado."
+                        "A restauração falhou e o ambiente anterior foi recuperado.",
+                        explanation=BackupExplanation(BackupReason.RESTORE_ROLLED_BACK),
                     ) from error
                 operation.cleanup()
             except Exception:
@@ -134,7 +139,8 @@ def restore_backup(
     except BackupError:
         raise
     except Exception as error:
-        raise BackupError("Não foi possível restaurar o backup.") from error
+        raise BackupError("Não foi possível restaurar o backup.",
+                          explanation=BackupExplanation(BackupReason.RESTORE_FAILED)) from error
 
 
 def _replace_file(source: Path, destination: Path) -> None:
@@ -164,11 +170,13 @@ def _verify_restored_environment(
     if not hmac.compare_digest(restored_hmac, expected_hmac_key) or not hmac.compare_digest(
         restored_vault, expected_vault_key
     ):
-        raise BackupError("As chaves restauradas não puderam ser validadas.")
+        raise BackupError("As chaves restauradas não puderam ser validadas.",
+                          explanation=BackupExplanation(BackupReason.RESTORED_KEYS_INVALID))
 
     repository = VaultRepository(paths.vault_database_path, VaultCipher(restored_vault))
     if repository.count() != expected_mappings:
-        raise BackupError("O cofre restaurado não pôde ser validado.")
+        raise BackupError("O cofre restaurado não pôde ser validado.",
+                          explanation=BackupExplanation(BackupReason.RESTORED_VAULT_INVALID))
     if expected_mappings:
         connection = sqlite3.connect(paths.vault_database_path)
         try:
@@ -177,17 +185,20 @@ def _verify_restored_environment(
             connection.close()
         for code in codes:
             if repository.get_decrypted_mapping(code) is None:
-                raise BackupError("O cofre restaurado não pôde ser validado.")
+                raise BackupError("O cofre restaurado não pôde ser validado.",
+                                  explanation=BackupExplanation(BackupReason.RESTORED_VAULT_INVALID))
 
     profiles = ProfileRepository(paths.profiles_path).load()
     if len(profiles) != expected_profiles:
-        raise BackupError("Os perfis restaurados não puderam ser validados.")
+        raise BackupError("Os perfis restaurados não puderam ser validados.",
+                          explanation=BackupExplanation(BackupReason.RESTORED_PROFILES_INVALID))
     composite = repository.composite_repository()
     connection = sqlite3.connect(paths.vault_database_path)
     try:
         for (code,) in connection.execute("SELECT code FROM composite_mappings"):
             if composite.get_composite_mapping(code) is None:
-                raise BackupError("O cofre composto restaurado não pôde ser validado.")
+                raise BackupError("O cofre composto restaurado não pôde ser validado.",
+                                  explanation=BackupExplanation(BackupReason.RESTORED_COMPOSITE_INVALID))
     finally:
         connection.close()
 

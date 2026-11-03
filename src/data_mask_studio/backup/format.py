@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import BinaryIO
 
 from data_mask_studio.backup.crypto import NONCE_SIZE, SCRYPT_PARAMETERS
-from data_mask_studio.backup.exceptions import BackupCompatibilityError, BackupValidationError
+from data_mask_studio.backup.exceptions import (
+    BackupCompatibilityError, BackupExplanation, BackupReason, BackupValidationError,
+)
 from data_mask_studio.backup.models import BackupHeader, ScryptParameters
 
 MAGIC = b"DMSBACKUP\x00"
@@ -44,7 +46,8 @@ def read_prefix(file: BinaryIO) -> tuple[BackupHeader, bytes]:
     if magic != MAGIC:
         raise BackupValidationError("O arquivo não é um backup válido.")
     if version != FORMAT_VERSION:
-        raise BackupCompatibilityError("A versão do backup não é suportada.")
+        raise BackupCompatibilityError("A versão do backup não é suportada.",
+                                       explanation=BackupExplanation(BackupReason.FORMAT_UNSUPPORTED))
     if not 1 <= header_size <= MAX_HEADER_SIZE:
         raise BackupValidationError("O cabeçalho do backup é inválido.")
     encoded = file.read(header_size)

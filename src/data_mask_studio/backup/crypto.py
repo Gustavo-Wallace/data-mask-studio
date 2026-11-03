@@ -1,6 +1,6 @@
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from data_mask_studio.backup.exceptions import BackupError
+from data_mask_studio.backup.exceptions import BackupError, BackupExplanation, BackupReason
 from data_mask_studio.backup.models import ScryptParameters
 
 SCRYPT_PARAMETERS = ScryptParameters()
@@ -10,9 +10,11 @@ TAG_SIZE = 16
 
 def validate_password(password: str, confirmation: str | None = None) -> None:
     if len(password) < 12 or not password.strip():
-        raise BackupError("A senha do backup deve possuir pelo menos 12 caracteres.")
+        raise BackupError("A senha do backup deve possuir pelo menos 12 caracteres.",
+                          explanation=BackupExplanation(BackupReason.PASSWORD_TOO_SHORT))
     if confirmation is not None and password != confirmation:
-        raise BackupError("A senha e a confirmação não são idênticas.")
+        raise BackupError("A senha e a confirmação não são idênticas.",
+                          explanation=BackupExplanation(BackupReason.PASSWORD_MISMATCH))
 
 
 def derive_key(
@@ -42,4 +44,5 @@ def validate_scrypt_parameters(parameters: ScryptParameters) -> None:
         or parameters.length != SCRYPT_PARAMETERS.length
         or parameters.salt_size != SCRYPT_PARAMETERS.salt_size
     ):
-        raise BackupError("Os parâmetros criptográficos do backup são inválidos.")
+        raise BackupError("Os parâmetros criptográficos do backup são inválidos.",
+                          explanation=BackupExplanation(BackupReason.CRYPTO_PARAMETERS_INVALID))

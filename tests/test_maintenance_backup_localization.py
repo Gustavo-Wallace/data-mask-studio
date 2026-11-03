@@ -215,7 +215,7 @@ def test_real_validation_decisions_content_and_no_environment_mutation(page, arc
         assert widget.status_label.property("feedbackState") == "error"
         assert widget.backup_result.toPlainText() == Translator(locale).text("maintenance.backup.result.invalid")
         if kind == "future_format":
-            assert widget.status_label.text() == "A versão do backup não é suportada."
+            assert widget.status_label.text() == Translator(locale).text("backup.error.format_unsupported")
         else:
             assert widget.status_label.text() == Translator(locale).text("backup.error.validation")
     assert not changed.count()

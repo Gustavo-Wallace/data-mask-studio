@@ -237,7 +237,9 @@ def test_password_policy_and_confirmation_are_unchanged(backup, locale, password
         worker.finished.emit()
     else:
         assert widget.create_status.property("feedbackState") == "error"
-        assert "12 caracteres" in widget.create_status.text() or "não são idênticas" in widget.create_status.text()
+        identifier = ("backup.error.password_too_short" if len(password) < 12 or not password.strip()
+                      else "backup.error.password_mismatch")
+        assert widget.create_status.text() == Translator(locale).text(identifier)
         assert not password or password not in widget.create_status.text()
 
 
@@ -394,7 +396,7 @@ def test_real_validation_failures_do_not_authorize_recovery_or_leak_secrets(back
     if fault in {"password", "tampered", "invalid"}:
         assert widget.restore_status.text() == Translator(locale).text("backup.error.validation")
     elif fault == "future_format":
-        assert widget.restore_status.text() == "A versão do backup não é suportada."  # Free-form contract.
+        assert widget.restore_status.text() == Translator(locale).text("backup.error.format_unsupported")
     assert password not in widget.restore_status.text() + widget.restore_summary.toPlainText()
     assert str(selected) not in widget.restore_status.text() + widget.restore_summary.toPlainText()
     widget.start_restore()
@@ -464,6 +466,7 @@ def test_real_recovery_reauthenticates_changed_archive_without_mutating_environm
     finish(app, widget)
     assert not restored.count() and widget._validated_result is None
     assert widget.restore_status.property("feedbackState") == "error"
+    assert widget.restore_status.text() == Translator(locale).text("backup.error.validation")
     assert widget.restore_progress.value() == 0 and not widget.restore_summary.toPlainText()
     assert logical_environment(paths, widget._protector) == before
     # Existing GUI behavior retains this password on validation/recovery failure.
