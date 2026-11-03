@@ -28,6 +28,8 @@ from data_mask_studio.restoration.exceptions import (
     MissingCodeError,
     RestorationCancelled,
     RestorationError,
+    RestorationExplanation,
+    RestorationReason,
     RestorationSecurityError,
 )
 from data_mask_studio.restoration.models import (
@@ -173,7 +175,9 @@ def _restore_csv(
                                     elif configuration.missing_code_policy is MissingCodePolicy.ABORT:
                                         raise MissingCodeError(
                                             "A restauracao foi interrompida porque um codigo "
-                                            f"nao foi encontrado (coluna '{column.header}', linha {line_number})."
+                                            f"nao foi encontrado (coluna '{column.header}', linha {line_number}).",
+                                            explanation=RestorationExplanation(RestorationReason.MISSING_MAPPING,
+                                                header=column.header, row_number=line_number),
                                         )
                                     continue
                                 if isinstance(mapping, CompositeValue):
@@ -214,10 +218,12 @@ def _restore_csv(
     except RestorationError:
         raise
     except OSError as error:
-        raise RestorationError(_safe_io_message(error)) from error
+        message, reason = _safe_io_failure(error)
+        raise RestorationError(message, explanation=RestorationExplanation(reason)) from error
     except (UnicodeError, csv.Error, StopIteration) as error:
         raise RestorationError(
-            "Nao foi possivel gerar o arquivo CSV restaurado."
+            "Nao foi possivel gerar o arquivo CSV restaurado.",
+            explanation=RestorationExplanation(RestorationReason.CSV_GENERATION_FAILED),
         ) from error
     except Exception as error:
         raise RestorationSecurityError(
@@ -248,12 +254,15 @@ def _restore_csv(
 def _validate_destination(source: Path, destination: Path, overwrite: bool) -> None:
     if paths_refer_to_same_file(source, destination):
         raise RestorationError(
-            "O arquivo restaurado nao pode substituir o CSV de entrada."
+            "O arquivo restaurado nao pode substituir o CSV de entrada.",
+            explanation=RestorationExplanation(RestorationReason.DESTINATION_ALIAS),
         )
     if not destination.parent.is_dir():
-        raise RestorationError("A pasta escolhida para o arquivo nao existe.")
+        raise RestorationError("A pasta escolhida para o arquivo nao existe.",
+                               explanation=RestorationExplanation(RestorationReason.DESTINATION_FOLDER_MISSING))
     if destination.exists() and not overwrite:
-        raise RestorationError("O arquivo de destino ja existe.")
+        raise RestorationError("O arquivo de destino ja existe.",
+                               explanation=RestorationExplanation(RestorationReason.DESTINATION_EXISTS))
 
 
 def suggested_output_path(source_path: str | Path) -> Path:
@@ -267,10 +276,15 @@ def suggested_output_path(source_path: str | Path) -> Path:
 
 
 def _safe_io_message(error: OSError) -> str:
+    # Preserve the existing string helper while classifying at the same branch.
+    return _safe_io_failure(error)[0]
+
+
+def _safe_io_failure(error: OSError) -> tuple[str, RestorationReason]:
     if getattr(error, "errno", None) == 28 or getattr(error, "winerror", None) == 112:
-        return "Não há espaço suficiente para concluir o arquivo restaurado."
+        return "Não há espaço suficiente para concluir o arquivo restaurado.", RestorationReason.DISK_FULL
     if isinstance(error, FileNotFoundError):
-        return "O arquivo CSV foi removido durante a restauração."
+        return "O arquivo CSV foi removido durante a restauração.", RestorationReason.FILE_REMOVED
     if isinstance(error, PermissionError):
-        return "O arquivo está bloqueado ou a pasta de destino não permite escrita."
-    return "Falha de leitura ou escrita durante a restauração do CSV."
+        return "O arquivo está bloqueado ou a pasta de destino não permite escrita.", RestorationReason.ACCESS_DENIED
+    return "Falha de leitura ou escrita durante a restauração do CSV.", RestorationReason.IO_FAILED

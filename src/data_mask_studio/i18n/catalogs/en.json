@@ -703,6 +703,18 @@
     "detection.reason.header_inconsistent": "The header suggests the type, but the sample is inconsistent.",
     "detection.reason.sample_strong": "Most of the sample has a consistent structural pattern.",
     "detection.reason.sample_partial": "Part of the sample has a possible structural pattern.",
-    "detection.reason.unrecognized_pattern": "No reliable pattern was identified in the header or sample."
+    "detection.reason.unrecognized_pattern": "No reliable pattern was identified in the header or sample.",
+    "restoration.csv.error.source_missing": "The selected CSV file does not exist.",
+    "restoration.csv.error.headers_changed": "The file headers have changed since selection.",
+    "restoration.csv.error.row_columns": "Row {row}: inconsistent number of columns.",
+    "restoration.csv.error.analysis_failed": "Unable to analyze the selected CSV file.",
+    "restoration.csv.error.missing_mapping": "Restoration stopped because a token was not found (column '{header}', row {row}).",
+    "restoration.csv.error.destination_folder_missing": "The selected output folder does not exist.",
+    "restoration.csv.error.destination_exists": "The destination file already exists.",
+    "restoration.csv.error.disk_full": "There is not enough space to complete the restored file.",
+    "restoration.csv.error.file_removed": "The CSV file was removed during restoration.",
+    "restoration.csv.error.access_denied": "The file is locked or the destination folder does not allow writing.",
+    "restoration.csv.error.io_failed": "Read or write failure during CSV restoration.",
+    "restoration.csv.error.csv_generation_failed": "Unable to generate the restored CSV file."
   }
 }

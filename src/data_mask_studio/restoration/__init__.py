@@ -9,6 +9,8 @@ from data_mask_studio.restoration.exceptions import (
     MissingCodeError,
     RestorationCancelled,
     RestorationError,
+    RestorationExplanation,
+    RestorationReason,
     RestorationSecurityError,
 )
 from data_mask_studio.restoration.models import (
@@ -38,6 +40,8 @@ __all__ = [
     "RestorationCancelled",
     "RestorationConfiguration",
     "RestorationError",
+    "RestorationExplanation",
+    "RestorationReason",
     "RestorationProgress",
     "RestorationResult",
     "RestorationSecurityError",

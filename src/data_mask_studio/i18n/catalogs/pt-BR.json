@@ -703,6 +703,18 @@
     "detection.reason.header_inconsistent": "O cabeçalho sugere o tipo, mas a amostra é inconsistente.",
     "detection.reason.sample_strong": "A maior parte da amostra possui um padrão estrutural consistente.",
     "detection.reason.sample_partial": "Parte da amostra possui um possível padrão estrutural.",
-    "detection.reason.unrecognized_pattern": "Não foi identificado um padrão confiável no cabeçalho ou na amostra."
+    "detection.reason.unrecognized_pattern": "Não foi identificado um padrão confiável no cabeçalho ou na amostra.",
+    "restoration.csv.error.source_missing": "O arquivo CSV selecionado não existe.",
+    "restoration.csv.error.headers_changed": "Os cabeçalhos do arquivo foram alterados desde a seleção.",
+    "restoration.csv.error.row_columns": "Linha {row}: quantidade de colunas inconsistente.",
+    "restoration.csv.error.analysis_failed": "Não foi possível analisar o arquivo CSV selecionado.",
+    "restoration.csv.error.missing_mapping": "A restauração foi interrompida porque um código não foi encontrado (coluna '{header}', linha {row}).",
+    "restoration.csv.error.destination_folder_missing": "A pasta escolhida para o arquivo não existe.",
+    "restoration.csv.error.destination_exists": "O arquivo de destino já existe.",
+    "restoration.csv.error.disk_full": "Não há espaço suficiente para concluir o arquivo restaurado.",
+    "restoration.csv.error.file_removed": "O arquivo CSV foi removido durante a restauração.",
+    "restoration.csv.error.access_denied": "O arquivo está bloqueado ou a pasta de destino não permite escrita.",
+    "restoration.csv.error.io_failed": "Falha de leitura ou escrita durante a restauração do CSV.",
+    "restoration.csv.error.csv_generation_failed": "Não foi possível gerar o arquivo CSV restaurado."
   }
 }

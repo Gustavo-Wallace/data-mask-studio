@@ -9,6 +9,8 @@ from data_mask_studio.restoration.exceptions import (
     MissingCodeError,
     RestorationCancelled,
     RestorationError,
+    RestorationExplanation,
+    RestorationReason,
     RestorationSecurityError,
 )
 from data_mask_studio.restoration.models import (
@@ -116,7 +118,8 @@ def analyze_csv(
         raise
     except (OSError, UnicodeError, csv.Error, StopIteration) as error:
         raise RestorationError(
-            "Nao foi possivel analisar o arquivo CSV selecionado."
+            "Nao foi possivel analisar o arquivo CSV selecionado.",
+            explanation=RestorationExplanation(RestorationReason.ANALYSIS_FAILED),
         ) from error
 
     return AnalysisResult(
@@ -187,7 +190,8 @@ def _validate_configuration(configuration: RestorationConfiguration) -> None:
     if not configuration.selected_columns:
         raise RestorationError("Selecione ao menos uma coluna para restaurar.")
     if not configuration.source_path.is_file():
-        raise RestorationError("O arquivo CSV selecionado nao existe.")
+        raise RestorationError("O arquivo CSV selecionado nao existe.",
+                               explanation=RestorationExplanation(RestorationReason.SOURCE_MISSING))
     indexes = [column.index for column in configuration.selected_columns]
     if len(indexes) != len(set(indexes)) or any(
         index < 0 or index >= len(configuration.headers) for index in indexes
@@ -200,7 +204,8 @@ def _validate_current_headers(
 ) -> None:
     if tuple(headers) != configuration.headers:
         raise RestorationError(
-            "Os cabecalhos do arquivo foram alterados desde a selecao."
+            "Os cabecalhos do arquivo foram alterados desde a selecao.",
+            explanation=RestorationExplanation(RestorationReason.HEADERS_CHANGED),
         )
 
 
@@ -209,7 +214,8 @@ def _validate_row(
 ) -> None:
     if len(row) != len(configuration.headers):
         raise RestorationError(
-            f"Linha {row_number}: quantidade de colunas inconsistente."
+            f"Linha {row_number}: quantidade de colunas inconsistente.",
+            explanation=RestorationExplanation(RestorationReason.ROW_COLUMNS, row_number=row_number),
         )
 
 

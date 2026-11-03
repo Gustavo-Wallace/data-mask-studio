@@ -52,6 +52,8 @@ from data_mask_studio.restoration import (
     RepresentationPolicy,
     RestorationConfiguration,
     RestorationError,
+    RestorationExplanation,
+    RestorationReason,
     RestorationProgress,
     RestorationResult,
     RestorationSecurityError,
@@ -70,6 +72,11 @@ _REPRESENTATION_IDS = {
     RepresentationPolicy.FIRST_ORIGINAL: "restoration.csv.representation.first",
     RepresentationPolicy.CANONICAL: "restoration.csv.representation.canonical",
 }
+
+_ERROR_REASON_IDS = {
+    reason: "restoration.csv.error." + reason.value for reason in RestorationReason
+}
+_ERROR_REASON_IDS[RestorationReason.DESTINATION_ALIAS] = "restoration.csv.error.source_alias"
 
 
 class RestorationWidget(QWidget):
@@ -742,7 +749,7 @@ class RestorationWidget(QWidget):
             # or translating backend text. Keep the original error for diagnostics.
             self._set_status_id("restoration.csv.error.package", is_error=True)
         elif isinstance(error, RestorationError):
-            self._set_status(str(error), is_error=True)
+            self._show_restoration_error(error)
         else:
             self._set_status_id("restoration.csv.error.unexpected", is_error=True)
 
@@ -821,7 +828,30 @@ class RestorationWidget(QWidget):
         if isinstance(error, RestorationInputError):
             self._set_status_id(error.message_id, is_error=True)
         else:
+            self._show_restoration_error(error)
+
+    def _show_restoration_error(self, error: RestorationError) -> None:
+        explanation = getattr(error, "explanation", None)
+        message_id = (_ERROR_REASON_IDS.get(explanation.reason)
+                      if isinstance(explanation, RestorationExplanation)
+                      and isinstance(explanation.reason, RestorationReason) else None)
+        parameters = {}
+        if message_id is not None and explanation.reason in (
+            RestorationReason.MISSING_MAPPING, RestorationReason.ROW_COLUMNS,
+        ):
+            if type(explanation.row_number) is not int or explanation.row_number < 1:
+                message_id = None
+            else:
+                parameters["row"] = explanation.row_number
+                if explanation.reason is RestorationReason.MISSING_MAPPING:
+                    if not isinstance(explanation.header, str):
+                        message_id = None
+                    else:
+                        parameters["header"] = explanation.header
+        if message_id is None:
             self._set_status(str(error), is_error=True)
+        else:
+            self._set_status_id(message_id, is_error=True, **parameters)
 
     def _set_status_id(self, message_id: str, *, is_error: bool = False,
                        state: FeedbackState = "neutral", **parameters: str | int | float) -> None:
