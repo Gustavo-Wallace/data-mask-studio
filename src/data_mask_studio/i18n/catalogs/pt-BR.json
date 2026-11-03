@@ -715,6 +715,14 @@
     "restoration.csv.error.file_removed": "O arquivo CSV foi removido durante a restauração.",
     "restoration.csv.error.access_denied": "O arquivo está bloqueado ou a pasta de destino não permite escrita.",
     "restoration.csv.error.io_failed": "Falha de leitura ou escrita durante a restauração do CSV.",
-    "restoration.csv.error.csv_generation_failed": "Não foi possível gerar o arquivo CSV restaurado."
+    "restoration.csv.error.csv_generation_failed": "Não foi possível gerar o arquivo CSV restaurado.",
+    "restoration.html.error.source_missing": "O arquivo HTML selecionado não existe.",
+    "restoration.html.error.input_permission_denied": "Não foi possível ler o arquivo por falta de permissão.",
+    "restoration.html.error.input_access_failed": "Não foi possível acessar o arquivo HTML selecionado.",
+    "restoration.html.error.input_empty": "O arquivo HTML está vazio.",
+    "restoration.html.error.encoding_unidentified": "Não foi possível identificar a codificação do arquivo HTML.",
+    "restoration.html.error.input_processing_failed": "Não foi possível processar a codificação do arquivo HTML.",
+    "restoration.html.error.output_encoding_failed": "A codificação original não representa um dos valores restaurados.",
+    "restoration.html.error.output_failed": "Não foi possível gerar o arquivo HTML restaurado."
   }
 }

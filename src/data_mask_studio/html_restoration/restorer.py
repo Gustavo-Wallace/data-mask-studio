@@ -11,6 +11,8 @@ from data_mask_studio.html_restoration.exceptions import (
     HTMLMissingCodeError,
     HTMLRestorationCancelled,
     HTMLRestorationError,
+    HTMLRestorationExplanation,
+    HTMLRestorationReason,
     HTMLRestorationSecurityError,
 )
 from data_mask_studio.html_restoration.inspector import python_encoding
@@ -219,11 +221,13 @@ def restore_html(
         raise
     except UnicodeEncodeError as error:
         raise HTMLRestorationError(
-            "A codificação original não representa um dos valores restaurados."
+            "A codificação original não representa um dos valores restaurados.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.OUTPUT_ENCODING_FAILED),
         ) from error
     except OSError as error:
         raise HTMLRestorationError(
-            "Não foi possível gerar o arquivo HTML restaurado."
+            "Não foi possível gerar o arquivo HTML restaurado.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.OUTPUT_FAILED),
         ) from error
     except Exception as error:
         raise HTMLRestorationSecurityError(
@@ -265,14 +269,24 @@ def suggested_html_output_path(source_path: str | Path) -> Path:
 def _validate_destination(source: Path, destination: Path, overwrite: bool) -> None:
     if paths_refer_to_same_file(source, destination):
         raise HTMLRestorationError(
-            "O arquivo restaurado não pode substituir o HTML de entrada."
+            "O arquivo restaurado não pode substituir o HTML de entrada.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.DESTINATION_ALIAS),
         )
     if not source.is_file():
-        raise HTMLRestorationError("O arquivo HTML selecionado não existe.")
+        raise HTMLRestorationError(
+            "O arquivo HTML selecionado não existe.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.SOURCE_MISSING),
+        )
     if not destination.parent.is_dir():
-        raise HTMLRestorationError("A pasta escolhida para o arquivo não existe.")
+        raise HTMLRestorationError(
+            "A pasta escolhida para o arquivo não existe.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.DESTINATION_FOLDER_MISSING),
+        )
     if destination.exists() and not overwrite:
-        raise HTMLRestorationError("O arquivo de destino já existe.")
+        raise HTMLRestorationError(
+            "O arquivo de destino já existe.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.DESTINATION_EXISTS),
+        )
 
 
 def _bulk_lookup(

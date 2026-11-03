@@ -39,6 +39,8 @@ from data_mask_studio.html_restoration import (
     HTMLMissingCodePolicy,
     HTMLMissingCodeError,
     HTMLRestorationError,
+    HTMLRestorationExplanation,
+    HTMLRestorationReason,
     HTMLRestorationProgress,
     HTMLRestorationResult,
     HTMLRestorationSecurityError,
@@ -49,6 +51,16 @@ from data_mask_studio.html_restoration import (
 )
 from data_mask_studio.restoration import RepresentationPolicy
 from data_mask_studio.vault import VaultRepository
+
+
+_ERROR_REASON_IDS = {
+    reason: "restoration.html.error." + reason.value for reason in HTMLRestorationReason
+}
+_ERROR_REASON_IDS.update({
+    HTMLRestorationReason.DESTINATION_ALIAS: "restoration.html.error.source_alias",
+    HTMLRestorationReason.DESTINATION_FOLDER_MISSING: "restoration.csv.error.destination_folder_missing",
+    HTMLRestorationReason.DESTINATION_EXISTS: "restoration.csv.error.destination_exists",
+})
 
 
 class HTMLRestorationWidget(QWidget):
@@ -302,7 +314,7 @@ class HTMLRestorationWidget(QWidget):
         try:
             inspection = inspect_html(path)
         except HTMLRestorationError as error:
-            self._set_status(str(error), is_error=True)
+            self._show_restoration_error(error)
             return
         self._inspection = inspection
         self._reset_operation_feedback()
@@ -503,7 +515,7 @@ class HTMLRestorationWidget(QWidget):
         elif isinstance(error, HTMLUnsupportedContextError):
             self._set_status_id("restoration.html.error.context", is_error=True)
         elif isinstance(error, HTMLRestorationError):
-            self._set_status(str(error), True)
+            self._show_restoration_error(error)
         else:
             self._set_status_id("restoration.csv.error.unexpected", is_error=True)
 
@@ -570,6 +582,16 @@ class HTMLRestorationWidget(QWidget):
         )
         if not opened:
             self._set_status_id("masking.error.open_folder", is_error=True)
+
+    def _show_restoration_error(self, error: HTMLRestorationError) -> None:
+        explanation = getattr(error, "explanation", None)
+        message_id = (_ERROR_REASON_IDS.get(explanation.reason)
+                      if isinstance(explanation, HTMLRestorationExplanation)
+                      and isinstance(explanation.reason, HTMLRestorationReason) else None)
+        if message_id is None:
+            self._set_status(str(error), is_error=True)
+        else:
+            self._set_status_id(message_id, is_error=True)
 
     def _set_status_id(self, message_id: str, *, is_error: bool = False,
                        state: FeedbackState = "neutral", **parameters: str | int | float) -> None:

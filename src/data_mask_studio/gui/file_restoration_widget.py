@@ -129,6 +129,12 @@ class FileRestorationWidget(QWidget):
             widget.load_html(str(path))
         if widget._inspection is previous:
             self._selection_failed(widget.status_label.text())
+            # Preserve the HTML inspector's presentation identity, not its text.
+            # Current selection errors have no interpolation parameters.
+            if widget is self.html_widget and widget._status_message is not None:
+                message_id, parameters = widget._status_message
+                if not parameters:
+                    self._selection_message_id = message_id
             return False
         return True
 

@@ -1,7 +1,9 @@
 import codecs
 from pathlib import Path
 
-from data_mask_studio.html_restoration.exceptions import HTMLRestorationError
+from data_mask_studio.html_restoration.exceptions import (
+    HTMLRestorationError, HTMLRestorationExplanation, HTMLRestorationReason,
+)
 
 SAMPLE_SIZE = 64 * 1024
 
@@ -12,22 +14,30 @@ def inspect_html(file_path: str | Path) -> "HTMLInspectionResult":
     path = Path(file_path).expanduser()
     try:
         if not path.is_file():
-            raise HTMLRestorationError("O arquivo HTML selecionado não existe.")
+            raise HTMLRestorationError(
+                "O arquivo HTML selecionado não existe.",
+                explanation=HTMLRestorationExplanation(HTMLRestorationReason.SOURCE_MISSING),
+            )
         with path.open("rb") as html_file:
             sample = html_file.read(SAMPLE_SIZE)
     except HTMLRestorationError:
         raise
     except PermissionError as error:
         raise HTMLRestorationError(
-            "Não foi possível ler o arquivo por falta de permissão."
+            "Não foi possível ler o arquivo por falta de permissão.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.INPUT_PERMISSION_DENIED),
         ) from error
     except OSError as error:
         raise HTMLRestorationError(
-            "Não foi possível acessar o arquivo HTML selecionado."
+            "Não foi possível acessar o arquivo HTML selecionado.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.INPUT_ACCESS_FAILED),
         ) from error
 
     if not sample:
-        raise HTMLRestorationError("O arquivo HTML está vazio.")
+        raise HTMLRestorationError(
+            "O arquivo HTML está vazio.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.INPUT_EMPTY),
+        )
     encoding = detect_html_encoding(sample)
     return HTMLInspectionResult(path.resolve(), encoding)
 
@@ -47,7 +57,8 @@ def detect_html_encoding(sample: bytes) -> str:
             continue
         return display_name
     raise HTMLRestorationError(
-        "Não foi possível identificar a codificação do arquivo HTML."
+        "Não foi possível identificar a codificação do arquivo HTML.",
+        explanation=HTMLRestorationExplanation(HTMLRestorationReason.ENCODING_UNIDENTIFIED),
     )
 
 

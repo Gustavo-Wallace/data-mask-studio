@@ -8,6 +8,8 @@ from data_mask_studio.consultant.code_parser import is_valid_code
 from data_mask_studio.html_restoration.exceptions import (
     HTMLRestorationCancelled,
     HTMLRestorationError,
+    HTMLRestorationExplanation,
+    HTMLRestorationReason,
 )
 from data_mask_studio.html_restoration.inspector import python_encoding
 from data_mask_studio.performance import BALANCED_SETTINGS, HTMLProcessingMetrics
@@ -92,7 +94,8 @@ def iter_html_segments(
         raise
     except (OSError, UnicodeError) as error:
         raise HTMLRestorationError(
-            "Não foi possível processar a codificação do arquivo HTML."
+            "Não foi possível processar a codificação do arquivo HTML.",
+            explanation=HTMLRestorationExplanation(HTMLRestorationReason.INPUT_PROCESSING_FAILED),
         ) from error
 
 

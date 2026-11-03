@@ -715,6 +715,14 @@
     "restoration.csv.error.file_removed": "The CSV file was removed during restoration.",
     "restoration.csv.error.access_denied": "The file is locked or the destination folder does not allow writing.",
     "restoration.csv.error.io_failed": "Read or write failure during CSV restoration.",
-    "restoration.csv.error.csv_generation_failed": "Unable to generate the restored CSV file."
+    "restoration.csv.error.csv_generation_failed": "Unable to generate the restored CSV file.",
+    "restoration.html.error.source_missing": "The selected HTML file does not exist.",
+    "restoration.html.error.input_permission_denied": "Unable to read the file due to insufficient permissions.",
+    "restoration.html.error.input_access_failed": "Unable to access the selected HTML file.",
+    "restoration.html.error.input_empty": "The HTML file is empty.",
+    "restoration.html.error.encoding_unidentified": "Unable to identify the HTML file encoding.",
+    "restoration.html.error.input_processing_failed": "Unable to process the HTML file encoding.",
+    "restoration.html.error.output_encoding_failed": "The original encoding cannot represent one of the restored values.",
+    "restoration.html.error.output_failed": "Unable to generate the restored HTML file."
   }
 }

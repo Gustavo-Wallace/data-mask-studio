@@ -3,6 +3,8 @@ from data_mask_studio.html_restoration.exceptions import (
     HTMLMissingCodeError,
     HTMLRestorationCancelled,
     HTMLRestorationError,
+    HTMLRestorationExplanation,
+    HTMLRestorationReason,
     HTMLRestorationSecurityError,
     HTMLUnsupportedContextError,
 )
@@ -28,6 +30,8 @@ __all__ = [
     "HTMLMissingCodePolicy",
     "HTMLRestorationCancelled",
     "HTMLRestorationError",
+    "HTMLRestorationExplanation",
+    "HTMLRestorationReason",
     "HTMLRestorationProgress",
     "HTMLRestorationResult",
     "HTMLRestorationSecurityError",
