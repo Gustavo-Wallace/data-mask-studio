@@ -10,6 +10,7 @@ from data_mask_studio.maintenance.models import (
     DiagnosticResult,
     EnvironmentStatistics,
     MaintenanceStatus,
+    StatisticsReason,
     TemporaryItem,
 )
 from data_mask_studio.maintenance.report import safe_diagnostic_report
@@ -31,6 +32,7 @@ __all__ = [
     "MaintenanceDiagnostics",
     "MaintenanceError",
     "MaintenanceStatus",
+    "StatisticsReason",
     "TemporaryItem",
     "VaultCompactor",
     "cleanup_temporaries",

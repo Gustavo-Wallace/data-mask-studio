@@ -15,7 +15,9 @@ from data_mask_studio.backup import (
     create_sqlite_snapshot,
 )
 from data_mask_studio.integrity.exceptions import IntegrityCancelled, IntegrityError
-from data_mask_studio.integrity.models import AuditReport, CheckResult, IntegrityStatus
+from data_mask_studio.integrity.models import (
+    AuditReport, CheckResult, IntegrityCheckKind, IntegrityExplanation, IntegrityReason, IntegrityStatus,
+)
 from data_mask_studio.integrity.composite_audit import audit_composites
 from data_mask_studio.normalization import NormalizationError, NormalizationRule, normalize_value
 from data_mask_studio.profiles import ProfileError, ProfileRepository
@@ -95,6 +97,7 @@ class IntegrityAuditor:
             "Disponibilidade da chave HMAC",
             self._hmac_key_provider,
             checks,
+            kind=IntegrityCheckKind.HMAC_KEY,
         )
         progress(1, total_steps)
         self._raise_if_cancelled(cancelled)
@@ -102,6 +105,7 @@ class IntegrityAuditor:
             "Disponibilidade da chave AES",
             self._vault_key_provider,
             checks,
+            kind=IntegrityCheckKind.AES_KEY,
         )
         progress(2, total_steps)
         self._raise_if_cancelled(cancelled)
@@ -138,19 +142,24 @@ class IntegrityAuditor:
         name: str,
         provider: KeyProvider,
         checks: list[CheckResult],
+        *,
+        kind: IntegrityCheckKind | None = None,
     ) -> bytes | None:
         key_path = getattr(provider, "key_path", None)
         if key_path is not None and not Path(key_path).is_file():
-            checks.append(_failed(name, "A chave local não foi encontrada."))
+            checks.append(_failed(name, "A chave local não foi encontrada.",
+                explanation=IntegrityExplanation(IntegrityReason.KEY_MISSING, kind)))
             return None
         try:
             key = provider.get_key()
             if len(key) != KEY_SIZE:
                 raise ValueError
         except Exception:
-            checks.append(_failed(name, "A chave local não está acessível."))
+            checks.append(_failed(name, "A chave local não está acessível.",
+                explanation=IntegrityExplanation(IntegrityReason.KEY_INACCESSIBLE, kind)))
             return None
-        checks.append(_intact(name, 1, "A chave está acessível e possui formato válido."))
+        checks.append(_intact(name, 1, "A chave está acessível e possui formato válido.",
+            explanation=IntegrityExplanation(IntegrityReason.KEY_VALID, kind)))
         return key
 
     def _audit_database(
@@ -179,13 +188,15 @@ class IntegrityAuditor:
                 str(row[0]) for row in connection.execute("PRAGMA integrity_check")
             ]
             if integrity_rows == ["ok"]:
-                checks.append(_intact("Integridade do SQLite", 1, "PRAGMA integrity_check retornou ok."))
+                checks.append(_intact("Integridade do SQLite", 1, "PRAGMA integrity_check retornou ok.",
+                    explanation=IntegrityExplanation(IntegrityReason.SQLITE_VALID, IntegrityCheckKind.SQLITE)))
             else:
                 checks.append(
                     _failed(
                         "Integridade do SQLite",
                         "O SQLite informou inconsistências internas.",
                         failures=len(integrity_rows),
+                        explanation=IntegrityExplanation(IntegrityReason.SQLITE_INCONSISTENT, IntegrityCheckKind.SQLITE),
                     )
                 )
             progress(3)
@@ -206,12 +217,15 @@ class IntegrityAuditor:
                     "Versão e estrutura do esquema",
                     "O esquema não corresponde à versão esperada.",
                     failures=schema_failures,
+                    explanation=IntegrityExplanation(IntegrityReason.SCHEMA_INVALID, IntegrityCheckKind.SCHEMA),
                 )
                 if schema_failures
                 else _intact(
                     "Versão e estrutura do esquema",
                     2,
                     f"Esquema {schema_version} validado.",
+                    explanation=IntegrityExplanation(IntegrityReason.SCHEMA_VALID, IntegrityCheckKind.SCHEMA,
+                                                     schema_version=schema_version),
                 )
             )
             progress(4)
@@ -379,29 +393,37 @@ class IntegrityAuditor:
                 relationship_failures.append(f"mapping#{index}")
 
         return [
-            _result("Autenticação AES-GCM", len(mappings) + len(variations), authentication_failures),
-            _result("Compatibilidade das variações", len(variations), normalization_failures),
-            _result("Contadores de ocorrências", len(mappings) + len(variations), counter_failures),
-            _result("Referências entre tabelas", len(mappings) + len(variations), relationship_failures),
-            _result("Formato dos códigos", len(mappings), code_failures),
-            _result("Recomputação dos tokens", len(mappings), token_failures),
+            _result("Autenticação AES-GCM", len(mappings) + len(variations), authentication_failures,
+                    kind=IntegrityCheckKind.AES_AUTHENTICATION),
+            _result("Compatibilidade das variações", len(variations), normalization_failures,
+                    kind=IntegrityCheckKind.VARIATION_COMPATIBILITY),
+            _result("Contadores de ocorrências", len(mappings) + len(variations), counter_failures,
+                    kind=IntegrityCheckKind.OCCURRENCE_COUNTERS),
+            _result("Referências entre tabelas", len(mappings) + len(variations), relationship_failures,
+                    kind=IntegrityCheckKind.TABLE_REFERENCES),
+            _result("Formato dos códigos", len(mappings), code_failures, kind=IntegrityCheckKind.CODE_FORMAT),
+            _result("Recomputação dos tokens", len(mappings), token_failures, kind=IntegrityCheckKind.TOKEN_RECOMPUTATION),
         ]
 
     def _check_profiles(self) -> CheckResult:
         try:
             profiles = ProfileRepository(self._paths.profiles_path).load()
         except ProfileError:
-            return _failed("Validade estrutural dos perfis", "O arquivo de perfis é inválido.")
+            return _failed("Validade estrutural dos perfis", "O arquivo de perfis é inválido.",
+                explanation=IntegrityExplanation(IntegrityReason.PROFILES_INVALID, IntegrityCheckKind.PROFILES))
         return _intact(
             "Validade estrutural dos perfis",
             len(profiles),
             f"{len(profiles)} perfil(is) validado(s).",
+            explanation=IntegrityExplanation(IntegrityReason.PROFILES_VALID, IntegrityCheckKind.PROFILES,
+                                             count=len(profiles)),
         )
 
     def _check_temporary_files(self) -> CheckResult:
         directory = self._paths.directory.resolve()
         if not directory.is_dir():
-            return _intact("Arquivos temporários abandonados", 0, "Nenhum arquivo temporário encontrado.")
+            return _intact("Arquivos temporários abandonados", 0, "Nenhum arquivo temporário encontrado.",
+                explanation=IntegrityExplanation(IntegrityReason.NO_TEMPORARIES, IntegrityCheckKind.TEMPORARIES))
         candidates = {
             path.resolve()
             for path in directory.iterdir()
@@ -419,8 +441,10 @@ class IntegrityAuditor:
                 len(candidates),
                 "Foram encontrados artefatos temporários conhecidos.",
                 identifiers,
+                explanation=IntegrityExplanation(IntegrityReason.TEMPORARIES_FOUND, IntegrityCheckKind.TEMPORARIES),
             )
-        return _intact("Arquivos temporários abandonados", 0, "Nenhum arquivo temporário encontrado.")
+        return _intact("Arquivos temporários abandonados", 0, "Nenhum arquivo temporário encontrado.",
+            explanation=IntegrityExplanation(IntegrityReason.NO_TEMPORARIES, IntegrityCheckKind.TEMPORARIES))
 
     @staticmethod
     def _raise_if_cancelled(should_cancel: CancellationCheck) -> None:
@@ -435,14 +459,17 @@ class IntegrityAuditor:
             0,
             0,
             "O cofre ainda não existe; não há registros para verificar.",
+            explanation=IntegrityExplanation(IntegrityReason.DATABASE_MISSING, IntegrityCheckKind.SQLITE),
         )
-        return [first, *[_unavailable(name) for name in _DATABASE_CHECK_NAMES[1:]]]
+        return [first, *[_unavailable(name, kind=kind) for name, kind in
+                        zip(_DATABASE_CHECK_NAMES[1:], _DATABASE_CHECK_KINDS[1:], strict=True)]]
 
     @staticmethod
     def _database_failure_checks() -> list[CheckResult]:
         return [
-            _failed(name, "A verificação não pôde ser concluída com segurança.")
-            for name in _DATABASE_CHECK_NAMES
+            _failed(name, "A verificação não pôde ser concluída com segurança.",
+                    explanation=IntegrityExplanation(IntegrityReason.DATABASE_FAILED, kind))
+            for name, kind in zip(_DATABASE_CHECK_NAMES, _DATABASE_CHECK_KINDS, strict=True)
         ]
 
     @staticmethod
@@ -454,10 +481,12 @@ class IntegrityAuditor:
             1,
             0,
             message,
+            explanation=IntegrityExplanation(IntegrityReason.MIGRATION_PENDING, IntegrityCheckKind.SCHEMA),
         )
         pending = [
-            CheckResult(name, IntegrityStatus.ATTENTION, 0, 0, message)
-            for name in _DATABASE_CHECK_NAMES[2:]
+            CheckResult(name, IntegrityStatus.ATTENTION, 0, 0, message,
+                        explanation=IntegrityExplanation(IntegrityReason.MIGRATION_PENDING, kind))
+            for name, kind in zip(_DATABASE_CHECK_NAMES[2:], _DATABASE_CHECK_KINDS[2:], strict=True)
         ]
         return [schema, *pending]
 
@@ -471,6 +500,12 @@ _DATABASE_CHECK_NAMES = (
     "Referências entre tabelas",
     "Formato dos códigos",
     "Recomputação dos tokens",
+)
+
+_DATABASE_CHECK_KINDS = (
+    IntegrityCheckKind.SQLITE, IntegrityCheckKind.SCHEMA, IntegrityCheckKind.AES_AUTHENTICATION,
+    IntegrityCheckKind.VARIATION_COMPATIBILITY, IntegrityCheckKind.OCCURRENCE_COUNTERS,
+    IntegrityCheckKind.TABLE_REFERENCES, IntegrityCheckKind.CODE_FORMAT, IntegrityCheckKind.TOKEN_RECOMPUTATION,
 )
 
 
@@ -498,7 +533,7 @@ def _token_matches(
     return hmac.compare_digest(legacy.encode("utf-8"), code.encode("utf-8"))
 
 
-def _result(name: str, examined: int, failures: list[str]) -> CheckResult:
+def _result(name: str, examined: int, failures: list[str], *, kind: IntegrityCheckKind | None = None) -> CheckResult:
     unique = tuple(dict.fromkeys(failures))
     if unique:
         return CheckResult(
@@ -508,12 +543,14 @@ def _result(name: str, examined: int, failures: list[str]) -> CheckResult:
             len(unique),
             "Foram encontradas inconsistências.",
             unique[:10],
+            explanation=IntegrityExplanation(IntegrityReason.INCONSISTENCIES, kind),
         )
-    return _intact(name, examined, "Nenhuma inconsistência encontrada.")
+    return _intact(name, examined, "Nenhuma inconsistência encontrada.",
+                   explanation=IntegrityExplanation(IntegrityReason.NO_INCONSISTENCIES, kind))
 
 
-def _intact(name: str, examined: int, message: str) -> CheckResult:
-    return CheckResult(name, IntegrityStatus.INTACT, examined, 0, message)
+def _intact(name: str, examined: int, message: str, *, explanation: IntegrityExplanation | None = None) -> CheckResult:
+    return CheckResult(name, IntegrityStatus.INTACT, examined, 0, message, explanation=explanation)
 
 
 def _failed(
@@ -521,15 +558,17 @@ def _failed(
     message: str,
     *,
     failures: int = 1,
+    explanation: IntegrityExplanation | None = None,
 ) -> CheckResult:
-    return CheckResult(name, IntegrityStatus.FAILURE, 0, failures, message)
+    return CheckResult(name, IntegrityStatus.FAILURE, 0, failures, message, explanation=explanation)
 
 
-def _unavailable(name: str) -> CheckResult:
+def _unavailable(name: str, *, kind: IntegrityCheckKind | None = None) -> CheckResult:
     return CheckResult(
         name,
         IntegrityStatus.ATTENTION,
         0,
         0,
         "Verificação não aplicável sem um cofre local.",
+        explanation=IntegrityExplanation(IntegrityReason.DATABASE_UNAVAILABLE, kind),
     )

@@ -13,6 +13,7 @@ from data_mask_studio.maintenance.models import (
     DiagnosticResult,
     EnvironmentStatistics,
     MaintenanceStatus,
+    StatisticsReason,
 )
 from data_mask_studio.profiles import ProfileError, ProfileRepository
 from data_mask_studio.security import KeyProvider
@@ -90,6 +91,7 @@ class MaintenanceDiagnostics:
         _raise_if_cancelled(should_cancel)
         path = self._paths.vault_database_path
         errors = []
+        error_reasons = []
         schema = None
         mappings = variations = occurrences = prefixes = 0
         distribution: tuple[tuple[str, int], ...] = ()
@@ -124,6 +126,7 @@ class MaintenanceDiagnostics:
                 except (BackupError, sqlite3.Error, OSError, ValueError):
                     _raise_if_cancelled(should_cancel)
                     errors.append("Estatísticas do cofre indisponíveis; coleta incompleta.")
+                    error_reasons.append(StatisticsReason.VAULT_UNAVAILABLE)
         _raise_if_cancelled(should_cancel)
         progress_callback(1)
         _raise_if_cancelled(should_cancel)
@@ -132,6 +135,7 @@ class MaintenanceDiagnostics:
         except ProfileError:
             profiles = 0
             errors.append("Estatísticas de perfis indisponíveis; coleta incompleta.")
+            error_reasons.append(StatisticsReason.PROFILES_UNAVAILABLE)
         _raise_if_cancelled(should_cancel)
         progress_callback(2)
         _raise_if_cancelled(should_cancel)
@@ -142,6 +146,7 @@ class MaintenanceDiagnostics:
         except OSError:
             environment_size = vault_size = free_space = 0
             errors.append("Estatísticas de armazenamento indisponíveis; coleta incompleta.")
+            error_reasons.append(StatisticsReason.STORAGE_UNAVAILABLE)
         _raise_if_cancelled(should_cancel)
         progress_callback(3)
         _raise_if_cancelled(should_cancel)
@@ -162,6 +167,7 @@ class MaintenanceDiagnostics:
             environment_size=environment_size,
             free_space=free_space,
             errors=tuple(errors),
+            error_reasons=tuple(error_reasons),
         )
 
 

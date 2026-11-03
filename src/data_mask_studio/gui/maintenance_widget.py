@@ -30,6 +30,7 @@ from data_mask_studio.backup import (
 )
 from data_mask_studio.gui.backup_worker import BackupValidationWorker
 from data_mask_studio.gui.backup_error_presentation import backup_error_message_id
+from data_mask_studio.gui.integrity_presentation import integrity_check_presentation, statistics_error_messages
 from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.gui.maintenance_worker import (
     CompactionWorker,
@@ -1038,7 +1039,7 @@ def _render_diagnostic(result: DiagnosticResult, translator: Translator | None =
                  journal=text("backup.value.yes" if stats.journal_present else "backup.value.no")),
             text("maintenance.overview.environment_size", size=_format_bytes(stats.environment_size)),
             text("maintenance.overview.free_space", size=_format_bytes(stats.free_space)),
-            *stats.errors,
+            *statistics_error_messages(stats, translator),
             "",
             _render_integrity_details(result.audit, translator),
         )
@@ -1055,8 +1056,9 @@ def _render_integrity_details(report: AuditReport, translator: Translator) -> st
         text("maintenance.integrity.checks"),
     ]
     for check in report.checks:
+        name, message = integrity_check_presentation(check, translator)
         line = text("maintenance.integrity.check", status=text(f"maintenance.integrity.{check.status.value}"),
-                    check_type=check.check_type, examined=check.examined, failures=check.failures, message=check.message)
+                    check_type=name, examined=check.examined, failures=check.failures, message=message)
         if check.identifiers:
             line += text("maintenance.integrity.references", identifiers=", ".join(check.identifiers))
         lines.append(line)

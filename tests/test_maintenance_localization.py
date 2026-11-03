@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QLineEdit, QTextEdit
 from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.maintenance_widget import MaintenanceWidget, _render_diagnostic
+from data_mask_studio.gui.integrity_presentation import integrity_check_presentation, statistics_error_messages
 from data_mask_studio.gui.maintenance_worker import DiagnosticWorker
 from data_mask_studio.i18n import Translator
 from data_mask_studio.integrity import AuditReport, CheckResult, IntegrityStatus
@@ -50,9 +51,10 @@ def complete(app, widget):
 def assert_checks_visible(text, result, translator):
     previous = -1
     for check in result.audit.checks:
+        name, message = integrity_check_presentation(check, translator)
         line = translator.text("maintenance.integrity.check",
             status=translator.text(f"maintenance.integrity.{check.status.value}"),
-            check_type=check.check_type, examined=check.examined, failures=check.failures, message=check.message)
+            check_type=name, examined=check.examined, failures=check.failures, message=message)
         if check.identifiers:
             line += translator.text("maintenance.integrity.references", identifiers=", ".join(check.identifiers))
         position = text.index(line, previous + 1)
@@ -316,7 +318,7 @@ def test_real_statistics_cancellation_and_failure_remain_fail_closed(overview, m
     assert widget.status_label.property("feedbackState") == "error" and widget.progress.value() == 0
     for language in ("en", "pt-BR"):
         widget.retranslate(Translator(language))
-        for message in result.statistics.errors:
+        for message in statistics_error_messages(result.statistics, Translator(language)):
             assert message in widget.overview_output.toPlainText()
         assert "PRIVATE_SENTINEL" not in widget.overview_output.toPlainText()
 

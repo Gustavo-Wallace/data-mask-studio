@@ -8,7 +8,9 @@ import sqlite3
 
 from data_mask_studio.anonymization.prefix_rules import validate_prefix
 from data_mask_studio.integrity.exceptions import IntegrityCancelled
-from data_mask_studio.integrity.models import CheckResult, IntegrityStatus
+from data_mask_studio.integrity.models import (
+    CheckResult, IntegrityCheckKind, IntegrityExplanation, IntegrityReason, IntegrityStatus,
+)
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.processing.composite_identity import generate_composite_token
 from data_mask_studio.vault import VaultCipher
@@ -17,8 +19,9 @@ from data_mask_studio.vault.exceptions import VaultError
 
 
 class _Check:
-    def __init__(self, name: str):
+    def __init__(self, name: str, *, kind: IntegrityCheckKind | None = None):
         self.name = name
+        self.kind = kind
         self.examined = self.failures = 0
         self.references: list[str] = []
 
@@ -33,17 +36,20 @@ class _Check:
         return CheckResult(self.name, IntegrityStatus.FAILURE if self.failures else IntegrityStatus.INTACT,
                            self.examined, self.failures,
                            "Foram encontradas inconsistências ou registros não verificáveis." if self.failures
-                           else "Nenhuma inconsistência encontrada.", tuple(self.references))
+                           else "Nenhuma inconsistência encontrada.", tuple(self.references),
+                           explanation=IntegrityExplanation(
+                               IntegrityReason.COMPOSITE_INCONSISTENCIES if self.failures
+                               else IntegrityReason.NO_INCONSISTENCIES, self.kind))
 
 
 def audit_composites(connection: sqlite3.Connection, hmac_key: bytes | None,
                      vault_key: bytes | None, cancelled: Callable[[], bool]) -> list[CheckResult]:
-    mappings = _Check("Mappings compostos: autenticação, metadata e payload")
-    variations = _Check("Variações compostas: autenticação e payload")
-    tokens = _Check("Recomputação dos tokens compostos")
-    counters = _Check("Contadores compostos")
-    parents = _Check("Referências compostas")
-    uniqueness = _Check("Unicidade de códigos e variações compostas")
+    mappings = _Check("Mappings compostos: autenticação, metadata e payload", kind=IntegrityCheckKind.COMPOSITE_MAPPINGS)
+    variations = _Check("Variações compostas: autenticação e payload", kind=IntegrityCheckKind.COMPOSITE_VARIATIONS)
+    tokens = _Check("Recomputação dos tokens compostos", kind=IntegrityCheckKind.COMPOSITE_TOKENS)
+    counters = _Check("Contadores compostos", kind=IntegrityCheckKind.COMPOSITE_COUNTERS)
+    parents = _Check("Referências compostas", kind=IntegrityCheckKind.COMPOSITE_REFERENCES)
+    uniqueness = _Check("Unicidade de códigos e variações compostas", kind=IntegrityCheckKind.COMPOSITE_UNIQUENESS)
     cipher = VaultCipher(vault_key) if vault_key is not None else None
 
     def check_cancel():

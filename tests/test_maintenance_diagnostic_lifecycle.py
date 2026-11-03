@@ -12,6 +12,8 @@ import pytest
 from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio.app import create_application
 from data_mask_studio.gui.maintenance_worker import DiagnosticWorker
+from data_mask_studio.gui.integrity_presentation import integrity_check_presentation
+from data_mask_studio.i18n import Translator
 from data_mask_studio.integrity import IntegrityStatus
 from data_mask_studio.maintenance import (
     MaintenanceCancelled, MaintenanceStatus, safe_diagnostic_report,
@@ -209,10 +211,12 @@ def test_all_scalar_and_composite_checks_are_visible_without_values(diagnostic_g
     result = widget._last_diagnostic
     assert result.status is (MaintenanceStatus.FAILURE if corrupt else MaintenanceStatus.HEALTHY)
     widget.copy_report()
-    for text in (widget.overview_output.toPlainText(), app.clipboard().text()):
+    for canonical, text in ((False, widget.overview_output.toPlainText()), (True, app.clipboard().text())):
         for check in result.audit.checks:
-            assert check.check_type in text
-            assert f"examinados={check.examined}; falhas={check.failures}; {check.message}" in text
+            name, message = ((check.check_type, check.message) if canonical else
+                             integrity_check_presentation(check, Translator("pt-BR")))
+            assert name in text
+            assert f"examinados={check.examined}; falhas={check.failures}; {message}" in text
             for identifier in check.identifiers:
                 assert identifier in text
         assert "Mappings compostos" in text and "Autenticação AES-GCM" in text

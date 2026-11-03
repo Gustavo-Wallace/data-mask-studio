@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -19,6 +19,12 @@ STATUS_LABELS = {
 }
 
 
+class StatisticsReason(StrEnum):
+    VAULT_UNAVAILABLE = "vault_unavailable"
+    PROFILES_UNAVAILABLE = "profiles_unavailable"
+    STORAGE_UNAVAILABLE = "storage_unavailable"
+
+
 @dataclass(frozen=True, slots=True)
 class EnvironmentStatistics:
     schema_version: int | None
@@ -37,6 +43,7 @@ class EnvironmentStatistics:
     environment_size: int
     free_space: int
     errors: tuple[str, ...] = ()
+    error_reasons: tuple[StatisticsReason | None, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True, slots=True)
