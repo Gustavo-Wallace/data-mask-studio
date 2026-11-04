@@ -101,6 +101,7 @@ class MaintenanceWidget(QWidget):
         self._compaction_error: tuple[str, CompactionExplanation | None] | None = None
         self._last_compaction: CompactionResult | None = None
         self._compaction_accept_result = False
+        self._compaction_confirmation: tuple[QMessageBox, int] | None = None
         self._paths = paths
         self._diagnostics = MaintenanceDiagnostics(
             paths, hmac_key_provider, vault_key_provider
@@ -284,6 +285,19 @@ class MaintenanceWidget(QWidget):
                 output.setTextCursor(cursor)
                 output.verticalScrollBar().setValue(vertical)
                 output.horizontalScrollBar().setValue(horizontal)
+        self._render_compaction_confirmation()
+
+    def _render_compaction_confirmation(self) -> None:
+        if self._compaction_confirmation is None:
+            return
+        message, size = self._compaction_confirmation
+        title = self._translator.text("maintenance.compaction.confirm.title")
+        text = self._translator.text("maintenance.compaction.confirm.text", size=_format_bytes(size))
+        message.setWindowTitle(title)
+        message.setText(text)
+        message.setAccessibleName(title)
+        message.setAccessibleDescription(text)
+        localize_standard_buttons(message, self._translator)
 
     def _render_last_audit(self) -> None:
         if self._last_audit is None:
@@ -700,19 +714,19 @@ class MaintenanceWidget(QWidget):
             return
         size = self._paths.vault_database_path.stat().st_size
         message = QMessageBox(
-            QMessageBox.Icon.Warning,
-            self._translator.text("maintenance.compaction.confirm.title"), "",
+            QMessageBox.Icon.Warning, "", "",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             self,
         )
         message.setTextFormat(Qt.TextFormat.PlainText)
-        message.setText(self._translator.text("maintenance.compaction.confirm.text", size=_format_bytes(size)))
-        localize_standard_buttons(message, self._translator)
-        message.setDefaultButton(QMessageBox.StandardButton.No)
-        message.setEscapeButton(QMessageBox.StandardButton.No)
+        self._compaction_confirmation = (message, size)
         try:
+            self._render_compaction_confirmation()
+            message.setDefaultButton(QMessageBox.StandardButton.No)
+            message.setEscapeButton(QMessageBox.StandardButton.No)
             answer = message.exec()
         finally:
+            self._compaction_confirmation = None
             message.deleteLater()
         if answer != QMessageBox.StandardButton.Yes:
             return
