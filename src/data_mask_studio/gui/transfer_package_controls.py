@@ -9,6 +9,7 @@ from data_mask_studio.transfer_package.service import validate_password
 from data_mask_studio.transfer_package.models import PackageError
 from data_mask_studio.transfer_package.staging import PackageStagingRequest
 from data_mask_studio.i18n import Translator
+from data_mask_studio.gui.masking_validation_feedback import MaskingValidationFeedback, gui_validation_error
 
 
 class TransferPackageControls(QWidget):
@@ -127,11 +128,13 @@ class TransferPackageControls(QWidget):
         if not self.checkbox.isChecked():
             return {}
         if not requires_masking:
-            raise CSVAnonymizationError(self._translator.text("masking.package.error.requires_masking"))
+            raise gui_validation_error(CSVAnonymizationError,
+                MaskingValidationFeedback("masking.package.error.requires_masking"), self._translator)
         self.set_output_path(output)
         destination = validate_transfer_package_destination(source, output, self.destination.text())
         validate_password(self.password.text())
         if self.password.text() != self.confirmation.text():
-            raise PackageError(self._translator.text("masking.package.error.confirmation"))
+            raise gui_validation_error(PackageError,
+                MaskingValidationFeedback("masking.package.error.confirmation"), self._translator)
         return dict(transfer_package_request=PackageStagingRequest(self.password.text()),
                     transfer_package_destination=destination)

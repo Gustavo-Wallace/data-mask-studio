@@ -53,6 +53,9 @@ from data_mask_studio.detection import (
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
 from data_mask_studio.gui.composite_section import CompositeSection
 from data_mask_studio.gui.transfer_package_controls import TransferPackageControls
+from data_mask_studio.gui.masking_validation_feedback import (
+    MaskingValidationFeedback, gui_validation_error, validation_feedback,
+)
 from data_mask_studio.transfer_package.models import PackageError
 from data_mask_studio.processing.planner import PlanningError
 from data_mask_studio.gui.column_configuration_table import (
@@ -137,6 +140,7 @@ class AnonymizationWidget(QWidget):
         super().__init__(parent)
         self._translator = translator or Translator("pt-BR")
         self._status_message = None
+        self._validation_feedback: MaskingValidationFeedback | None = None
         self._processed_message = None
         self._completed_result = None
         self._status_result = None
@@ -407,6 +411,8 @@ class AnonymizationWidget(QWidget):
         if self._status_message is not None:
             message_id, parameters = self._status_message
             self.status_label.setText(translator.text(message_id, **parameters))
+        if self._validation_feedback is not None:
+            self.status_label.setText(self._validation_feedback.render(translator))
         if self._processed_message is not None:
             message_id, parameters = self._processed_message
             self.processed_count_label.setText(translator.text(message_id, **parameters))
@@ -451,6 +457,17 @@ class AnonymizationWidget(QWidget):
     def _set_processed_id(self, message_id: str, **parameters: str | int | float) -> None:
         self._processed_message = (message_id, parameters)
         self.processed_count_label.setText(self._translator.text(message_id, **parameters))
+
+    def _set_validation_feedback(self, feedback: MaskingValidationFeedback) -> None:
+        self._set_status(feedback.render(self._translator), is_error=True)
+        self._validation_feedback = feedback
+
+    def _show_validation_error(self, error: Exception) -> None:
+        feedback = validation_feedback(error)
+        if feedback is None:
+            self._set_status(str(error), is_error=True)
+        else:
+            self._set_validation_feedback(feedback)
 
     def _ask_profile_name(self, *, rename: bool = False, text: str = "") -> tuple[str, bool]:
         dialog = ProfileNameDialog(self, rename=rename, text=text, translator=self._translator)
@@ -838,7 +855,7 @@ class AnonymizationWidget(QWidget):
         except PlanningError as error:
             self._configuration_validated = False
             self.generate_button.setEnabled(False)
-            self._set_status(str(error), is_error=True)
+            self._show_validation_error(error)
         else:
             self._configuration_validated = True
             self.generate_button.setEnabled(True)
@@ -853,13 +870,14 @@ class AnonymizationWidget(QWidget):
 
     def _build_current_plan(self, composites=None):
         if self._inspection_result is None:
-            raise PlanningError(self._translator.text("masking.error.no_csv"))
+            raise gui_validation_error(PlanningError, MaskingValidationFeedback("masking.error.no_csv"), self._translator)
         if self._profile_missing_headers:
-            raise PlanningError(self._translator.text("masking.error.missing_headers", headers=", ".join(self._profile_missing_headers)))
+            raise gui_validation_error(PlanningError, MaskingValidationFeedback("masking.error.missing_headers",
+                parameters=(("headers", ", ".join(self._profile_missing_headers)),)), self._translator)
         if self._unreviewed_sources:
-            raise PlanningError(self._translator.text("masking.error.unknown_columns", columns=
-                ", ".join(self._translator.text("masking.column.reference", header=self._inspection_result.headers[index], number=index + 1)
-                          for index in sorted(self._unreviewed_sources))))
+            raise gui_validation_error(PlanningError, MaskingValidationFeedback("masking.error.unknown_columns",
+                column_references=tuple((self._inspection_result.headers[index], index + 1)
+                                        for index in sorted(self._unreviewed_sources))), self._translator)
         return ProfileService.build_configuration_plan(
             self._inspection_result, self._column_configs,
             self.composite_section.configurations if composites is None else composites,
@@ -1201,10 +1219,17 @@ class AnonymizationWidget(QWidget):
             self._set_status_id("profile.applied", name=profile.name, state="success")
         else:
             details = self.status_label.text()
+            feedback = self._validation_feedback
+            suffix = ""
             scalar_validation = validate_configuration(self._column_configs)
             if scalar_validation.error_message and scalar_validation.error_message not in details:
-                details += " " + scalar_validation.error_message
-            self._set_status_id("profile.partial", details=details, is_error=True)
+                suffix = " " + scalar_validation.error_message
+                details += suffix
+            if feedback is None:
+                self._set_status_id("profile.partial", details=details, is_error=True)
+            else:
+                self._set_validation_feedback(MaskingValidationFeedback("profile.partial", details=feedback,
+                                                                       literal_suffix=suffix))
 
     def _apply_profile_configurations(
         self, configurations: tuple[ProfileColumn, ...]
@@ -1329,12 +1354,12 @@ class AnonymizationWidget(QWidget):
         except PlanningError as error:
             self._configuration_validated = False
             self.generate_button.setEnabled(False)
-            self._set_status(str(error), is_error=True)
+            self._show_validation_error(error)
             return
         try:
             package_options = self.transfer_controls.request(self._inspection_result.path, destination, plan.requires_masking)
         except (CSVAnonymizationError, PackageError) as error:
-            self._set_status(str(error), is_error=True)
+            self._show_validation_error(error)
             return
         self._clear_output_result()
         self._set_processing_state(True)
@@ -1514,6 +1539,7 @@ class AnonymizationWidget(QWidget):
         self, message: str, *, is_error: bool, state: FeedbackState = "neutral"
     ) -> None:
         self._status_message = None
+        self._validation_feedback = None
         self._status_result = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if is_error else state)
