@@ -340,7 +340,7 @@ def test_active_real_worker_raw_phase_cancel_policy_and_retranslation_are_unchan
     result = result_for(paths)
     raw_phase = "Etapa livre do serviço & <literal> {count}"
 
-    def paused(*, should_cancel, progress_callback):
+    def paused(*, should_cancel, progress_callback, phase_callback=None):
         calls.append(True)
         progress_callback(raw_phase, allowed)
         entered.set()
@@ -492,6 +492,12 @@ def test_real_post_replacement_failure_keeps_rollback_and_recovery_evidence_cont
         assert "snapshot: vault-snapshot.db" in message
     else:
         assert evidence == [] and repository.get_decrypted_mapping(code) == expected
-    widget.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
-    assert widget.status_label.text() == message
+    other = Translator("en" if locale == "pt-BR" else "pt-BR")
+    widget.retranslate(other)
+    if rollback_fails:
+        assert widget.status_label.text() == other.text("maintenance.compaction.error.rollback_failed",
+                                                       directory=evidence[0].name)
+    else:
+        assert widget.status_label.text() == (other.text("maintenance.compaction.error.compaction_failed")
+            + "\n" + other.text("maintenance.compaction.recovery.rolled_back"))
     assert sentinel.read_bytes() == b"unrelated synthetic sentinel" and paths.profiles_path.read_bytes() == profiles

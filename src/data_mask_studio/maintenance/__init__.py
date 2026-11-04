@@ -1,3 +1,6 @@
+from data_mask_studio.maintenance.compaction_messages import (
+    CompactionExplanation, CompactionPhase, CompactionReason,
+)
 from data_mask_studio.maintenance.diagnostics import MaintenanceDiagnostics
 from data_mask_studio.maintenance.exceptions import (
     MaintenanceCancelled,
@@ -27,6 +30,9 @@ __all__ = [
     "STATUS_LABELS",
     "CleanupResult",
     "CompactionResult",
+    "CompactionExplanation",
+    "CompactionPhase",
+    "CompactionReason",
     "DiagnosticResult",
     "EnvironmentStatistics",
     "MaintenanceCancelled",

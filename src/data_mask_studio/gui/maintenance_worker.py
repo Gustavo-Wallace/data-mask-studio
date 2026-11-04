@@ -101,6 +101,7 @@ class TemporaryCleanupWorker(_MaintenanceWorker):
 
 class CompactionWorker(_MaintenanceWorker):
     phase_changed = Signal(str, bool)
+    phase_explained = Signal(object, bool)
     completed = Signal(object)
 
     def __init__(self, compactor: VaultCompactor) -> None:
@@ -112,6 +113,7 @@ class CompactionWorker(_MaintenanceWorker):
             result = self._compactor.compact(
                 should_cancel=self._cancellation.is_set,
                 progress_callback=self.phase_changed.emit,
+                phase_callback=self.phase_explained.emit,
             )
         except MaintenanceCancelled:
             self.cancelled.emit()

@@ -31,6 +31,7 @@ from data_mask_studio.backup import (
 from data_mask_studio.gui.backup_worker import BackupValidationWorker
 from data_mask_studio.gui.backup_error_presentation import backup_error_message_id
 from data_mask_studio.gui.integrity_presentation import integrity_check_presentation, statistics_error_messages
+from data_mask_studio.gui.compaction_presentation import compaction_error_text, compaction_message_text
 from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.gui.maintenance_worker import (
     CompactionWorker,
@@ -48,6 +49,8 @@ from data_mask_studio.integrity import AuditReport
 from data_mask_studio.maintenance import (
     CleanupResult,
     CompactionResult,
+    CompactionPhase,
+    CompactionExplanation,
     DiagnosticResult,
     MaintenanceDiagnostics,
     MaintenanceError,
@@ -95,6 +98,7 @@ class MaintenanceWidget(QWidget):
         self._temporary_accept_result = False
         self._temporary_succeeded = False
         self._compaction_message_id: str | None = None
+        self._compaction_error: tuple[str, CompactionExplanation | None] | None = None
         self._last_compaction: CompactionResult | None = None
         self._compaction_accept_result = False
         self._paths = paths
@@ -245,8 +249,9 @@ class MaintenanceWidget(QWidget):
                 self._section_feedback[2] = replace(saved, message=message)
             if self._feedback_section == 2:
                 self.status_label.setText(message)
-        if self._compaction_message_id is not None:
-            message = translator.text(self._compaction_message_id)
+        if self._compaction_message_id is not None or self._compaction_error is not None:
+            message = (translator.text(self._compaction_message_id) if self._compaction_message_id is not None
+                       else compaction_message_text(*self._compaction_error, translator))
             saved = self._section_feedback.get(3)
             if saved is not None:
                 self._section_feedback[3] = replace(saved, message=message)
@@ -716,6 +721,7 @@ class MaintenanceWidget(QWidget):
         self._compaction_accept_result = True
         worker = CompactionWorker(self._compactor)
         worker.phase_changed.connect(self._compaction_phase)
+        worker.phase_explained.connect(self._compaction_phase_explained)
         worker.completed.connect(self._compaction_completed)
         self._start_worker(worker, "", message_id="maintenance.compaction.status.preparing")
 
@@ -726,6 +732,16 @@ class MaintenanceWidget(QWidget):
         self.progress.setRange(0, 0)
         self.cancel_button.setEnabled(cancellation_allowed)
         self._set_status(stage, False)
+
+    def _compaction_phase_explained(self, phase: CompactionPhase, cancellation_allowed: bool) -> None:
+        if not self._accept_compaction_signal() or not isinstance(phase, CompactionPhase):
+            return
+        # The legacy signal owns progress/cancellation controls. Metadata only
+        # relabels it, and must not overwrite a newer cancellation request.
+        if self._compaction_message_id == "masking.status.cancelling":
+            return
+        identifier = "maintenance.compaction.phase." + phase.value
+        self._set_compaction_status_id(identifier)
 
     def _compaction_completed(self, result: CompactionResult) -> None:
         if not self._accept_compaction_signal():
@@ -853,7 +869,13 @@ class MaintenanceWidget(QWidget):
             self.progress.setRange(0, 1)
             self.progress.setValue(0)
             if isinstance(error, (MaintenanceError, BackupError)):
-                self._set_status(str(error), True)
+                if isinstance(error, MaintenanceError):
+                    self._set_status(compaction_error_text(error, self._translator), True)
+                    # Keep safe immutable presentation data, not exception tracebacks/workers.
+                    explanation = getattr(error, "explanation", None)
+                    self._compaction_error = (str(error), explanation if isinstance(explanation, CompactionExplanation) else None)
+                else:
+                    self._set_status(str(error), True)
             else:
                 self._set_compaction_status_id("maintenance.overview.error.unexpected", True)
             return
@@ -1008,6 +1030,7 @@ class MaintenanceWidget(QWidget):
             self._temporary_message = None
         elif self._feedback_section == 3:
             self._compaction_message_id = None
+            self._compaction_error = None
         self.status_label.setText(message)
         set_feedback_state(self.status_label, "error" if error else state)
         self._remember_feedback()
