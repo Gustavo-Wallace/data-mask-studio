@@ -53,6 +53,7 @@ from data_mask_studio.maintenance import (
     MaintenanceError,
     MaintenanceStatus,
     TemporaryItem,
+    TemporaryResultReason,
     VaultCompactor,
     safe_diagnostic_report,
 )
@@ -986,8 +987,10 @@ class MaintenanceWidget(QWidget):
         )
 
     def _temporary_status(self, item: TemporaryItem) -> str:
-        # Service outcomes are free-form, not a typed translation contract.
         if item.result:
+            # Unknown outcomes remain literal, even when their text looks familiar.
+            if isinstance(item.result_reason, TemporaryResultReason):
+                return self._translator.text(f"maintenance.temporary.result.{item.result_reason.value}")
             return item.result
         identifier = ("maintenance.temporary.recent" if item.recent
                       else "maintenance.temporary.in_use" if item.in_use

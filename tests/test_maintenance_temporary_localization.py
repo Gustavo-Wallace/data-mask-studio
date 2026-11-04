@@ -258,7 +258,8 @@ def test_real_confirmation_preserves_semantic_buttons_and_cleanup_authority(page
         assert widget.status_label.text() == Translator(locale).text("maintenance.temporary.status.cleaned",
             removed=1, preserved=0, failed=0)
         assert widget.status_label.property("feedbackState") == "success" and widget.progress.value() == 1
-        assert widget.temporary_items[0].result == widget.temporary_table.item(0, 4).text() == "Removido"
+        assert widget.temporary_items[0].result == "Removido"
+        assert widget.temporary_table.item(0, 4).text() == ("Removed" if locale == "en" else "Removido")
         assert not widget.temporary_table.cellWidget(0, 0).isEnabled()
     else:
         assert widget._worker is None and owned.exists()
@@ -289,7 +290,7 @@ def test_cleanup_does_nothing_without_eligible_selection_or_while_busy(page, loc
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
 @pytest.mark.parametrize("fault", ["unsafe", "recent", "locked", "permission", "missing"])
-def test_real_cleanup_revalidates_targets_and_retains_freeform_outcomes(page, monkeypatch, locale, fault, tmp_path):
+def test_real_cleanup_revalidates_targets_and_presents_typed_outcomes(page, monkeypatch, locale, fault, tmp_path):
     app, widget, paths = page
     widget.retranslate(Translator(locale))
     good = old_file(paths.directory / ".dms-write-abcdefgh")
@@ -321,9 +322,13 @@ def test_real_cleanup_revalidates_targets_and_retains_freeform_outcomes(page, mo
     assert widget.status_label.property("feedbackState") == ("error" if failed else "warning")
     assert widget.progress.value() == (0 if failed else 1)
     raw = widget.temporary_items[1].result
-    assert raw and widget.temporary_table.item(1, 4).text() == raw
-    widget.retranslate(Translator("pt-BR" if locale == "en" else "en"))
-    assert widget.temporary_table.item(1, 4).text() == raw
+    english = {"unsafe": "Preserved for safety", "recent": "Preserved because it is recent",
+               "locked": "Possibly in use", "permission": "Failed to remove", "missing": "Preserved for safety"}[fault]
+    assert raw and widget.temporary_table.item(1, 4).text() == (english if locale == "en" else raw)
+    other = "pt-BR" if locale == "en" else "en"
+    widget.retranslate(Translator(other))
+    assert widget.temporary_table.item(1, 4).text() == (english if other == "en" else raw)
+    assert widget.temporary_items[1].result == raw
 
 
 @pytest.mark.parametrize("worker_type", [TemporaryScanWorker, TemporaryCleanupWorker])

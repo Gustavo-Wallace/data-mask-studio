@@ -54,6 +54,18 @@ class DiagnosticResult:
     audit: AuditReport
 
 
+class TemporaryResultReason(StrEnum):
+    """Presentation-only identifiers; never deletion eligibility or authority."""
+
+    PRESERVED = "preserved"
+    PRESERVED_FOR_SAFETY = "preserved_for_safety"
+    ALREADY_MISSING = "already_missing"
+    RECENT = "recent"
+    IN_USE = "in_use"
+    REMOVED = "removed"
+    REMOVAL_FAILED = "removal_failed"
+
+
 @dataclass(slots=True)
 class TemporaryItem:
     path: Path
@@ -63,6 +75,8 @@ class TemporaryItem:
     in_use: bool
     selected: bool = False
     result: str = ""
+    # Optional metadata leaves the legacy result and equality contract intact.
+    result_reason: TemporaryResultReason | None = field(default=None, compare=False)
 
     @property
     def removable(self) -> bool:

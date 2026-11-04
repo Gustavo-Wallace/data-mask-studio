@@ -12,6 +12,7 @@ from data_mask_studio.maintenance.models import (
     MaintenanceStatus,
     StatisticsReason,
     TemporaryItem,
+    TemporaryResultReason,
 )
 from data_mask_studio.maintenance.report import safe_diagnostic_report
 from data_mask_studio.maintenance.temporary_cleanup import (
@@ -34,6 +35,7 @@ __all__ = [
     "MaintenanceStatus",
     "StatisticsReason",
     "TemporaryItem",
+    "TemporaryResultReason",
     "VaultCompactor",
     "cleanup_temporaries",
     "locate_temporaries",

@@ -4,7 +4,7 @@ import time
 from collections.abc import Iterable
 from pathlib import Path
 
-from data_mask_studio.maintenance.models import CleanupResult, TemporaryItem
+from data_mask_studio.maintenance.models import CleanupResult, TemporaryItem, TemporaryResultReason
 from data_mask_studio.temporary_artifacts import is_owned_temporary as _recognized
 
 MINIMUM_AGE_SECONDS = 60 * 60
@@ -63,37 +63,45 @@ def cleanup_temporaries(
     for item in items:
         if not item.selected or not item.removable:
             item.result = "Preservado"
+            item.result_reason = TemporaryResultReason.PRESERVED
             preserved += 1
             continue
         path = item.path.absolute()
         if not _inside_roots(path, roots) or not _recognized(path, roots[0]):
             item.result = "Preservado por segurança"
+            item.result_reason = TemporaryResultReason.PRESERVED_FOR_SAFETY
             preserved += 1
             continue
         try:
             if not path.exists():
                 item.result = "Já não existe"
+                item.result_reason = TemporaryResultReason.ALREADY_MISSING
                 preserved += 1
             elif time.time() - path.stat().st_mtime < MINIMUM_AGE_SECONDS:
                 item.recent = True
                 item.result = "Preservado por ser recente"
+                item.result_reason = TemporaryResultReason.RECENT
                 preserved += 1
             elif _probably_in_use(path):
                 item.in_use = True
                 item.result = "Possivelmente em uso"
+                item.result_reason = TemporaryResultReason.IN_USE
                 preserved += 1
             elif path.is_dir():
                 shutil.rmtree(path)
                 item.result = "Removido"
+                item.result_reason = TemporaryResultReason.REMOVED
                 removed += 1
                 recovered += item.size
             else:
                 path.unlink()
                 item.result = "Removido"
+                item.result_reason = TemporaryResultReason.REMOVED
                 removed += 1
                 recovered += item.size
         except OSError:
             item.result = "Falha ao remover"
+            item.result_reason = TemporaryResultReason.REMOVAL_FAILED
             failed += 1
     return CleanupResult(removed, preserved, failed, recovered)
 
