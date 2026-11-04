@@ -62,7 +62,10 @@ class AboutDialog(QDialog):
         layout.addWidget(copyright_label)
         layout.addWidget(warning)
         layout.addWidget(buttons)
-        self.retranslate(translator if translator is not None else Translator("pt-BR"))
+        translator = translator if translator is not None else Translator("pt-BR")
+        # MainWindow creates this dialog lazily; acquire public metadata once.
+        self._application_version = application_version()
+        self.retranslate(translator)
 
     def retranslate(self, translator: Translator) -> None:
         """Update presentation only, preserving widgets and standard button roles."""
@@ -71,7 +74,7 @@ class AboutDialog(QDialog):
         self.setWindowTitle(title)
         self.setAccessibleName(title)
         self.details_label.setText("<br>".join((
-            translator.html("about.version", version=application_version()),
+            translator.html("about.version", version=self._application_version),
             translator.html("about.schema", schema=SCHEMA_VERSION),
             translator.html("about.local_processing"),
             translator.html("about.no_telemetry"),
