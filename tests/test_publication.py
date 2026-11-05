@@ -313,7 +313,7 @@ def test_overwrite_pending_with_existing_destination_is_not_destructive(tmp_path
 def test_startup_reports_pending_without_traceback(monkeypatch):
     import data_mask_studio.app as app
     messages = []
-    monkeypatch.setattr(app, "MainWindow", lambda: (_ for _ in ()).throw(PublicationError("Operação pendente.")))
-    monkeypatch.setattr(app.QMessageBox, "warning", lambda parent, title, text: messages.append(text))
+    monkeypatch.setattr(app, "MainWindow", lambda **kwargs: (_ for _ in ()).throw(PublicationError("Operação pendente.")))
+    monkeypatch.setattr(app.QMessageBox, "exec", lambda message: messages.append(message.text()) or app.QMessageBox.StandardButton.Ok)
     assert app.run() == 1
     assert messages == ["Operação pendente."]

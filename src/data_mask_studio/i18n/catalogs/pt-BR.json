@@ -9,6 +9,8 @@
     "files.selected.one": "{count} arquivo selecionado.",
     "files.selected.other": "{count} arquivos selecionados.",
     "common.about": "Sobre",
+    "startup.error.environment_title": "Ambiente indisponível",
+    "startup.error.publication_title": "Publicação pendente",
     "navigation.main": "Navegação principal",
     "navigation.category_accessible": "Categoria {category}",
     "navigation.page_title_accessible": "Título da página: {title}",

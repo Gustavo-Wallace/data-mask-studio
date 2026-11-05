@@ -4,14 +4,16 @@ from pathlib import Path
 from collections.abc import Sequence
 from typing import cast
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from data_mask_studio.gui.main_window import MainWindow
-from data_mask_studio.gui.dialog_localization import install_dialog_button_translations
+from data_mask_studio.gui.dialog_localization import install_dialog_button_translations, localize_standard_buttons
 from data_mask_studio.gui.styles import apply_application_theme
 from data_mask_studio.publication import PublicationError
 from data_mask_studio.environment import EnvironmentError
+from data_mask_studio.i18n import Translator
 
 APP_USER_MODEL_ID = "com.gustavowallace.datamaskstudio"
 
@@ -62,14 +64,28 @@ def _application_icon_path() -> Path | None:
     return next((path for path in candidates if path.is_file()), None)
 
 
-def run() -> int:
-    """Inicia a aplicação e executa o loop de eventos."""
+def run(*, translator: Translator | None = None) -> int:
+    """Inicia com idioma explícito; preferências salvas ainda não são ativadas."""
     application = create_application()
+    effective_translator = translator if translator is not None else Translator("pt-BR")
     try:
-        window = MainWindow()
+        window = MainWindow(translator=effective_translator)
     except (PublicationError, EnvironmentError) as error:
-        title = "Ambiente indisponível" if isinstance(error, EnvironmentError) else "Publicação pendente"
-        QMessageBox.warning(None, title, str(error))
+        title_id = "startup.error.environment_title" if isinstance(error, EnvironmentError) else "startup.error.publication_title"
+        title = effective_translator.text(title_id)
+        # Service-owned safe details remain literal; never expose the exception cause.
+        text = str(error)
+        message = QMessageBox(QMessageBox.Icon.Warning, title, text, QMessageBox.StandardButton.Ok)
+        message.setTextFormat(Qt.TextFormat.PlainText)
+        message.setAccessibleName(title)
+        message.setAccessibleDescription(text)
+        localize_standard_buttons(message, effective_translator)
+        message.setDefaultButton(QMessageBox.StandardButton.Ok)
+        message.setEscapeButton(QMessageBox.StandardButton.Ok)
+        try:
+            message.exec()
+        finally:
+            message.deleteLater()
         return 1
     window.show()
     return application.exec()
