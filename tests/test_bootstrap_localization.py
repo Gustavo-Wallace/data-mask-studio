@@ -1,5 +1,6 @@
 """Explicit bootstrap presentation, without preference activation or recovery retries."""
 
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -305,7 +306,8 @@ def test_safe_service_body_remains_literal_and_presentation_does_no_filesystem_w
     assert calls == [True] and sentinel.read_bytes() == b"Synthetic evidence must not be changed"
 
 
-def test_bootstrap_button_uses_explicit_catalog_even_if_qt_platform_translation_conflicts(app, monkeypatch):
+@contextmanager
+def _foreign_button_translation(app):
     class ForeignButtons(QTranslator):
         def isEmpty(self):
             return False
@@ -313,9 +315,26 @@ def test_bootstrap_button_uses_explicit_catalog_even_if_qt_platform_translation_
         def translate(self, context, sourceText, disambiguation=None, n=-1):
             return "PLATFORM_OK" if context == "QPlatformTheme" and sourceText == "OK" else None
 
+    existing = app.findChildren(QTranslator)
+    original_ok = QCoreApplication.translate("QPlatformTheme", "OK")
     foreign = ForeignButtons(app)
-    app.installTranslator(foreign)
     try:
+        assert app.installTranslator(foreign)
+        yield foreign
+    finally:
+        app.removeTranslator(foreign)
+        # Uninstalling does not release QObject parent ownership. Destroy only
+        # this test's translator, even while its Python wrapper is still held.
+        foreign.deleteLater()
+        QCoreApplication.sendPostedEvents(foreign, QEvent.Type.DeferredDelete)
+        assert not isValid(foreign)
+        assert app.findChildren(QTranslator) == existing
+        assert all(isValid(translator) for translator in existing)
+        assert QCoreApplication.translate("QPlatformTheme", "OK") == original_ok
+
+
+def test_bootstrap_button_uses_explicit_catalog_even_if_qt_platform_translation_conflicts(app, monkeypatch):
+    with _foreign_button_translation(app):
         assert QCoreApplication.translate("QPlatformTheme", "OK") == "PLATFORM_OK"
         monkeypatch.setattr(app_module, "create_application", lambda: app)
 
@@ -329,8 +348,23 @@ def test_bootstrap_button_uses_explicit_catalog_even_if_qt_platform_translation_
             box.button(QMessageBox.StandardButton.Ok).click()
 
         assert dialog_result(app, lambda: app_module.run(translator=Translator("en")), respond) == 1
-    finally:
-        app.removeTranslator(foreign)
+
+
+def test_foreign_translation_restores_qapplication_children_and_labels_after_exception(app):
+    existing = app.findChildren(QTranslator)
+    original_ok = QCoreApplication.translate("QPlatformTheme", "OK")
+    failure = RuntimeError("Synthetic failure while a test translator is installed")
+    with pytest.raises(RuntimeError) as caught:
+        with _foreign_button_translation(app) as foreign:
+            assert foreign.parent() is app
+            assert app.findChildren(QTranslator) == existing + [foreign]
+            assert QCoreApplication.translate("QPlatformTheme", "OK") == "PLATFORM_OK"
+            raise failure
+    assert caught.value is failure
+    assert not isValid(foreign)
+    assert app.findChildren(QTranslator) == existing
+    assert all(isValid(translator) for translator in existing)
+    assert QCoreApplication.translate("QPlatformTheme", "OK") == original_ok
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
