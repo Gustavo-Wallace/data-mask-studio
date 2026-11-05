@@ -70,8 +70,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
-        # Localization activation remains explicit until all workflows migrate.
-        # Neither saved preferences nor the Windows UI language selects it yet.
+        # Bootstrap injects its resolved locale. Direct construction still defaults
+        # to Portuguese without loading preferences or querying Windows language.
         self._translator = translator or Translator("pt-BR")
         self._initial_screen_fit_pending = True
         self._screen_change_connected = False

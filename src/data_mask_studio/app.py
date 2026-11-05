@@ -14,27 +14,31 @@ from data_mask_studio.gui.styles import apply_application_theme
 from data_mask_studio.publication import PublicationError
 from data_mask_studio.environment import EnvironmentError
 from data_mask_studio.i18n import Translator
+from data_mask_studio.preferences import PreferencesService
 
 APP_USER_MODEL_ID = "com.gustavowallace.datamaskstudio"
 
 
-def create_application(argv: Sequence[str] | None = None) -> QApplication:
-    """Cria e configura a aplicação Qt."""
+def create_application(
+    argv: Sequence[str] | None = None, *, defer_button_translation: bool = False,
+) -> QApplication:
+    """Cria o Qt; o bootstrap pode adiar botões até resolver o idioma."""
     _set_windows_app_user_model_id()
     existing_application = QApplication.instance()
     if existing_application is not None:
         application = cast(QApplication, existing_application)
-        _configure_application(application)
+        _configure_application(application, defer_button_translation=defer_button_translation)
         return application
 
     application = QApplication(list(argv) if argv is not None else sys.argv)
-    _configure_application(application)
+    _configure_application(application, defer_button_translation=defer_button_translation)
     return application
 
 
-def _configure_application(application: QApplication) -> None:
+def _configure_application(application: QApplication, *, defer_button_translation: bool = False) -> None:
     application.setApplicationName("Data Mask Studio")
-    install_dialog_button_translations(application)
+    if not defer_button_translation:
+        install_dialog_button_translations(application)
     apply_application_theme(application)
     icon_path = _application_icon_path()
     if icon_path is not None:
@@ -64,12 +68,20 @@ def _application_icon_path() -> Path | None:
     return next((path for path in candidates if path.is_file()), None)
 
 
-def run(*, translator: Translator | None = None) -> int:
-    """Inicia com idioma explícito; preferências salvas ainda não são ativadas."""
-    application = create_application()
-    effective_translator = translator if translator is not None else Translator("pt-BR")
+def run(
+    *, translator: Translator | None = None, preferences_service: PreferencesService | None = None,
+) -> int:
+    """Resolve o idioma uma vez no arranque; alterações salvas exigem reinício."""
+    application = create_application(defer_button_translation=True)
+    preferences = preferences_service if preferences_service is not None else PreferencesService()
+    if translator is None:
+        stored = preferences.load()
+        effective_translator = Translator(preferences.resolve_language(stored.preferences.language))
+    else:
+        effective_translator = translator
+    install_dialog_button_translations(application, translator=effective_translator)
     try:
-        window = MainWindow(translator=effective_translator)
+        window = MainWindow(translator=effective_translator, preferences_service=preferences)
     except (PublicationError, EnvironmentError) as error:
         title_id = "startup.error.environment_title" if isinstance(error, EnvironmentError) else "startup.error.publication_title"
         title = effective_translator.text(title_id)

@@ -34,10 +34,10 @@ def select(widget, language):
 @pytest.mark.parametrize("locale, label, options, save, notice", [
     ("pt-BR", "Idioma do aplicativo",
      ["Automático (Windows)", "English", "Português (Brasil)"], "Salvar preferência",
-     "Nesta etapa, o aplicativo continua em português."),
+     "As alterações de idioma serão aplicadas ao reiniciar o Data Mask Studio."),
     ("en", "Application language",
      ["Automatic (Windows)", "English", "Portuguese (Brazil)"], "Save preference",
-     "At this stage, the application remains in Portuguese."),
+     "Language changes will take effect after restarting Data Mask Studio."),
 ])
 def test_all_settings_labels_and_accessibility_use_explicit_locale_without_writes(
     locale, label, options, save, notice,

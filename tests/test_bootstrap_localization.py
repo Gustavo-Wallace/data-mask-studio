@@ -1,4 +1,4 @@
-"""Explicit bootstrap presentation, without preference activation or recovery retries."""
+"""Bootstrap presentation and failures, without recovery retries or detail rewriting."""
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,6 +12,7 @@ from shiboken6 import isValid
 from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio import app as app_module
 from data_mask_studio.app import create_application
+from data_mask_studio.gui.dialog_localization import _DialogButtonTranslator, install_dialog_button_translations
 from data_mask_studio.environment import EnvironmentError
 from data_mask_studio.i18n import CatalogError, Translator
 from data_mask_studio.preferences import PreferencesService
@@ -26,7 +27,15 @@ from test_navigation_localization import build_localized_window
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated-localappdata"))
-    return create_application([])
+    application = create_application([])
+    button_translator = application.findChild(_DialogButtonTranslator)
+    original = button_translator._translator
+    original_objects = application.findChildren(QTranslator)
+    try:
+        yield application
+    finally:
+        install_dialog_button_translations(application, translator=original)
+        assert application.findChildren(QTranslator) == original_objects
 
 
 def dialog_result(app, operation, respond):
@@ -84,7 +93,7 @@ def test_bootstrap_warning_uses_explicit_locale_without_main_window(app, monkeyp
         calls.append(kwargs)
         raise error
 
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
     monkeypatch.setattr(app_module, "MainWindow", initialize)
     monkeypatch.setattr(app, "exec", lambda: pytest.fail("A failed startup must not enter the application loop"))
 
@@ -107,7 +116,8 @@ def test_bootstrap_warning_uses_explicit_locale_without_main_window(app, monkeyp
         button.click()
 
     assert dialog_result(app, lambda: app_module.run(translator=translator), respond) == 1
-    assert calls == [{"translator": translator}] and len(seen) == 1
+    assert len(calls) == len(seen) == 1 and calls[0]["translator"] is translator
+    assert isinstance(calls[0]["preferences_service"], PreferencesService)
     assert error.args == (body,) and type(error) is error_type
     assert not caplog.records and not capsys.readouterr().err
     QCoreApplication.sendPostedEvents(seen[0], QEvent.Type.DeferredDelete)
@@ -119,7 +129,7 @@ def test_bootstrap_warning_uses_explicit_locale_without_main_window(app, monkeyp
 def test_warning_keeps_single_ok_modal_keyboard_and_close_semantics(app, monkeypatch, locale, interaction):
     translator = Translator(locale)
     baseline, seen = [], []
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
 
     def fail(**kwargs):
         raise EnvironmentError("Synthetic safe rejection")
@@ -153,13 +163,10 @@ def test_warning_keeps_single_ok_modal_keyboard_and_close_semantics(app, monkeyp
 
 
 @pytest.mark.parametrize("saved,explicit,expected", [
-    (None, None, "pt-BR"), ("en", None, "pt-BR"), ("pt-BR", "en", "en"),
+    (None, None, "pt-BR"), ("en", None, "en"), ("pt-BR", "en", "en"),
 ])
-def test_successful_bootstrap_passes_only_explicit_locale_and_preserves_saved_preferences(app, tmp_path, monkeypatch, saved, explicit, expected):
-    def forbidden(*args, **kwargs):
-        pytest.fail("Do not resolve or activate saved/Windows language at bootstrap")
-
-    preferences = PreferencesService(tmp_path / "preferences.json", ui_languages_provider=forbidden)
+def test_successful_bootstrap_resolves_saved_locale_but_explicit_override_wins(app, tmp_path, monkeypatch, saved, explicit, expected):
+    preferences = PreferencesService(tmp_path / "preferences.json", ui_languages_provider=lambda: ("pt-BR",))
     if saved is not None:
         assert preferences.save_language(saved).error is None
     before = preferences.path.read_bytes() if saved is not None else None
@@ -183,11 +190,10 @@ def test_successful_bootstrap_passes_only_explicit_locale_and_preserves_saved_pr
             assert passed[0] is requested
         return 17
 
-    monkeypatch.setattr(PreferencesService, "resolve_language", forbidden)
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
     monkeypatch.setattr(app_module, "MainWindow", initialize)
     monkeypatch.setattr(app, "exec", event_loop)
-    assert app_module.run(translator=requested) == 17
+    assert app_module.run(translator=requested, preferences_service=preferences) == 17
     assert (preferences.path.read_bytes() if preferences.path.exists() else None) == before
 
 
@@ -197,7 +203,7 @@ def test_failure_before_qapplication_propagates_without_dialog_translator_or_ret
     failure = OSError("Synthetic AppUserModelID failure")
     calls = []
 
-    def fail():
+    def fail(**kwargs):
         calls.append(True)
         raise failure
 
@@ -224,12 +230,12 @@ def test_missing_translation_resources_propagate_without_recursive_error_ui(app,
     def forbidden(*args, **kwargs):
         pytest.fail("Do not construct MainWindow or recursively render unusable translation resources")
 
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
     monkeypatch.setattr(app_module, "Translator", fail)
     monkeypatch.setattr(app_module, "MainWindow", forbidden)
     monkeypatch.setattr(QMessageBox, "exec", forbidden)
     with pytest.raises(CatalogError) as caught:
-        app_module.run()
+        app_module.run(preferences_service=PreferencesService(ui_languages_provider=lambda: ("pt-BR",)))
     assert caught.value is failure and calls == ["pt-BR"]
 
 
@@ -243,12 +249,13 @@ def test_unclassified_fatal_startup_errors_keep_existing_propagation(app, monkey
         calls.append(kwargs)
         raise failure
 
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
     monkeypatch.setattr(app_module, "MainWindow", fail)
     monkeypatch.setattr(QMessageBox, "exec", lambda self: pytest.fail("Do not broaden caught error classes"))
     with pytest.raises(error_type) as caught:
         app_module.run(translator=translator)
-    assert caught.value is failure and calls == [{"translator": translator}]
+    assert caught.value is failure and len(calls) == 1 and calls[0]["translator"] is translator
+    assert isinstance(calls[0]["preferences_service"], PreferencesService)
 
 
 def test_modal_execution_failure_is_not_hidden_or_retried_and_dialog_is_released(app, monkeypatch):
@@ -264,7 +271,7 @@ def test_modal_execution_failure_is_not_hidden_or_retried_and_dialog_is_released
         seen.append(box)
         raise failure
 
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
     monkeypatch.setattr(app_module, "MainWindow", initialize)
     monkeypatch.setattr(QMessageBox, "exec", fail)
     with pytest.raises(RuntimeError) as caught:
@@ -297,7 +304,7 @@ def test_safe_service_body_remains_literal_and_presentation_does_no_filesystem_w
         assert box.textFormat() == Qt.TextFormat.PlainText
         box.button(QMessageBox.StandardButton.Ok).click()
 
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
     monkeypatch.setattr(app_module, "MainWindow", initialize)
     with monkeypatch.context() as guard:
         for name in ("open", "read_text", "read_bytes", "stat", "exists", "resolve", "unlink", "mkdir"):
@@ -336,7 +343,7 @@ def _foreign_button_translation(app):
 def test_bootstrap_button_uses_explicit_catalog_even_if_qt_platform_translation_conflicts(app, monkeypatch):
     with _foreign_button_translation(app):
         assert QCoreApplication.translate("QPlatformTheme", "OK") == "PLATFORM_OK"
-        monkeypatch.setattr(app_module, "create_application", lambda: app)
+        monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
 
         def fail(**kwargs):
             raise EnvironmentError("Synthetic safe service detail")
@@ -385,7 +392,7 @@ def test_actual_invalid_synthetic_restore_journal_remains_fail_closed_and_preser
         recover_restore(paths.directory, protector)
         pytest.fail("Invalid recovery journal must not permit MainWindow initialization")
 
-    monkeypatch.setattr(app_module, "create_application", lambda: app)
+    monkeypatch.setattr(app_module, "create_application", lambda **kwargs: app)
     monkeypatch.setattr(app_module, "MainWindow", initialize)
     translator = Translator(locale)
 

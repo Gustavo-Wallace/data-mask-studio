@@ -1,4 +1,4 @@
-"""The unused foundation must not activate translation or disturb existing Qt."""
+"""Direct widget defaults remain stable; entrypoint activation is tested separately."""
 
 import os
 
@@ -45,8 +45,7 @@ def test_existing_portuguese_gui_and_settings_behavior_are_unchanged(tmp_path, p
     assert settings.language_combo.currentData() == preference
     assert settings.save_button.text() == "Salvar preferência"
     assert settings.notice_label.text() == (
-        "A preferência será aplicada à interface quando a tradução estiver disponível. "
-        "Nesta etapa, o aplicativo continua em português."
+        "As alterações de idioma serão aplicadas ao reiniciar o Data Mask Studio."
     )
     assert window.anonymization_widget.select_button.text() == "Selecionar CSV"
     assert [shell.header.title_label.text() for shell in window.page_shells] == titles
