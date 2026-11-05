@@ -40,6 +40,8 @@
     "settings.save": "Save preference",
     "settings.notice": "Language changes will take effect after restarting Data Mask Studio.",
     "settings.saved": "Language preference saved. Restart Data Mask Studio to apply the change.",
+    "settings.notice.live": "The language is applied on save when the application is idle. During operations or dialogs, it will apply on the next launch.",
+    "settings.saved.applied": "Language preference saved and applied to this session.",
     "settings.error.storage_unavailable": "The local preferences folder is unavailable.",
     "settings.error.read_failed": "Unable to read the application preferences.",
     "settings.error.invalid_file": "The preferences file is invalid or incompatible. It has been preserved.",

@@ -71,7 +71,7 @@ def _application_icon_path() -> Path | None:
 def run(
     *, translator: Translator | None = None, preferences_service: PreferencesService | None = None,
 ) -> int:
-    """Resolve o idioma uma vez no arranque; alterações salvas exigem reinício."""
+    """Resolve startup language; allow live Settings changes only in normal sessions."""
     application = create_application(defer_button_translation=True)
     preferences = preferences_service if preferences_service is not None else PreferencesService()
     if translator is None:
@@ -81,7 +81,10 @@ def run(
         effective_translator = translator
     install_dialog_button_translations(application, translator=effective_translator)
     try:
-        window = MainWindow(translator=effective_translator, preferences_service=preferences)
+        window = MainWindow(
+            translator=effective_translator, preferences_service=preferences,
+            live_language_switching=translator is None,
+        )
     except (PublicationError, EnvironmentError) as error:
         title_id = "startup.error.environment_title" if isinstance(error, EnvironmentError) else "startup.error.publication_title"
         title = effective_translator.text(title_id)

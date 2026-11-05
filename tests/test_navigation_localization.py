@@ -23,7 +23,7 @@ def isolated_appdata(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated-appdata"))
 
 
-def build_localized_window(tmp_path, translator=None, preferences_service=None):
+def build_localized_window(tmp_path, translator=None, preferences_service=None, *, live_language_switching=False):
     local = tmp_path / "environment"
     local.mkdir()
     paths = EnvironmentPaths(
@@ -39,6 +39,7 @@ def build_localized_window(tmp_path, translator=None, preferences_service=None):
         backup_paths=paths, vault_key_provider=FixedKeyProvider(b"V" * 32),
         data_protector=FakeProtector(), preferences_service=preferences_service,
         translator=translator,
+        live_language_switching=live_language_switching,
     )
 
 

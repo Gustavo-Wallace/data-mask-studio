@@ -6,6 +6,8 @@ from PySide6.QtCore import QRect
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QScreen, QShowEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QApplication,
+    QDialog,
     QLineEdit,
     QMainWindow,
     QStackedWidget,
@@ -30,9 +32,10 @@ from data_mask_studio.gui.components import (
     set_button_role,
 )
 from data_mask_studio.gui.maintenance_widget import MaintenanceWidget
+from data_mask_studio.gui.dialog_localization import install_dialog_button_translations
 from data_mask_studio.gui.settings_widget import SettingsWidget
 from data_mask_studio.i18n import Translator
-from data_mask_studio.preferences import PreferencesService
+from data_mask_studio.preferences import LanguagePreference, PreferencesService
 from data_mask_studio.profiles import ProfileError, ProfileRepository, ProfileService
 from data_mask_studio.security import (
     DataProtector,
@@ -67,12 +70,17 @@ class MainWindow(QMainWindow):
         data_protector: DataProtector | None = None,
         preferences_service: PreferencesService | None = None,
         translator: Translator | None = None,
+        live_language_switching: bool = False,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Data Mask Studio")
         # Bootstrap injects its resolved locale. Direct construction still defaults
         # to Portuguese without loading preferences or querying Windows language.
         self._translator = translator or Translator("pt-BR")
+        # Only normal bootstrap opts in. Explicitly injected startup locales
+        # remain authoritative; direct construction retains next-start behavior.
+        self._live_language_switching = live_language_switching
+        self._preferences = preferences_service or PreferencesService()
         self._initial_screen_fit_pending = True
         self._screen_change_connected = False
 
@@ -176,8 +184,10 @@ class MainWindow(QMainWindow):
         )
 
         self.settings_widget = SettingsWidget(
-            preferences_service, translator=self._translator,
+            self._preferences, translator=self._translator,
+            live_language_switching=live_language_switching,
         )
+        self.settings_widget.language_saved.connect(self._language_preference_saved)
         page_specs = (
             ("navigation.group.processing", "navigation.mask_file", "navigation.description.mask_file", self.anonymization_widget),
             ("navigation.group.processing", "navigation.batch_masking", "navigation.description.batch_masking", self.batch_widget),
@@ -330,6 +340,50 @@ class MainWindow(QMainWindow):
         self.maintenance_widget.retranslate(translator)
         if self.about_dialog is not None:
             self.about_dialog.retranslate(translator)
+
+    def _can_apply_saved_language(self) -> bool:
+        """Conservative GUI-thread gate; never wait for or interrupt an owner."""
+        if (not self._live_language_switching or not self.isVisible()
+                or not self.settings_widget.isVisible() or not self.isEnabled()):
+            return False
+        # A reference also covers queued startup/terminal signals after a thread
+        # stops. isRunning() alone cannot establish an idle ownership boundary.
+        if any(worker is not None for worker in (
+            self.anonymization_widget._worker, self.anonymization_widget._detection_worker,
+            self.batch_widget._validation_worker, self.batch_widget._processing_worker,
+            self.restoration_widget._worker, self.html_restoration_widget._worker,
+            self.batch_restoration_widget._analysis_worker,
+            self.batch_restoration_widget._processing_worker,
+            self.backup_widget._worker, self.maintenance_widget._worker,
+        )):
+            return False
+        if (QApplication.activeModalWidget() is not None
+                or QGuiApplication.modalWindow() is not None
+                or QApplication.activePopupWidget() is not None):
+            return False
+        for widget in QApplication.topLevelWidgets():
+            if widget is self:
+                continue
+            # Native QFileDialog helpers still have a QFileDialog QObject.
+            # Do not rely on its QWidget visibility or activeModalWidget().
+            # Only the known cached, closed About dialog is harmless here.
+            if widget is self.about_dialog and not widget.isVisible():
+                continue
+            if isinstance(widget, QDialog) or widget.isVisible():
+                return False
+        return True
+
+    def _language_preference_saved(self, language: LanguagePreference) -> None:
+        # Synchronous save notification: no queued/deferred application later.
+        if not self._can_apply_saved_language():
+            return
+        locale = self._preferences.resolve_language(language)
+        translator = self._translator if locale == self._translator.locale else Translator(locale)
+        self.retranslate(translator)
+        application = QApplication.instance()
+        assert isinstance(application, QApplication)
+        install_dialog_button_translations(application, translator=translator)
+        self.settings_widget.language_applied()
 
     def set_current_page(self, index: int) -> None:
         self.navigation.set_current_index(index)

@@ -1,4 +1,4 @@
-"""Persisted language activates once at startup, never from a Settings save."""
+"""Startup resolution and next-launch application while a session is busy."""
 
 import json
 import os
@@ -59,8 +59,9 @@ class ObservedPreferences(PreferencesService):
 def fake_bootstrap(app, monkeypatch, service, expected, *, override=None):
     seen = []
 
-    def initialize(*, translator, preferences_service):
+    def initialize(*, translator, preferences_service, live_language_switching):
         assert preferences_service is service and translator.locale == expected
+        assert live_language_switching is (override is None)
         if override is not None:
             assert translator is override
         qt = app.findChildren(_DialogButtonTranslator)
@@ -183,7 +184,7 @@ def test_resolved_language_reaches_bootstrap_failure_before_main_window(app, tmp
     service.loads = 0
     calls = []
 
-    def initialize(*, translator, preferences_service):
+    def initialize(*, translator, preferences_service, live_language_switching):
         calls.append(translator)
         assert translator.locale == locale and preferences_service is service
         assert app.findChild(_DialogButtonTranslator)._translator is translator
@@ -229,10 +230,11 @@ def test_settings_save_preserves_active_session_worker_and_inputs_until_restart(
     windows = []
     qt = app.findChild(_DialogButtonTranslator)
 
-    def initialize(*, translator, preferences_service):
+    def initialize(*, translator, preferences_service, live_language_switching):
         root = tmp_path / f"launch-{len(windows)}"
         root.mkdir()
-        window = build_localized_window(root, translator=translator, preferences_service=preferences_service)
+        window = build_localized_window(root, translator=translator, preferences_service=preferences_service,
+                                        live_language_switching=live_language_switching)
         windows.append(window)
         return window
 
@@ -271,7 +273,7 @@ def test_settings_save_preserves_active_session_worker_and_inputs_until_restart(
             settings.save_button.click()
         assert json.loads(service.path.read_text(encoding="utf-8"))["language"] == target
         assert settings.status_label.text() == translator.text("settings.saved")
-        assert settings.notice_label.text() == translator.text("settings.notice")
+        assert settings.notice_label.text() == translator.text("settings.notice.live")
         assert window._translator is settings._translator is qt._translator is translator
         assert mask._worker is worker and not worker._cancel_requested.is_set()
         assert [(field.text(), field.echoMode(), field.selectedText()) for field in fields] == values
@@ -325,8 +327,9 @@ def test_invalid_startup_preference_retains_safe_settings_error_and_original_byt
     service.path.write_bytes(raw)
     windows = []
 
-    def initialize(*, translator, preferences_service):
-        window = build_localized_window(tmp_path, translator=translator, preferences_service=preferences_service)
+    def initialize(*, translator, preferences_service, live_language_switching):
+        window = build_localized_window(tmp_path, translator=translator, preferences_service=preferences_service,
+                                        live_language_switching=live_language_switching)
         windows.append(window)
         return window
 
@@ -372,8 +375,9 @@ def load():
 messages.load_catalogs = load
 service = PreferencesService(sys.argv[1], ui_languages_provider=lambda: (_ for _ in ()).throw(AssertionError("No OS detection")))
 app.PreferencesService = lambda: service
-def window(*, translator, preferences_service):
+def window(*, translator, preferences_service, live_language_switching):
     assert translator.locale == "en" and preferences_service is service
+    assert live_language_switching
     assert len(QApplication.instance().findChildren(QTranslator)) == 1
     assert QCoreApplication.translate("QPlatformTheme", "&No") == "&No"
     QApplication.instance().exec = lambda: 23

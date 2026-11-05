@@ -1,6 +1,6 @@
-"""Presentation of preferences only; no vault access or language application."""
+"""Preferences presentation; the main window owns safe session application."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -31,13 +31,17 @@ _LANGUAGE_MESSAGES = (
 
 
 class SettingsWidget(QWidget):
+    language_saved = Signal(object)
+
     def __init__(
         self, preferences_service: PreferencesService | None = None, *,
         translator: Translator | None = None,
+        live_language_switching: bool = False,
     ) -> None:
         super().__init__()
         self._preferences = preferences_service or PreferencesService()
         self._translator = translator or Translator("pt-BR")
+        self._live_language_switching = live_language_switching
         self._saving = False
         self._acknowledged_language: LanguagePreference | None = None
         self._readable = False
@@ -79,7 +83,8 @@ class SettingsWidget(QWidget):
         self.language_label.setText(translator.text("settings.language.label"))
         self.language_combo.setAccessibleName(translator.text("settings.language.label"))
         self.language_combo.setAccessibleDescription(
-            translator.text("settings.language.accessible_description")
+            translator.text("settings.notice.live" if self._live_language_switching
+                            else "settings.language.accessible_description")
         )
         blocked = self.language_combo.blockSignals(True)
         try:
@@ -88,8 +93,14 @@ class SettingsWidget(QWidget):
         finally:
             self.language_combo.blockSignals(blocked)
         self.save_button.setText(translator.text("settings.save"))
-        self.notice_label.setText(translator.text("settings.notice"))
+        self.notice_label.setText(translator.text(
+            "settings.notice.live" if self._live_language_switching else "settings.notice"
+        ))
         self._render_feedback()
+
+    def language_applied(self) -> None:
+        """Acknowledge a successful synchronous application by the owning window."""
+        self._feedback("settings.saved.applied", state="success")
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
@@ -155,6 +166,7 @@ class SettingsWidget(QWidget):
                 self._display_stored(result)
                 self._acknowledged_language = result.preferences.language
                 self._feedback("settings.saved", state="success")
+                self.language_saved.emit(result.preferences.language)
         finally:
             self._saving = False
             self.save_button.setEnabled(
