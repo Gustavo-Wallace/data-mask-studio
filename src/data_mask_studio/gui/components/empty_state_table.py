@@ -2,7 +2,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QTableWidget, QWidget
 
-from data_mask_studio.gui.visual_tokens import COLORS
+from data_mask_studio.gui.styles import widget_palette
 
 
 class EmptyStateTable(QTableWidget):
@@ -24,7 +24,7 @@ class EmptyStateTable(QTableWidget):
         if self.rowCount() != 0:
             return
         painter = QPainter(self.viewport())
-        painter.setPen(QColor(COLORS["muted_text"]))
+        painter.setPen(QColor(widget_palette(self).muted_text))
         painter.drawText(
             self.viewport().rect().adjusted(20, 20, -20, -20),
             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,

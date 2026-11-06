@@ -112,6 +112,7 @@ class SidebarNavigation(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("sidebarNavigation")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self._translator = translator or Translator("pt-BR")
         self._items = items
         self.setFixedWidth(220)

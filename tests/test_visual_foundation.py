@@ -24,6 +24,7 @@ from data_mask_studio.gui.styles import (
     application_palette, application_stylesheet, section_title_stylesheet,
 )
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
+from data_mask_studio.gui.theme_palette import DARK_PALETTE
 from test_main_navigation import build_window
 
 
@@ -87,8 +88,8 @@ def test_qss_resolves_tokens_without_widening_state_or_container_selectors():
 
 
 def test_sidebar_states_use_scoped_selectors_and_shared_theme_values():
-    assert f"background: {COLORS['base']}" in rule("QWidget#sidebarNavigation")
-    assert f"border-right: 1px solid {COLORS['panel_border']}" in rule("QWidget#sidebarNavigation")
+    assert f"background: {DARK_PALETTE.navigation_surface}" in rule("QWidget#sidebarNavigation")
+    assert f"border-right: 1px solid {DARK_PALETTE.navigation_border}" in rule("QWidget#sidebarNavigation")
     assert f"background: {COLORS['panel_border']}" in rule("QFrame#navigationDivider")
     assert f"color: {COLORS['disabled_text']}" in rule("QLabel#navigationGroup")
     for selector in ("QPushButton#navigationItem", "QPushButton#navigationUtility"):

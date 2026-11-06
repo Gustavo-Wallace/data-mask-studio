@@ -55,6 +55,10 @@ class ThemePalette:
     warning_text: str
     warning_hover_surface: str
     warning_hover_border: str
+    # Sidebar paint is separate from input surfaces/decorative dividers. Dark
+    # preserves the actual legacy window-colored sidebar; Light separates it.
+    navigation_surface: str
+    navigation_border: str
     navigation_active: str
     navigation_pressed: str
     # Data, ancillary surfaces and their distinct states.
@@ -89,7 +93,8 @@ DARK_PALETTE = ThemePalette(
     action_preserve="#18202a", action_mask="#1d3449", danger_surface="#352322",
     danger_border="#854842", danger_text="#ffb4ae", warning_surface="#342c20",
     warning_border="#8b6b35", warning_text="#f3d29b", warning_hover_surface="#433724",
-    warning_hover_border="#a68040", navigation_active="#1d3043", navigation_pressed="#263c52",
+    warning_hover_border="#a68040", navigation_surface="#151a22", navigation_border="#151a22",
+    navigation_active="#1d3043", navigation_pressed="#263c52",
     table_grid="#263240", table_alternate="#151e28", table_hover="#1e2c3c",
     progress_fill="#347db8", tab_surface="#1c2430", tab_selected_surface="#2a3d52",
     scrollbar_hover="#5b6d83", tooltip_border="#536176",
@@ -104,7 +109,7 @@ LIGHT_PALETTE = ThemePalette(
     text_on_accent="#ffffff", selection_text="#ffffff", navigation_active_text="#163d60",
     hover_text="#172331", bright_text="#ffffff", link_text="#185e98",
     border="#77879a", panel_border="#c3cedb", interactive_border="#77879a",
-    focus="#5585ae", input_focus="#185e98", button="#e7edf4", button_hover="#dce6f0",
+    focus="#5483ad", input_focus="#185e98", button="#e7edf4", button_hover="#dce6f0",
     button_text="#203247", accent="#276fa6", primary="#27669a", primary_hover="#225b8b",
     selection="#103857", disabled_surface="#e9edf2", disabled_border="#c0cad6",
     disabled_selection="#d6dfe8", neutral_indicator="#77879a", indicator_border="#637d95",
@@ -112,7 +117,8 @@ LIGHT_PALETTE = ThemePalette(
     action_preserve="#eef2f7", action_mask="#dceaf7", danger_surface="#fff0ee",
     danger_border="#b34a41", danger_text="#a52a24", warning_surface="#fff4db",
     warning_border="#9b761f", warning_text="#805500", warning_hover_surface="#f8e6bd",
-    warning_hover_border="#856113", navigation_active="#e0ecf8", navigation_pressed="#d2e2f2",
+    warning_hover_border="#856113", navigation_surface="#ffffff", navigation_border="#c3cedb",
+    navigation_active="#e0ecf8", navigation_pressed="#d2e2f2",
     table_grid="#d5dee8", table_alternate="#f2f6fb", table_hover="#e5eff9",
     progress_fill="#6495bb", tab_surface="#e9eef5", tab_selected_surface="#d7e5f3",
     scrollbar_hover="#596e86", tooltip_border="#77879a",

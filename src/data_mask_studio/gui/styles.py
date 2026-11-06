@@ -4,7 +4,7 @@ from functools import lru_cache
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
-from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle, QStyleOption
+from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle, QStyleOption, QWidget
 
 from data_mask_studio.branding import (
     MONOGRAM_BACKGROUND,
@@ -53,7 +53,7 @@ class DataMaskStudioStyle(QProxyStyle):
         partial = bool(option.state & QStyle.StateFlag.State_NoChange)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
 
-        colors = self._colors
+        colors = widget_palette(widget, self._colors)
         if not enabled:
             background = QColor(colors.disabled_surface)
             border = QColor(colors.indicator_disabled_border)
@@ -143,6 +143,36 @@ def application_palette(colors: ThemePalette = DARK_PALETTE) -> QPalette:
     return palette
 
 
+def widget_palette(
+    widget: QWidget | None, default: ThemePalette = DARK_PALETTE,
+) -> ThemePalette:
+    """Nearest explicit presentation scope, without preferences or global state."""
+    while widget is not None:
+        # Do not invoke MainWindow's legacy __getattr__ delegation.
+        colors = vars(widget).get("_presentation_palette")
+        if isinstance(colors, ThemePalette):
+            return colors
+        widget = widget.parentWidget()
+    return default
+
+
+def apply_widget_palette(widget: QWidget, colors: ThemePalette = DARK_PALETTE) -> None:
+    """Render an explicit widget subtree only; never resolve or activate a theme.
+
+    QSS handles semantic states; custom painters read the nearest immutable
+    palette. No widgets/QProxyStyle are replaced; no event loop or services run.
+    Normal startup continues to use apply_application_theme's Dark defaults.
+    """
+    widget._presentation_palette = colors
+    # Supply the base palette first; QSS polish must retain ownership of styled
+    # roles such as alternate rows, feedback and placeholder presentation.
+    for child in (widget, *widget.findChildren(QWidget)):
+        child.setPalette(application_palette(widget_palette(child)))
+        child.update()
+    widget.setStyleSheet(application_stylesheet(colors))
+    widget.ensurePolished()
+
+
 def apply_application_theme(application: QApplication) -> None:
     """Aplica estilo, paleta e stylesheet oficiais em toda a aplicação."""
     global _application_style
@@ -171,7 +201,7 @@ def _render_stylesheet(colors: ThemePalette) -> str:
     QLabel[feedbackState="success"] { color: $success_text; }
     QLabel[feedbackState="warning"] { color: $warning_text; }
     QLabel[feedbackState="error"] { color: $danger_text; }
-    QWidget#sidebarNavigation { background: $base; border-right: 1px solid $panel_border; }
+    QWidget#sidebarNavigation { background: $navigation_surface; border-right: 1px solid $navigation_border; }
     QWidget#applicationIdentity { background: transparent; }
     QLabel#identityMonogram { min-width: __BADGE_WIDTH__px; min-height: __BADGE_HEIGHT__px; max-width: __BADGE_WIDTH__px; max-height: __BADGE_HEIGHT__px; border: __BADGE_BORDER__px solid __BORDER_COLOR__; border-radius: __BADGE_RADIUS__px; background: __BACKGROUND_COLOR__; color: __FOREGROUND_COLOR__; font-size: 11px; font-weight: 700; qproperty-alignment: AlignCenter; }
     QLabel#identityName { font-size: 15px; font-weight: 700; color: $heading_text; }
