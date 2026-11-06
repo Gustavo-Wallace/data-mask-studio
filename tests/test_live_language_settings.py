@@ -40,6 +40,22 @@ def session(app, tmp_path):
     return app, window, service
 
 
+@pytest.fixture(params=[Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.ShiftModifier],
+                ids=["plain", "shift-active"])
+def selection_input_state(session, request):
+    app, window, _ = session
+    original = app.keyboardModifiers()
+    # QWindow delivery, unlike QWidget-only key events, updates Qt's shared
+    # modifier state. Restore it even when a selection assertion fails.
+    try:
+        QTest.keyPress(window.windowHandle(), Qt.Key.Key_Shift, request.param)
+        assert app.keyboardModifiers() == request.param
+        yield
+    finally:
+        QTest.keyRelease(window.windowHandle(), Qt.Key.Key_Shift, original)
+        assert app.keyboardModifiers() == original
+
+
 def assert_applied(window, locale):
     translator = window._translator
     assert translator.locale == locale
@@ -54,7 +70,7 @@ def assert_deferred(window, translator):
     assert window.settings_widget.status_label.property("feedbackState") == "success"
 
 
-def test_idle_cycles_preserve_all_pages_inputs_results_focus_and_single_qt_translator(session, tmp_path):
+def test_idle_cycles_preserve_all_pages_inputs_results_focus_and_single_qt_translator(session, tmp_path, selection_input_state):
     app, window, service = session
     source = tmp_path / "synthetic.csv"
     source.write_text("Name,Note\nAlice,Synthetic\n", encoding="utf-8")
@@ -78,7 +94,29 @@ def test_idle_cycles_preserve_all_pages_inputs_results_focus_and_single_qt_trans
     window.batch_widget._output_directory = published.parent
     window.batch_widget.open_output_button.setEnabled(True)
     window.batch_widget._refresh_table()
-    window.batch_widget.file_table.selectRow(0)
+    # Select as a user would on the visible batch page. selectRow() consults
+    # shared keyboard modifiers; Shift can extend from an invalid anchor and
+    # leave an initially unselected table empty before any retranslation.
+    window.set_current_page(window.page_index(window.batch_widget))
+    app.processEvents()
+    table = window.batch_widget.file_table
+    row_index = table.model().index(0, 0)
+    assert table.isVisible() and table.isEnabled()
+    assert table.rowCount() == table.model().rowCount() == 1
+    assert row_index.isValid()
+    assert row_index.flags() & Qt.ItemFlag.ItemIsSelectable
+    assert row_index.flags() & Qt.ItemFlag.ItemIsEnabled
+    cell = table.visualRect(row_index)
+    assert cell.isValid() and table.viewport().rect().contains(cell.center())
+    selection = table.selectionModel()
+    QTest.mouseClick(table.viewport(), Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.NoModifier, cell.center())
+    assert [index.row() for index in selection.selectedRows()] == [0]
+    selected_cells = [(index.row(), index.column()) for index in selection.selectedIndexes()]
+    assert selected_cells == [(0, column) for column in range(table.columnCount())]
+    window.set_current_page(window.page_index(window.settings_widget))
+    app.processEvents()
+    assert [index.row() for index in selection.selectedRows()] == [0]
     window.restoration_widget.progress_bar.setValue(57)
     window.restoration_widget._set_status("Literal service detail", is_error=False)
     fields = window.findChildren(QLineEdit)
@@ -112,6 +150,8 @@ def test_idle_cycles_preserve_all_pages_inputs_results_focus_and_single_qt_trans
         assert item.output_path == published and published.read_bytes() == b"NAME\nNAME-SYNTHETIC\n"
         assert window.batch_widget.open_output_button.isEnabled()
         assert window.batch_widget._output_directory == published.parent
+        assert table.selectionModel() is selection
+        assert [(index.row(), index.column()) for index in selection.selectedIndexes()] == selected_cells
         assert window.batch_widget.file_table.selectionModel().selectedRows()[0].row() == selected
         for shell, (horizontal, vertical) in zip(window.page_shells, spans, strict=True):
             assert shell.scroll_area.horizontalScrollBar().value() == min(horizontal, shell.scroll_area.horizontalScrollBar().maximum())
