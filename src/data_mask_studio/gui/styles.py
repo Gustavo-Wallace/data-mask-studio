@@ -273,6 +273,14 @@ def _render_stylesheet(colors: ThemePalette) -> str:
     QScrollBar::handle:horizontal:hover { background: $scrollbar_hover; }
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
     QToolTip { color: $input_text; background: $raised_surface; border: 1px solid $tooltip_border; padding: 4px; }
+    /* Processing presentation */
+    QComboBox[columnAction="preserve"] { background-color: $action_preserve; border-color: $neutral_indicator; }
+    QComboBox[columnAction="mask"] { background-color: $action_mask; border-color: $accent; }
+    QComboBox[columnAction="exclude"] { background-color: $danger_surface; border-color: $danger_border; }
+    QComboBox[columnAction] QAbstractItemView { background: $base; color: $text; selection-background-color: $selection; selection-color: $selection_text; }
+    QLineEdit[validationError="true"] { border: 1px solid $validation_border; }
+    QLabel[textRole="description"] { color: $muted_text; font-size: ${description_font_size}px; }
+    /* End processing presentation */
     """
     return (
         Template(stylesheet).substitute(asdict(colors), **METRICS)

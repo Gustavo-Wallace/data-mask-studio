@@ -330,7 +330,7 @@ def test_action_transitions_validation_and_profile_round_trip(gui, monkeypatch):
     combo.setCurrentIndex(1)
     assert prefix.isEnabled() and prefix.text() == ''
     widget.validate_current_configuration()
-    assert not widget.generate_button.isEnabled() and prefix.styleSheet()
+    assert not widget.generate_button.isEnabled() and prefix.property("validationError") is True
     monkeypatch.setattr(AnonymizationWorker, 'start', lambda self: pytest.fail('Worker inválido'))
     blocked_output = widget._inspection_result.path.parent / 'blocked.csv'
     widget._start_processing(blocked_output, overwrite=False)
@@ -340,7 +340,7 @@ def test_action_transitions_validation_and_profile_round_trip(gui, monkeypatch):
     assert not widget.generate_button.isEnabled()
     prefix.setText('CORR')
     widget.validate_current_configuration()
-    assert widget.generate_button.isEnabled() and not prefix.styleSheet()
+    assert widget.generate_button.isEnabled() and prefix.property("validationError") is False
     masked = section.configurations[0]
     assert masked == replace(original, action=Action.MASK, prefix='CORR')
     dialog = editor(widget, masked)

@@ -42,14 +42,15 @@ def test_rename_editor_validation_exclusion_profile_and_repopulation(editor, tmp
     widget.validate_current_configuration()
     assert not widget.generate_button.isEnabled()
     assert "NOME" in widget.status_label.text() and "CPF" in widget.status_label.text()
-    assert field.styleSheet() and widget._output_name_fields[1].styleSheet()
+    assert field.property("validationError") is True
+    assert widget._output_name_fields[1].property("validationError") is True
     field.setText("PESSOA")
     widget._normalization_fields[0].setCurrentIndex(
         widget._normalization_fields[0].findData(NormalizationRule.PERSON_NAME.value)
     )
     widget.validate_current_configuration()
     assert widget.generate_button.isEnabled()
-    assert not field.styleSheet()
+    assert field.property("validationError") is False
     action = widget._action_fields[0]
     action.setCurrentIndex(action.findData(ColumnAction.EXCLUDE.value))
     assert not field.isEnabled() and field.text() == "PESSOA"
@@ -134,4 +135,4 @@ def test_profile_collision_remains_visible_in_gui(editor, tmp_path):
     app.processEvents()
     assert not widget.generate_button.isEnabled()
     assert "Cabeçalho de saída repetido" in widget.status_label.text()
-    assert widget._output_name_fields[0].styleSheet()
+    assert widget._output_name_fields[0].property("validationError") is True

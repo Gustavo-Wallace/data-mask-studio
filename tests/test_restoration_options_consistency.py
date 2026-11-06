@@ -7,6 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
@@ -112,8 +113,9 @@ def test_initial_workspace_is_present_with_options_collapsed_and_safe_summary(pa
     assert widget.options_summary.isVisible() and widget.options_summary.wordWrap()
     assert widget.options_summary.focusPolicy() == Qt.FocusPolicy.NoFocus
     assert widget.options_summary.text() == window.restoration_widget.options_summary.text()
-    assert COLORS["muted_text"] in widget.options_summary.styleSheet()
-    assert f"{METRICS['description_font_size']}px" in widget.options_summary.styleSheet()
+    assert widget.options_summary.property("textRole") == "description"
+    assert widget.options_summary.palette().color(QPalette.ColorRole.WindowText) == QColor(COLORS["muted_text"])
+    assert widget.options_summary.font().pixelSize() == METRICS["description_font_size"]
     assert values(widget) == ("keep", RepresentationPolicy.FIRST_ORIGINAL.value)
     assert widget.analyze_button.property("role") == widget.options_toggle.property("role") == "secondary"
     assert not widget.analyze_button.isEnabled()

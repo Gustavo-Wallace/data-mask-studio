@@ -10,7 +10,6 @@ from data_mask_studio.anonymization import ColumnAction
 from data_mask_studio.app import create_application
 from data_mask_studio.csv_tools.csv_inspector import inspect_csv
 from data_mask_studio.csv_tools.source_binding import SourceColumnRef
-from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
 from data_mask_studio.gui.column_configuration_table import ColumnConfigurationTable
 from data_mask_studio.gui.composite_dialog import CompositeDialog
 from data_mask_studio.gui.composite_section import CompositeSection
@@ -72,7 +71,8 @@ def test_composite_retranslation_preserves_widgets_values_ids_and_signals(initia
         assert ColumnAction(action.currentData()) is ColumnAction.MASK
         assert prefix.text() == "CORR" and prefix.isEnabled()
         assert prefix.hasFocus()
-        assert action.styleSheet() == ACTION_INDICATOR_STYLES[ColumnAction.MASK]
+        assert action.property("columnAction") == ColumnAction.MASK.value
+        assert not action.styleSheet()
         assert [action.itemData(index) for index in range(action.count())] == [
             ColumnAction.PRESERVE, ColumnAction.MASK,
         ]
@@ -102,12 +102,12 @@ def test_composite_owned_labels_translate_but_freeform_validation_errors_do_not(
     section.set_configurations((replace(configuration(), prefix="invalid prefix"),))
     prefix = section.table.cellWidget(0, 3)
     previous_error = prefix.toolTip()
-    previous_style = prefix.styleSheet()
+    previous_style = prefix.property("validationError")
     assert previous_error and previous_style
     section.retranslate(Translator("pt-BR"))
-    assert prefix.toolTip() == previous_error and prefix.styleSheet() == previous_style
+    assert prefix.toolTip() == previous_error and prefix.property("validationError") == previous_style
     prefix.setText("CORR")
-    assert not prefix.styleSheet()
+    assert prefix.property("validationError") is False
     section.retranslate(Translator("en"))
     assert prefix.toolTip() == "Use the prefix without a hyphen, for example CORR."
 

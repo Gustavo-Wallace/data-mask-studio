@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
+from data_mask_studio.gui.action_styles import set_action_indicator, set_validation_indicator
 from data_mask_studio.gui.styles import section_title_stylesheet
 from data_mask_studio.batch.output_naming import suggested_output_name
 from data_mask_studio.anonymization import (
@@ -830,21 +830,20 @@ class AnonymizationWidget(QWidget):
     def _apply_action_indicator(
         action_field: QComboBox, action: ColumnAction
     ) -> None:
-        action_field.setProperty("columnAction", action.value)
-        action_field.setStyleSheet(ACTION_INDICATOR_STYLES[action])
+        set_action_indicator(action_field, action)
 
     def _refresh_validation_indicators(self) -> None:
         result = validate_configuration(self._column_configs)
         name_errors = output_header_errors(self._column_configs)
         for row, row_result in enumerate(result.column_results):
             output_field = self._output_name_fields[row]
-            output_field.setStyleSheet("border: 1px solid #b42318;" if row in name_errors else "")
+            set_validation_indicator(output_field, row in name_errors)
             output_field.setToolTip(name_errors.get(row, ""))
             prefix_field = self._prefix_fields[row]
             if row_result.is_valid or row_result.error_message == name_errors.get(row):
-                prefix_field.setStyleSheet("")
+                set_validation_indicator(prefix_field, False)
             else:
-                prefix_field.setStyleSheet("border: 1px solid #b42318;")
+                set_validation_indicator(prefix_field, True)
 
     def validate_current_configuration(self) -> None:
         self._update_transfer_controls()

@@ -224,10 +224,10 @@ def test_window_configures_and_validates_columns(tmp_path: Path) -> None:
     window._prefix_fields[0].setText("INVALID-prefix")
 
     assert not window.generate_button.isEnabled()
-    assert "#b42318" in window._prefix_fields[0].styleSheet()
+    assert window._prefix_fields[0].property("validationError") is True
 
     window._prefix_fields[0].setText("NOME_COMPLETO")
-    assert window._prefix_fields[0].styleSheet() == ""
+    assert window._prefix_fields[0].property("validationError") is False
     window.validate_button.click()
 
     window.unselect_all_button.click()
@@ -305,7 +305,8 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
             window._normalization_fields[0],
         )
     )
-    preserve_style = window._action_fields[0].styleSheet()
+    window._action_fields[0].ensurePolished()
+    preserve_style = window._action_fields[0].palette().color(QPalette.ColorRole.Base).name()
     assert window._action_fields[0].property("columnAction") == "preserve"
     window._action_fields[0].setCurrentIndex(
         window._action_fields[0].findData(ColumnAction.MASK.value)
@@ -325,8 +326,8 @@ def test_window_exposes_three_actions_and_disables_masking_fields(tmp_path: Path
     assert window._action_fields[2].property("columnAction") == "exclude"
     action_styles = {
         preserve_style,
-        window._action_fields[0].styleSheet(),
-        window._action_fields[2].styleSheet(),
+        window._action_fields[0].palette().color(QPalette.ColorRole.Base).name(),
+        window._action_fields[2].palette().color(QPalette.ColorRole.Base).name(),
     }
     assert len(action_styles) == 3
     assert all(action_styles)

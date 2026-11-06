@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 
 from data_mask_studio.gui.composite_dialog import CompositeDialog
 from data_mask_studio.gui.composite_table import CompositeTable
-from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
+from data_mask_studio.gui.action_styles import set_action_indicator, set_validation_indicator
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.i18n import Translator
@@ -141,8 +141,7 @@ class CompositeSection(QGroupBox):
     def _refresh_prefix(self, index):
         composite = self.configurations[index]
         action = self.table.cellWidget(index, 0)
-        action.setProperty("columnAction", composite.action.value)
-        action.setStyleSheet(ACTION_INDICATOR_STYLES[composite.action])
+        set_action_indicator(action, composite.action)
         field = self.table.cellWidget(index, 3)
         field.blockSignals(True)
         field.setText(composite.prefix)
@@ -150,7 +149,7 @@ class CompositeSection(QGroupBox):
         field.setEnabled(composite.action is ColumnAction.MASK)
         error = composite_action_error(composite.action, composite.prefix)
         self._refresh_prefix_tooltip(index)
-        field.setStyleSheet("border: 1px solid #b42318;" if error else "")
+        set_validation_indicator(field, bool(error))
 
     def _refresh_prefix_tooltip(self, index):
         composite = self.configurations[index]

@@ -29,6 +29,7 @@ class ThemePalette:
     border: str
     panel_border: str
     interactive_border: str
+    validation_border: str
     focus: str
     input_focus: str
     button: str
@@ -84,7 +85,7 @@ DARK_PALETTE = ThemePalette(
     disabled_text="#8592a3", heading_text="#f4f7fb", readonly_text="#c2ccd8", header_text="#dce4ee",
     text_on_accent="#ffffff", selection_text="#ffffff", navigation_active_text="#ffffff",
     hover_text="#ffffff", bright_text="#ffffff", link_text="#79a8d8",
-    border="#354253", panel_border="#303b49", interactive_border="#435064",
+    border="#354253", panel_border="#303b49", interactive_border="#435064", validation_border="#b42318",
     focus="#79a8d8", input_focus="#6f9bc8", button="#252e3a", button_hover="#303b49",
     button_text="#e5ebf3", accent="#347db8", primary="#27669a", primary_hover="#3078b2",
     selection="#315b82", disabled_surface="#1a2029", disabled_border="#303a47",
@@ -108,7 +109,7 @@ LIGHT_PALETTE = ThemePalette(
     disabled_text="#5c6878", heading_text="#172331", readonly_text="#42566b", header_text="#273e55",
     text_on_accent="#ffffff", selection_text="#ffffff", navigation_active_text="#163d60",
     hover_text="#172331", bright_text="#ffffff", link_text="#185e98",
-    border="#77879a", panel_border="#c3cedb", interactive_border="#77879a",
+    border="#77879a", panel_border="#c3cedb", interactive_border="#77879a", validation_border="#b34a41",
     focus="#5483ad", input_focus="#185e98", button="#e7edf4", button_hover="#dce6f0",
     button_text="#203247", accent="#276fa6", primary="#27669a", primary_hover="#225b8b",
     selection="#103857", disabled_surface="#e9edf2", disabled_border="#c0cad6",

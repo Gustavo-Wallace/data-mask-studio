@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio.anonymization import ColumnAction
 from data_mask_studio.app import create_application
-from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
+from data_mask_studio.gui.action_styles import set_action_indicator
 from data_mask_studio.gui.components import empty_state_table, empty_state_text
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
 from data_mask_studio.gui.styles import (
@@ -111,8 +111,15 @@ def test_sidebar_states_use_scoped_selectors_and_shared_theme_values():
     (ColumnAction.EXCLUDE, "danger_surface", "danger_border"),
 ])
 def test_action_indicators_reuse_shared_values_without_new_local_overrides(action, surface, border):
-    assert ACTION_INDICATOR_STYLES[action] == (
-        f"QComboBox {{ background-color: {COLORS[surface]}; border-color: {COLORS[border]}; }}"
+    create_application([])
+    control = ScrollSafeComboBox()
+    set_action_indicator(control, action)
+    control.ensurePolished()
+    assert control.property("columnAction") == action.value
+    assert not control.styleSheet()
+    assert control.palette().color(QPalette.ColorRole.Base) == QColor(COLORS[surface])
+    assert rule(f'QComboBox[columnAction="{action.value}"]').strip() == (
+        f"background-color: {COLORS[surface]}; border-color: {COLORS[border]};"
     )
 
 

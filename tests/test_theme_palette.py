@@ -29,7 +29,7 @@ from test_navigation_localization import build_localized_window
 @pytest.mark.parametrize("colors", [DARK_PALETTE, LIGHT_PALETTE], ids=["dark", "light"])
 def test_palettes_are_complete_typed_immutable_and_valid_rgb(colors):
     assert isinstance(colors, ThemePalette)
-    assert len(fields(colors)) == 59
+    assert len(fields(colors)) == 60
     assert all(field.type is str for field in fields(colors))
     assert all(QColor(value).isValid() for value in asdict(colors).values())
     with pytest.raises(FrozenInstanceError):
@@ -52,12 +52,17 @@ def test_entire_legacy_dark_color_map_and_qss_states_are_preserved():
     colors = json.dumps(dict(COLORS), sort_keys=True).encode()
     assert hashlib.sha256(colors).hexdigest() == "0c8f98cd914c81a363a493e9a8b9ebbb404a89449569aad622ea1a45ae3d0616"
     qss = " ".join(re.sub(r"\bwhite\b", "#ffffff", styles.application_stylesheet()).split())
-    assert hashlib.sha256(qss.encode()).hexdigest() == "9102f119a412fb929d700b2ba28fda3e1b7a86cc8119797e9a7005fe4c5c9177"
+    processing = re.search(r"/\* Processing presentation \*/.*?/\* End processing presentation \*/", qss)
+    assert processing is not None
+    # The new processing rules migrate formerly local CSS. Outside that bounded
+    # section, all previous shared rules still match the complete 05N.4 golden.
+    previous_qss = " ".join(qss.replace(processing.group(), "").split())
+    assert hashlib.sha256(previous_qss.encode()).hexdigest() == "9102f119a412fb929d700b2ba28fda3e1b7a86cc8119797e9a7005fe4c5c9177"
     # Preserve the previous whole-stylesheet assertion as well: only the
     # previously unpainted sidebar declaration is allowed to differ from 05N.3.
     sidebar = f"QWidget#sidebarNavigation {{ background: {DARK_PALETTE.navigation_surface}; border-right: 1px solid {DARK_PALETTE.navigation_border}; }}"
-    assert qss.count(sidebar) == 1
-    legacy_qss = qss.replace(sidebar, "QWidget#sidebarNavigation { background: #10161e; border-right: 1px solid #303b49; }")
+    assert previous_qss.count(sidebar) == 1
+    legacy_qss = previous_qss.replace(sidebar, "QWidget#sidebarNavigation { background: #10161e; border-right: 1px solid #303b49; }")
     assert hashlib.sha256(legacy_qss.encode()).hexdigest() == "00f5703f372164d91efbf397dd9aa973dd8bc67d6987118c0840b91be9492d6a"
     assert styles.application_stylesheet() == styles.application_stylesheet(DARK_PALETTE)
 

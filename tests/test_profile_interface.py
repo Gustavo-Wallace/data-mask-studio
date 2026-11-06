@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from qt_lifecycle import qt_widget_lifecycle
 
 from PySide6.QtWidgets import QMessageBox
+from PySide6.QtGui import QPalette
 
 from data_mask_studio.anonymization import ColumnAction, ColumnConfig
 from data_mask_studio.app import create_application
@@ -153,7 +154,7 @@ def test_profile_actions_are_restored_in_the_configuration_table(
         "preserve",
         "exclude",
     ]
-    assert len({field.styleSheet() for field in window._action_fields}) == 3
+    assert len({field.palette().color(QPalette.ColorRole.Base).name() for field in window._action_fields}) == 3
     header = window.config_table.horizontalHeader()
     assert header.sectionSize(0) >= max(
         field.sizeHint().width() for field in window._action_fields

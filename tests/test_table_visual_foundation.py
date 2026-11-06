@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
 from qt_lifecycle import qt_widget_lifecycle
 from data_mask_studio.anonymization import ColumnAction
 from data_mask_studio.app import create_application
-from data_mask_studio.gui.action_styles import ACTION_INDICATOR_STYLES
 from data_mask_studio.gui.detection_dialog import DetectionDialog
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
 from test_main_navigation import build_window
@@ -173,7 +172,8 @@ def test_configuration_editors_action_colors_and_restoration_checkboxes_are_pres
     assert widget._prefix_fields[0].palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text) == QColor(COLORS["disabled_text"])
     action = widget._action_fields[0]
     action.setCurrentIndex(action.findData(ColumnAction.MASK.value))
-    assert action.styleSheet() == ACTION_INDICATOR_STYLES[ColumnAction.MASK]
+    assert action.property("columnAction") == ColumnAction.MASK.value
+    assert not action.styleSheet()
     assert widget._prefix_fields[0].isEnabled() and widget._prefix_fields[0].text() == "NOME_COMPLETO"
     action.setFocus()
     assert action.hasFocus()

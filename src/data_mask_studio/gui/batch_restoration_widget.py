@@ -50,7 +50,7 @@ from data_mask_studio.gui.components.presentation import (
     FeedbackState, TruncatedTextToolTipDelegate, configure_result_area,
     set_button_role, set_feedback_state,
 )
-from data_mask_studio.gui.visual_tokens import COLORS, METRICS
+from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.i18n import Translator
 from data_mask_studio.restoration import RepresentationPolicy
@@ -237,9 +237,7 @@ class BatchRestorationWidget(QWidget):
         self.options_summary = QLabel()
         self.options_summary.setWordWrap(True)
         self.options_summary.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.options_summary.setStyleSheet(
-            f"color: {COLORS['muted_text']}; font-size: {METRICS['description_font_size']}px;"
-        )
+        self.options_summary.setProperty("textRole", "description")
         self.missing_policy_combo.currentIndexChanged.connect(self._update_options_summary)
         self.representation_combo.currentIndexChanged.connect(self._update_options_summary)
         set_button_role(self.options_toggle, "secondary")
