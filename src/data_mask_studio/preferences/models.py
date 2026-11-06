@@ -10,9 +10,18 @@ class LanguagePreference(StrEnum):
     BRAZILIAN_PORTUGUESE = "pt-BR"
 
 
+class ThemePreference(StrEnum):
+    """Persisted choice only; no platform detection or effective palette."""
+
+    SYSTEM = "system"
+    LIGHT = "light"
+    DARK = "dark"
+
+
 @dataclass(frozen=True, slots=True)
 class Preferences:
     language: LanguagePreference = LanguagePreference.SYSTEM
+    theme: ThemePreference = ThemePreference.SYSTEM
 
 
 class PreferencesError(StrEnum):
@@ -20,6 +29,7 @@ class PreferencesError(StrEnum):
     READ_FAILED = "read_failed"
     INVALID_FILE = "invalid_file"
     INVALID_LANGUAGE = "invalid_language"
+    INVALID_THEME = "invalid_theme"
     WRITE_FAILED = "write_failed"
 
     @property
@@ -30,6 +40,7 @@ class PreferencesError(StrEnum):
             self.READ_FAILED: "Não foi possível ler as preferências do aplicativo.",
             self.INVALID_FILE: "O arquivo de preferências está inválido ou é incompatível. Ele foi preservado.",
             self.INVALID_LANGUAGE: "A preferência de idioma não é suportada.",
+            self.INVALID_THEME: "A preferência de tema não é suportada.",
             self.WRITE_FAILED: "Não foi possível salvar as preferências do aplicativo.",
         }[self]
 

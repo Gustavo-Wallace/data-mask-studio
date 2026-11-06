@@ -21,6 +21,7 @@ _ERROR_MESSAGE_IDS = {
     PreferencesError.READ_FAILED: "settings.error.read_failed",
     PreferencesError.INVALID_FILE: "settings.error.invalid_file",
     PreferencesError.INVALID_LANGUAGE: "settings.error.invalid_language",
+    PreferencesError.INVALID_THEME: "settings.error.invalid_theme",
     PreferencesError.WRITE_FAILED: "settings.error.write_failed",
 }
 _LANGUAGE_MESSAGES = (

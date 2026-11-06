@@ -9,7 +9,7 @@ import sys
 import pytest
 
 from data_mask_studio.preferences import (
-    LanguagePreference, Preferences, PreferencesError, PreferencesService, default_preferences_path,
+    LanguagePreference, ThemePreference, Preferences, PreferencesError, PreferencesService, default_preferences_path,
 )
 from data_mask_studio.preferences import service as module
 
@@ -23,6 +23,7 @@ def test_missing_preferences_default_to_system_without_creating_any_files(tmp_pa
     service = PreferencesService(ui_languages_provider=lambda: ("pt-BR",))
     result = service.load()
     assert result.preferences == Preferences(LanguagePreference.SYSTEM) and result.error is None
+    assert result.preferences.theme is ThemePreference.SYSTEM
     assert service.resolve_language(result.preferences.language) == "pt-BR"
     assert service.path == Path(os.environ["LOCALAPPDATA"]) / "DataMaskStudio" / "preferences.json"
     assert service.path == default_preferences_path()
@@ -38,7 +39,7 @@ def test_explicit_choice_persists_between_independent_service_instances(tmp_path
     loaded = second.load()
     assert loaded.error is None and loaded.preferences.language is language
     document = json.loads(second.path.read_text(encoding="utf-8"))
-    assert document == {"schema_version": 1, "language": language.value}
+    assert document == {"schema_version": 1, "language": language.value, "theme": "system"}
     assert "effective_language" not in document
     expected = "pt-BR" if language is LanguagePreference.BRAZILIAN_PORTUGUESE else "en"
     assert second.resolve_language(loaded.preferences.language) == expected
@@ -72,7 +73,7 @@ def test_malformed_or_unsupported_documents_use_safe_defaults_but_are_never_repa
     path = tmp_path / "preferences.json"
     path.write_bytes(raw)
     service = PreferencesService(path)
-    for result in (service.load(), service.save_language("pt-BR")):
+    for result in (service.load(), service.save_language("pt-BR"), service.save_theme("dark")):
         assert result.error is PreferencesError.INVALID_FILE
         assert result.preferences.language is LanguagePreference.SYSTEM
     assert path.read_bytes() == raw
@@ -100,6 +101,7 @@ def test_unavailable_or_relative_appdata_has_no_cwd_or_user_profile_fallback(mon
     assert service.path is None
     assert service.load().error is PreferencesError.STORAGE_UNAVAILABLE
     assert service.save_language("en").error is PreferencesError.STORAGE_UNAVAILABLE
+    assert service.save_theme("dark").error is PreferencesError.STORAGE_UNAVAILABLE
 
 
 def test_read_failure_is_safe_and_does_not_attempt_a_write(tmp_path, monkeypatch):
@@ -111,6 +113,7 @@ def test_read_failure_is_safe_and_does_not_attempt_a_write(tmp_path, monkeypatch
     result = service.load()
     assert result.error is PreferencesError.READ_FAILED
     assert service.save_language("en").error is PreferencesError.READ_FAILED
+    assert service.save_theme("dark").error is PreferencesError.READ_FAILED
     assert "SYNTHETIC" not in result.error.message and str(tmp_path) not in result.error.message
 
 
@@ -132,7 +135,7 @@ def test_write_failure_keeps_last_good_document_and_cleans_owned_temporaries(tmp
     assert result.preferences.language is LanguagePreference.ENGLISH
     assert "SYNTHETIC" not in result.error.message and str(tmp_path) not in result.error.message
     assert service.path.read_bytes() == before
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["preferences.json"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == [".preferences.json.lock", "preferences.json"]
 
 
 def test_atomic_replace_publishes_only_complete_fsynced_document_in_same_directory(tmp_path, monkeypatch):
@@ -149,7 +152,7 @@ def test_atomic_replace_publishes_only_complete_fsynced_document_in_same_directo
         assert source.parent == destination.parent == tmp_path
         assert source != destination and destination == service.path
         assert destination.read_bytes() == before
-        assert json.loads(source.read_text(encoding="utf-8")) == {"schema_version": 1, "language": "pt-BR"}
+        assert json.loads(source.read_text(encoding="utf-8")) == {"schema_version": 1, "language": "pt-BR", "theme": "system"}
         replace(source, destination)
         events.append("replace")
     monkeypatch.setattr(module.os, "fsync", synced)
@@ -157,7 +160,7 @@ def test_atomic_replace_publishes_only_complete_fsynced_document_in_same_directo
     assert service.save_language("pt-BR").error is None
     assert events == ["fsync", "replace"]
     assert service.load().preferences.language is LanguagePreference.BRAZILIAN_PORTUGUESE
-    assert list(tmp_path.iterdir()) == [service.path]
+    assert set(tmp_path.iterdir()) == {service.path, service.path.with_name(".preferences.json.lock")}
 
 
 def test_partial_temporary_write_never_truncates_the_previous_document(tmp_path, monkeypatch):
@@ -184,7 +187,7 @@ def test_partial_temporary_write_never_truncates_the_previous_document(tmp_path,
     monkeypatch.setattr(module.os, "fdopen", lambda *args: InterruptedWrite(fdopen(*args)))
     assert service.save_language("pt-BR").error is PreferencesError.WRITE_FAILED
     assert service.path.read_bytes() == before
-    assert list(tmp_path.iterdir()) == [service.path]
+    assert set(tmp_path.iterdir()) == {service.path, service.path.with_name(".preferences.json.lock")}
 
 
 def test_oversized_input_is_read_with_a_bound_and_never_parsed(tmp_path, monkeypatch):
@@ -253,9 +256,11 @@ def test_preferences_never_read_or_write_vault_profiles_keys_recovery_or_unknown
         guard.setattr(Path, "open", guarded_open)
         assert service.load().error is None
         assert service.save_language("en").error is None
-        assert set(json.loads(service.path.read_bytes())) == {"schema_version", "language"}
+        assert set(json.loads(service.path.read_bytes())) == {"schema_version", "language", "theme"}
     assert all(path.read_bytes() == content for path, content in protected.items())
-    assert set(service.path.parent.iterdir()) == set(protected) | {service.path}
+    assert set(service.path.parent.iterdir()) == set(protected) | {
+        service.path, service.path.with_name(".preferences.json.lock"),
+    }
 
 
 def _paused_writer(path, channel):
@@ -274,7 +279,7 @@ def _paused_writer(path, channel):
         channel.close()
 
 
-def test_real_processes_use_complete_document_last_replacement_wins(tmp_path):
+def test_real_processes_reject_contending_write_then_allow_explicit_retry(tmp_path):
     path = tmp_path / "preferences.json"
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
@@ -284,14 +289,16 @@ def test_real_processes_use_complete_document_last_replacement_wins(tmp_path):
     try:
         assert parent.poll(15) and parent.recv() == "staged"
         assert not path.exists()
-        assert PreferencesService(path).save_language("pt-BR").error is None
-        assert PreferencesService(path).load().preferences.language is LanguagePreference.BRAZILIAN_PORTUGUESE
+        assert PreferencesService(path).save_language("pt-BR").error is PreferencesError.WRITE_FAILED
+        assert not path.exists()  # A rejected contender cannot publish anything.
         parent.send("publish")
         assert parent.poll(15) and parent.recv() == "success"
         process.join(10)
         assert process.exitcode == 0
         assert PreferencesService(path).load().preferences.language is LanguagePreference.ENGLISH
-        assert list(tmp_path.iterdir()) == [path]
+        assert set(tmp_path.iterdir()) == {path, path.with_name(".preferences.json.lock")}
+        assert PreferencesService(path).save_language("pt-BR").error is None
+        assert PreferencesService(path).load().preferences.language is LanguagePreference.BRAZILIAN_PORTUGUESE
     finally:
         if process.is_alive():
             process.terminate()  # This synthetic test-owned child only.

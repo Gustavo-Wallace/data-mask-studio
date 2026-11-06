@@ -92,9 +92,11 @@ def test_each_choice_saves_once_and_persists_in_fresh_widgets(language, monkeypa
     assert widget.status_label.property("feedbackState") == "success"
     assert not widget.save_button.isEnabled()
     assert json.loads(service.path.read_text(encoding="utf-8")) == {
-        "schema_version": 1, "language": language.value,
+        "schema_version": 1, "language": language.value, "theme": "system",
     }
-    assert list(service.path.parent.iterdir()) == [service.path]
+    assert set(service.path.parent.iterdir()) == {
+        service.path, service.path.with_name(".preferences.json.lock"),
+    }
     widget.close()
     fresh = SettingsWidget(PreferencesService(service.path))
     fresh.show()
@@ -199,7 +201,9 @@ def test_atomic_write_failure_restores_actual_stored_choice_and_allows_retry(mon
     assert widget.status_label.text() == PreferencesError.WRITE_FAILED.message
     assert widget.status_label.property("feedbackState") == "error"
     assert service.path.read_bytes() == before
-    assert list(service.path.parent.iterdir()) == [service.path]
+    assert set(service.path.parent.iterdir()) == {
+        service.path, service.path.with_name(".preferences.json.lock"),
+    }
     select(widget, "pt-BR")
     widget.save_button.click()
     assert service.load().preferences.language is LanguagePreference.BRAZILIAN_PORTUGUESE

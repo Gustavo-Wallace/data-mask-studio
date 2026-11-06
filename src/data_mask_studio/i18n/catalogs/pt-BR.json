@@ -46,6 +46,7 @@
     "settings.error.read_failed": "Não foi possível ler as preferências do aplicativo.",
     "settings.error.invalid_file": "O arquivo de preferências está inválido ou é incompatível. Ele foi preservado.",
     "settings.error.invalid_language": "A preferência de idioma não é suportada.",
+    "settings.error.invalid_theme": "A preferência de tema não é suportada.",
     "settings.error.write_failed": "Não foi possível salvar as preferências do aplicativo.",
     "about.title": "Sobre o {application}",
     "about.version": "Versão {version}",

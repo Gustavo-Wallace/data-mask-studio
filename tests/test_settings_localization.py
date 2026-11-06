@@ -85,7 +85,7 @@ def test_localized_settings_save_stable_ids_reload_and_keep_duplicate_save_prote
     assert widget.status_label.property("feedbackState") == "success"
     assert not widget.save_button.isEnabled()
     assert json.loads(service.path.read_text(encoding="utf-8")) == {
-        "schema_version": 1, "language": language.value,
+        "schema_version": 1, "language": language.value, "theme": "system",
     }
     before = service.path.read_bytes(), service.path.stat().st_mtime_ns
     widget.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
@@ -211,7 +211,9 @@ def test_real_write_failure_keeps_stored_choice_and_localizes_error_and_retry(lo
     assert widget.status_label.text() == Translator(locale).text("settings.error.write_failed")
     assert widget.status_label.property("feedbackState") == "error"
     assert "SYNTHETIC_PRIVATE" not in widget.status_label.text()
-    assert list(service.path.parent.iterdir()) == [service.path]
+    assert set(service.path.parent.iterdir()) == {
+        service.path, service.path.with_name(".preferences.json.lock"),
+    }
     select(widget, "pt-BR")
     widget.save_button.click()
     assert service.load().preferences.language is LanguagePreference.BRAZILIAN_PORTUGUESE

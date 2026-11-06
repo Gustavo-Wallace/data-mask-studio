@@ -1,15 +1,14 @@
 """Small preferences store, independent of vault keys, leases and backups.
 
-UTF-8 format v1: {"schema_version": 1, "language": "system"|"en"|"pt-BR"}.
+UTF-8 v1 requires schema_version/language, with optional theme (default system).
 Reads never write defaults. Invalid/unknown documents also block saving, so
 they are not silently repaired or downgraded. Callers receive immutable values
 and safe error codes, never the mutable JSON document or raw IO exceptions.
 
-Like profile persistence, write/fsync a unique same-directory temporary and
-os.replace it. Concurrent instances use whole-document last-replacement-wins
-for this single setting, with no cache or environment-wide lock. This is not
-a multi-setting read/modify/write transaction or a power-loss recovery journal;
-revisit concurrency before adding independent writable preferences.
+All writes lock one stable sidecar, reload the authoritative document, merge
+only the requested fields, validate, then write/fsync/replace atomically.
+Busy/unavailable locks fail safely without waiting or touching vault state.
+This is not a power-loss recovery journal or protection from non-DMS writers.
 """
 
 import json
@@ -17,17 +16,45 @@ import os
 from pathlib import Path
 import tempfile
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 
 from data_mask_studio.preferences.language import (
     EffectiveLanguage, detect_system_ui_languages, resolve_language,
 )
 from data_mask_studio.preferences.models import (
-    LanguagePreference, Preferences, PreferencesError, PreferencesResult,
+    LanguagePreference, ThemePreference, Preferences, PreferencesError, PreferencesResult,
 )
+from data_mask_studio.preferences.locking import preferences_write_lock
 
 PREFERENCES_FILE_NAME = "preferences.json"
 PREFERENCES_SCHEMA_VERSION = 1
-MAX_PREFERENCES_BYTES = 16 * 1024  # Two tiny fields; reject oversized/corrupt input before JSON parsing.
+MAX_PREFERENCES_BYTES = 16 * 1024  # Reject oversized/corrupt input before JSON parsing.
+
+# The closed set of enum fields is shared by parsing, patch validation and
+# serialization. Adding a typed default/field here does not rewrite save paths.
+_FIELDS = {
+    "language": (LanguagePreference, PreferencesError.INVALID_LANGUAGE),
+    "theme": (ThemePreference, PreferencesError.INVALID_THEME),
+}
+
+
+def _parse_document(document: object) -> Preferences:
+    if (not isinstance(document, dict) or not {"schema_version", "language"} <= document.keys()
+            or document.keys() - {"schema_version"} - _FIELDS.keys()
+            or type(document["schema_version"]) is not int
+            or document["schema_version"] != PREFERENCES_SCHEMA_VERSION):
+        raise ValueError("Invalid preference document")
+    defaults = Preferences()
+    return Preferences(**{
+        name: kind(document.get(name, getattr(defaults, name)))
+        for name, (kind, _) in _FIELDS.items()
+    })
+
+
+def _document(preferences: Preferences) -> dict:
+    return {"schema_version": PREFERENCES_SCHEMA_VERSION, **{
+        name: getattr(preferences, name).value for name in _FIELDS
+    }}
 
 
 def default_preferences_path() -> Path | None:
@@ -75,14 +102,10 @@ class PreferencesService:
             if len(raw) > MAX_PREFERENCES_BYTES:
                 raise ValueError
             document = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_fields)
-            if (not isinstance(document, dict) or set(document) != {"schema_version", "language"}
-                    or type(document["schema_version"]) is not int
-                    or document["schema_version"] != PREFERENCES_SCHEMA_VERSION):
-                raise ValueError
-            language = LanguagePreference(document["language"])
+            preferences = _parse_document(document)
         except (UnicodeError, ValueError, TypeError, RecursionError):
             return PreferencesResult(error=PreferencesError.INVALID_FILE)
-        return PreferencesResult(Preferences(language))
+        return PreferencesResult(preferences)
 
     def resolve_language(self, preference: LanguagePreference | str) -> EffectiveLanguage:
         """Resolution is separate from storage and never saves OS detection."""
@@ -98,18 +121,42 @@ class PreferencesService:
             return "en"
 
     def save_language(self, language: LanguagePreference | str) -> PreferencesResult:
-        try:
-            language = LanguagePreference(language)
-        except (ValueError, TypeError):
-            return PreferencesResult(error=PreferencesError.INVALID_LANGUAGE)
+        return self._update(language=language)
+
+    def save_theme(self, theme: ThemePreference | str) -> PreferencesResult:
+        """Persist a choice only; never resolve/apply a theme or emit GUI signals."""
+        return self._update(theme=theme)
+
+    def _update(self, **changes: LanguagePreference | ThemePreference | str) -> PreferencesResult:
+        typed = {}
+        for name, value in changes.items():
+            kind, error = _FIELDS[name]
+            try:
+                typed[name] = kind(value)
+            except (ValueError, TypeError):
+                return PreferencesResult(error=error)
+        # Preserve read-error semantics without creating a sidecar for a known
+        # invalid/unreadable document. The authoritative read is repeated under
+        # the lock; this preflight snapshot never authorizes a successful save.
         current = self.load()
         if current.error is not None:
             return current
         assert self.path is not None
-        data = json.dumps({
-            "schema_version": PREFERENCES_SCHEMA_VERSION,
-            "language": language.value,
-        }, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+        try:
+            with preferences_write_lock(self.path):
+                current = self.load()
+                if current.error is not None:
+                    return current
+                merged = replace(current.preferences, **typed)
+                document = _document(merged)
+                _parse_document(document)  # Validate the entire merged document.
+                data = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+                return self._persist(merged, data)
+        except (OSError, ValueError):
+            return PreferencesResult(current.preferences, PreferencesError.WRITE_FAILED)
+
+    def _persist(self, preferences: Preferences, data: bytes) -> PreferencesResult:
+        assert self.path is not None
         temporary: Path | None = None
         descriptor: int | None = None
         try:
@@ -126,8 +173,6 @@ class PreferencesService:
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
             temporary = None
-        except (OSError, ValueError):
-            return PreferencesResult(current.preferences, PreferencesError.WRITE_FAILED)
         finally:
             if descriptor is not None:
                 try:
@@ -139,4 +184,4 @@ class PreferencesService:
                     temporary.unlink(missing_ok=True)
                 except OSError:
                     pass  # Only our own temporary; never touch another file.
-        return PreferencesResult(Preferences(language))
+        return PreferencesResult(preferences)
