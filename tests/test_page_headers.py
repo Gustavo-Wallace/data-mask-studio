@@ -24,7 +24,7 @@ DESCRIPTIONS = (
     "Consulte códigos específicos sem expor todo o conteúdo do cofre.",
     "Crie ou restaure um backup criptografado do ambiente local.",
     "Diagnostique, limpe temporários e compacte o cofre com segurança.",
-    "Escolha o idioma de preferência para a interface do aplicativo.",
+    "Escolha o idioma e a aparência do aplicativo.",
 )
 
 
