@@ -37,6 +37,14 @@ class DataMaskStudioStyle(QProxyStyle):
         self.setObjectName("DataMaskStudioFusion")
         self._colors = colors
 
+    def polish(self, target):
+        # Popup windows created after a scoped preview otherwise inherit the
+        # QApplication palette. Keep native Fusion menu painting/geometry; QSS
+        # polish still owns foreground/state overrides, as in the Dark baseline.
+        if isinstance(target, QWidget) and target.windowType() == Qt.WindowType.Popup:
+            target.setPalette(application_palette(widget_palette(target, self._colors)))
+        return super().polish(target)
+
     def drawPrimitive(
         self,
         element: QStyle.PrimitiveElement,
@@ -156,6 +164,19 @@ def widget_palette(
     return default
 
 
+def _refresh_popup_surfaces(widget: QWidget) -> None:
+    # QStyleSheetStyle can restore a popup's cached native background after
+    # repolish. Refresh only surface/selection brushes, not its styled text,
+    # font, layout, active action or interaction state.
+    palette = widget.palette()
+    source = application_palette(widget_palette(widget))
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive, QPalette.ColorGroup.Disabled):
+        for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base,
+                     QPalette.ColorRole.Highlight, QPalette.ColorRole.HighlightedText):
+            palette.setBrush(group, role, source.brush(group, role))
+    widget.setPalette(palette)
+
+
 def apply_widget_palette(widget: QWidget, colors: ThemePalette = DARK_PALETTE) -> None:
     """Render an explicit widget subtree only; never resolve or activate a theme.
 
@@ -171,6 +192,9 @@ def apply_widget_palette(widget: QWidget, colors: ThemePalette = DARK_PALETTE) -
         child.update()
     widget.setStyleSheet(application_stylesheet(colors))
     widget.ensurePolished()
+    for child in (widget, *widget.findChildren(QWidget)):
+        if child.windowType() == Qt.WindowType.Popup:
+            _refresh_popup_surfaces(child)
 
 
 def apply_application_theme(application: QApplication) -> None:
@@ -277,10 +301,16 @@ def _render_stylesheet(colors: ThemePalette) -> str:
     QComboBox[columnAction="preserve"] { background-color: $action_preserve; border-color: $neutral_indicator; }
     QComboBox[columnAction="mask"] { background-color: $action_mask; border-color: $accent; }
     QComboBox[columnAction="exclude"] { background-color: $danger_surface; border-color: $danger_border; }
-    QComboBox[columnAction] QAbstractItemView { background: $base; color: $text; selection-background-color: $selection; selection-color: $selection_text; }
     QLineEdit[validationError="true"] { border: 1px solid $validation_border; }
     QLabel[textRole="description"] { color: $muted_text; font-size: ${description_font_size}px; }
     /* End processing presentation */
+    /* Popup presentation */
+    QComboBox { selection-color: $selection_text; }
+    QComboBox QAbstractItemView { background: $window; color: $text; selection-background-color: $selection; selection-color: $selection_text; }
+    QComboBox[columnAction] QAbstractItemView { background: $base; }
+    QMenu::item:selected { color: $selection_text; }
+    QMenu::item:disabled { color: $disabled_text; }
+    /* End popup presentation */
     """
     return (
         Template(stylesheet).substitute(asdict(colors), **METRICS)

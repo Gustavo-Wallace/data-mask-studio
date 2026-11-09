@@ -56,7 +56,9 @@ def test_entire_legacy_dark_color_map_and_qss_states_are_preserved():
     assert processing is not None
     # The new processing rules migrate formerly local CSS. Outside that bounded
     # section, all previous shared rules still match the complete 05N.4 golden.
-    previous_qss = " ".join(qss.replace(processing.group(), "").split())
+    popup = re.search(r"/\* Popup presentation \*/.*?/\* End popup presentation \*/", qss)
+    assert popup is not None
+    previous_qss = " ".join(qss.replace(processing.group(), "").replace(popup.group(), "").split())
     assert hashlib.sha256(previous_qss.encode()).hexdigest() == "9102f119a412fb929d700b2ba28fda3e1b7a86cc8119797e9a7005fe4c5c9177"
     # Preserve the previous whole-stylesheet assertion as well: only the
     # previously unpainted sidebar declaration is allowed to differ from 05N.3.
