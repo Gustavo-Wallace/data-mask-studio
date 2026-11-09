@@ -16,7 +16,7 @@ from data_mask_studio.branding import (
     MONOGRAM_FOREGROUND,
 )
 from data_mask_studio.gui.visual_tokens import COLORS, METRICS
-from data_mask_studio.gui.theme_palette import DARK_PALETTE, ThemePalette
+from data_mask_studio.gui.theme_palette import DARK_PALETTE, LIGHT_PALETTE, ThemePalette
 
 
 # Preserva os imports já utilizados pela aplicação e pelos testes.
@@ -152,16 +152,20 @@ def application_palette(colors: ThemePalette = DARK_PALETTE) -> QPalette:
 
 
 def widget_palette(
-    widget: QWidget | None, default: ThemePalette = DARK_PALETTE,
+    widget: QWidget | None, default: ThemePalette | None = None,
 ) -> ThemePalette:
-    """Nearest explicit presentation scope, without preferences or global state."""
+    """Nearest widget scope, then the startup palette; never read preferences."""
     while widget is not None:
         # Do not invoke MainWindow's legacy __getattr__ delegation.
         colors = vars(widget).get("_presentation_palette")
         if isinstance(colors, ThemePalette):
             return colors
         widget = widget.parentWidget()
-    return default
+    if default is not None:
+        return default
+    application = QApplication.instance()
+    colors = vars(application).get("_presentation_palette") if application is not None else None
+    return colors if isinstance(colors, ThemePalette) else DARK_PALETTE
 
 
 def _refresh_popup_surfaces(widget: QWidget) -> None:
@@ -197,15 +201,16 @@ def apply_widget_palette(widget: QWidget, colors: ThemePalette = DARK_PALETTE) -
             _refresh_popup_surfaces(child)
 
 
-def apply_application_theme(application: QApplication) -> None:
+def apply_application_theme(application: QApplication, colors: ThemePalette = DARK_PALETTE) -> None:
     """Aplica estilo, paleta e stylesheet oficiais em toda a aplicação."""
     global _application_style
-    style = DataMaskStudioStyle()
+    style = DataMaskStudioStyle(colors)
+    application._presentation_palette = colors
     application.setStyle(style)
     _application_style = style
-    application.setProperty("dataMaskStudioTheme", APPLICATION_THEME_NAME)
-    application.setPalette(application_palette())
-    application.setStyleSheet(application_stylesheet())
+    application.setProperty("dataMaskStudioTheme", "DataMaskStudioLight" if colors == LIGHT_PALETTE else APPLICATION_THEME_NAME)
+    application.setPalette(application_palette(colors))
+    application.setStyleSheet(application_stylesheet(colors))
 
 
 def application_stylesheet(colors: ThemePalette = DARK_PALETTE) -> str:

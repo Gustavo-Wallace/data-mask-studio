@@ -158,6 +158,7 @@ def test_explicit_override_bypasses_preference_resolution_and_catalog_reconstruc
     service = ObservedPreferences(tmp_path / "preferences.json")
     assert service.save_language(saved).error is None
     before = service.path.read_bytes()
+    loads_before = service.loads
     translator = Translator(locale)
     fake_bootstrap(app, monkeypatch, service, locale, override=translator)
 
@@ -165,11 +166,16 @@ def test_explicit_override_bypasses_preference_resolution_and_catalog_reconstruc
         pytest.fail("Explicit Translator must bypass persisted/Windows language and new catalog construction")
 
     with monkeypatch.context() as guard:
-        guard.setattr(service, "load", forbidden)
         guard.setattr(service, "resolve_language", forbidden)
         guard.setattr(app_module, "Translator", forbidden)
-        guard.setattr(Path, "open", forbidden)
+        original_open = Path.open
+        def theme_preferences_only(path, *args, **kwargs):
+            if path != service.path:
+                forbidden()
+            return original_open(path, *args, **kwargs)
+        guard.setattr(Path, "open", theme_preferences_only)
         assert app_module.run(translator=translator, preferences_service=service) == 19
+    assert service.loads == loads_before + 1  # Read theme, never resolve language.
     assert service.path.read_bytes() == before
 
 

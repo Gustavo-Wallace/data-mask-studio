@@ -12,7 +12,7 @@ from data_mask_studio.gui.styles import section_title_stylesheet
 from data_mask_studio.gui.visual_tokens import METRICS
 from data_mask_studio.i18n import Translator
 from data_mask_studio.preferences import (
-    LanguagePreference, PreferencesError, PreferencesResult, PreferencesService,
+    LanguagePreference, ThemePreference, PreferencesError, PreferencesResult, PreferencesService,
 )
 
 
@@ -28,6 +28,11 @@ _LANGUAGE_MESSAGES = (
     (LanguagePreference.SYSTEM, "settings.language.system"),
     (LanguagePreference.ENGLISH, "settings.language.english"),
     (LanguagePreference.BRAZILIAN_PORTUGUESE, "settings.language.portuguese"),
+)
+_THEME_MESSAGES = (
+    (ThemePreference.SYSTEM, "settings.theme.system"),
+    (ThemePreference.LIGHT, "settings.theme.light"),
+    (ThemePreference.DARK, "settings.theme.dark"),
 )
 
 
@@ -45,9 +50,12 @@ class SettingsWidget(QWidget):
         self._live_language_switching = live_language_switching
         self._saving = False
         self._acknowledged_language: LanguagePreference | None = None
+        self._acknowledged_theme: ThemePreference | None = None
         self._readable = False
         self._feedback_id: str | None = None
         self._feedback_state: FeedbackState = "neutral"
+        self._theme_feedback_id: str | None = None
+        self._theme_feedback_state: FeedbackState = "neutral"
 
         self.language_label = QLabel()
         self.language_label.setStyleSheet(section_title_stylesheet())
@@ -73,10 +81,32 @@ class SettingsWidget(QWidget):
         layout.addWidget(self.notice_label)
         layout.addWidget(self.save_button, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.status_label)
+        self.theme_label = QLabel()
+        self.theme_label.setStyleSheet(section_title_stylesheet())
+        self.theme_combo = ScrollSafeComboBox()
+        self.theme_label.setBuddy(self.theme_combo)
+        for value, _ in _THEME_MESSAGES:
+            self.theme_combo.addItem("", value.value)
+        self.theme_notice_label = QLabel()
+        self.theme_notice_label.setWordWrap(True)
+        set_feedback_state(self.theme_notice_label, "neutral")
+        self.theme_save_button = QPushButton()
+        self.theme_save_button.setEnabled(False)
+        set_button_role(self.theme_save_button, "primary")
+        self.theme_status_label = QLabel()
+        self.theme_status_label.setWordWrap(True)
+        set_feedback_state(self.theme_status_label, "neutral")
+        layout.addWidget(self.theme_label)
+        layout.addWidget(self.theme_combo, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.theme_notice_label)
+        layout.addWidget(self.theme_save_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.theme_status_label)
         layout.addStretch()
         self.retranslate(self._translator)
         self.language_combo.currentIndexChanged.connect(self._selection_changed)
         self.save_button.clicked.connect(self.save_preference)
+        self.theme_combo.currentIndexChanged.connect(self._theme_selection_changed)
+        self.theme_save_button.clicked.connect(self.save_theme_preference)
 
     def retranslate(self, translator: Translator) -> None:
         """Update presentation only, retaining stored and unsaved preference state."""
@@ -97,6 +127,17 @@ class SettingsWidget(QWidget):
         self.notice_label.setText(translator.text(
             "settings.notice.live" if self._live_language_switching else "settings.notice"
         ))
+        self.theme_label.setText(translator.text("settings.theme.label"))
+        self.theme_combo.setAccessibleName(translator.text("settings.theme.label"))
+        self.theme_combo.setAccessibleDescription(translator.text("settings.theme.notice"))
+        blocked = self.theme_combo.blockSignals(True)
+        try:
+            for index, (_, message_id) in enumerate(_THEME_MESSAGES):
+                self.theme_combo.setItemText(index, translator.text(message_id))
+        finally:
+            self.theme_combo.blockSignals(blocked)
+        self.theme_notice_label.setText(translator.text("settings.theme.notice"))
+        self.theme_save_button.setText(translator.text("settings.theme.save"))
         self._render_feedback()
 
     def language_applied(self) -> None:
@@ -117,13 +158,30 @@ class SettingsWidget(QWidget):
         self.language_combo.blockSignals(blocked)
         self._acknowledged_language = None
         self._readable = result.error is None
-        self.save_button.setEnabled(self._readable and not self._saving)
+        self._refresh_save_buttons()
+
+    def _display_theme_stored(self, result: PreferencesResult) -> None:
+        blocked = self.theme_combo.blockSignals(True)
+        self.theme_combo.setCurrentIndex(self.theme_combo.findData(result.preferences.theme.value))
+        self.theme_combo.blockSignals(blocked)
+        self._acknowledged_theme = None
+        self._readable = result.error is None
+        self._refresh_save_buttons()
+
+    def _refresh_save_buttons(self) -> None:
+        available = self._readable and not self._saving
+        self.save_button.setEnabled(available and self._acknowledged_language is None)
+        self.theme_save_button.setEnabled(available and self._acknowledged_theme is None)
 
     def _render_feedback(self) -> None:
         self.status_label.setText(
             self._translator.text(self._feedback_id) if self._feedback_id else ""
         )
         set_feedback_state(self.status_label, self._feedback_state)
+        self.theme_status_label.setText(
+            self._translator.text(self._theme_feedback_id) if self._theme_feedback_id else ""
+        )
+        set_feedback_state(self.theme_status_label, self._theme_feedback_state)
 
     def _feedback(self, message_id: str | None = None, *, state: FeedbackState = "neutral") -> None:
         self._feedback_id = message_id
@@ -133,14 +191,19 @@ class SettingsWidget(QWidget):
     def load_preferences(self) -> None:
         result = self._preferences.load()
         self._display_stored(result)
+        self._display_theme_stored(result)
         self._feedback(
+            _ERROR_MESSAGE_IDS[result.error] if result.error else None,
+            state="error" if result.error else "neutral",
+        )
+        self._theme_feedback(
             _ERROR_MESSAGE_IDS[result.error] if result.error else None,
             state="error" if result.error else "neutral",
         )
 
     def _selection_changed(self) -> None:
         self._acknowledged_language = None
-        self.save_button.setEnabled(self._readable and not self._saving)
+        self._refresh_save_buttons()
         if self._readable:
             self._feedback()
 
@@ -156,7 +219,7 @@ class SettingsWidget(QWidget):
         if language is self._acknowledged_language:
             return
         self._saving = True
-        self.save_button.setEnabled(False)
+        self._refresh_save_buttons()
         try:
             result = self._preferences.save_language(language)
             if result.error is not None:
@@ -170,6 +233,41 @@ class SettingsWidget(QWidget):
                 self.language_saved.emit(result.preferences.language)
         finally:
             self._saving = False
-            self.save_button.setEnabled(
-                self._readable and self._acknowledged_language is None
-            )
+            self._refresh_save_buttons()
+
+    def _theme_feedback(self, message_id: str | None = None, *, state: FeedbackState = "neutral") -> None:
+        self._theme_feedback_id, self._theme_feedback_state = message_id, state
+        self._render_feedback()
+
+    def _theme_selection_changed(self) -> None:
+        self._acknowledged_theme = None
+        self._refresh_save_buttons()
+        if self._readable:
+            self._theme_feedback()
+
+    def save_theme_preference(self) -> None:
+        # Deliberately no theme-applied signal or visual/session update.
+        if self._saving or not self._readable:
+            return
+        try:
+            theme = ThemePreference(self.theme_combo.currentData())
+        except (TypeError, ValueError):
+            self._display_theme_stored(self._preferences.load())
+            self._theme_feedback(_ERROR_MESSAGE_IDS[PreferencesError.INVALID_THEME], state="error")
+            return
+        if theme is self._acknowledged_theme:
+            return
+        self._saving = True
+        self._refresh_save_buttons()
+        try:
+            result = self._preferences.save_theme(theme)
+            if result.error is not None:
+                self._display_theme_stored(self._preferences.load())
+                self._theme_feedback(_ERROR_MESSAGE_IDS[result.error], state="error")
+            else:
+                self._display_theme_stored(result)
+                self._acknowledged_theme = result.preferences.theme
+                self._theme_feedback("settings.theme.saved", state="success")
+        finally:
+            self._saving = False
+            self._refresh_save_buttons()

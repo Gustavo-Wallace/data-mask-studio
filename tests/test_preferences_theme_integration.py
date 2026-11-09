@@ -9,13 +9,15 @@ from data_mask_studio import app as app_module
 from data_mask_studio.preferences import PreferencesService, ThemePreference
 from data_mask_studio.gui.dialog_localization import _DialogButtonTranslator
 from data_mask_studio.gui.styles import APPLICATION_THEME_NAME, application_palette, application_stylesheet
+from data_mask_studio.gui.theme_palette import DARK_PALETTE, LIGHT_PALETTE
 from test_bootstrap_localization import app
 from test_navigation_localization import build_localized_window
 from test_live_language_settings import save, assert_applied
 
 
 @pytest.mark.parametrize("theme", list(ThemePreference))
-def test_normal_startup_still_resolves_language_and_ignores_stored_theme(app, tmp_path, monkeypatch, theme):
+def test_normal_startup_resolves_language_and_stored_theme_without_coupling_saves(app, tmp_path, monkeypatch, theme):
+    monkeypatch.setattr("data_mask_studio.gui.theme_resolution.detect_windows_theme", lambda: "dark")
     service = PreferencesService(tmp_path / "preferences.json",
         ui_languages_provider=lambda: pytest.fail("Explicit English does not query the OS"))
     assert service.save_language("en").error is None
@@ -29,8 +31,10 @@ def test_normal_startup_still_resolves_language_and_ignores_stored_theme(app, tm
         app.processEvents()
         window = windows[0]
         assert window._translator.locale == "en"
-        assert app.property("dataMaskStudioTheme") == APPLICATION_THEME_NAME == "DataMaskStudioDark"
-        assert app.palette() == application_palette() and app.styleSheet() == application_stylesheet()
+        colors = LIGHT_PALETTE if theme is ThemePreference.LIGHT else DARK_PALETTE
+        name = "DataMaskStudioLight" if theme is ThemePreference.LIGHT else APPLICATION_THEME_NAME
+        assert app.property("dataMaskStudioTheme") == name
+        assert app.palette() == application_palette(colors) and app.styleSheet() == application_stylesheet(colors)
         translator = window._translator
         qt_translators = app.findChildren(QTranslator)
         assert len(qt_translators) == 1 and isinstance(qt_translators[0], _DialogButtonTranslator)
@@ -59,7 +63,7 @@ def test_normal_startup_still_resolves_language_and_ignores_stored_theme(app, tm
     assert app_module.run(preferences_service=service) == 0
 
 
-def test_live_settings_language_save_preserves_newer_theme_without_theme_controls(app, tmp_path):
+def test_live_settings_language_save_preserves_newer_theme_without_applying_it(app, tmp_path):
     service = PreferencesService(tmp_path / "preferences.json")
     window = build_localized_window(tmp_path, preferences_service=service, live_language_switching=True)
     window.show()

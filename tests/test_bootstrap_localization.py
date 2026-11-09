@@ -288,11 +288,21 @@ def test_modal_execution_failure_is_not_hidden_or_retried_and_dialog_is_released
 ])
 def test_safe_service_body_remains_literal_and_presentation_does_no_filesystem_work(app, tmp_path, monkeypatch, locale, body):
     translator = Translator(locale)
+    service = PreferencesService(tmp_path / "preferences.json")
+    stored = service.load()
+    preference_reads = []
+    def startup_preferences():
+        preference_reads.append(True)
+        return stored
+    # Startup now reads appearance preferences; the error presentation itself
+    # must still perform no filesystem work, even with that dependency supplied.
+    monkeypatch.setattr(service, "load", startup_preferences)
     sentinel = tmp_path / "synthetic-evidence.bin"
     sentinel.write_bytes(b"Synthetic evidence must not be changed")
     calls = []
 
     def initialize(**kwargs):
+        assert preference_reads == [True]
         calls.append(True)
         raise EnvironmentError(body)
 
@@ -309,7 +319,8 @@ def test_safe_service_body_remains_literal_and_presentation_does_no_filesystem_w
     with monkeypatch.context() as guard:
         for name in ("open", "read_text", "read_bytes", "stat", "exists", "resolve", "unlink", "mkdir"):
             guard.setattr(Path, name, forbidden)
-        assert dialog_result(app, lambda: app_module.run(translator=translator), respond) == 1
+        assert dialog_result(app, lambda: app_module.run(
+            translator=translator, preferences_service=service), respond) == 1
     assert calls == [True] and sentinel.read_bytes() == b"Synthetic evidence must not be changed"
 
 

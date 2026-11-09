@@ -430,6 +430,6 @@ def test_storage_invalidated_since_display_preserves_bytes_and_active_locale(ses
 def test_catalogs_remain_strictly_paired():
     catalogs = load_catalogs()
     validate_catalogs(catalogs)
-    assert len(catalogs["en"]) == len(catalogs["pt-BR"]) == 821
+    assert len(catalogs["en"]) == len(catalogs["pt-BR"]) == 828
     for locale in catalogs:
         assert "settings.notice.live" in catalogs[locale] and "settings.saved.applied" in catalogs[locale]

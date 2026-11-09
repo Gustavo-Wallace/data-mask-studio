@@ -11,6 +11,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.gui.dialog_localization import install_dialog_button_translations, localize_standard_buttons
 from data_mask_studio.gui.styles import apply_application_theme
+from data_mask_studio.gui.theme_palette import DARK_PALETTE, LIGHT_PALETTE
+from data_mask_studio.gui.theme_resolution import resolve_theme
 from data_mask_studio.publication import PublicationError
 from data_mask_studio.environment import EnvironmentError
 from data_mask_studio.i18n import Translator
@@ -71,11 +73,15 @@ def _application_icon_path() -> Path | None:
 def run(
     *, translator: Translator | None = None, preferences_service: PreferencesService | None = None,
 ) -> int:
-    """Resolve startup language; allow live Settings changes only in normal sessions."""
+    """Apply startup appearance; allow live language changes in normal sessions."""
     application = create_application(defer_button_translation=True)
     preferences = preferences_service if preferences_service is not None else PreferencesService()
+    stored = preferences.load()
+    colors = LIGHT_PALETTE if resolve_theme(stored.preferences.theme) == "light" else DARK_PALETTE
+    # Apply the authoritative startup choice before constructing any windows,
+    # never from Settings or OS change signals.
+    apply_application_theme(application, colors)
     if translator is None:
-        stored = preferences.load()
         effective_translator = Translator(preferences.resolve_language(stored.preferences.language))
     else:
         effective_translator = translator
