@@ -21,7 +21,7 @@ class EmptyStateTable(QTableWidget):
 
     def paintEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         super().paintEvent(event)
-        if self.rowCount() != 0:
+        if self._has_visible_rows():
             return
         painter = QPainter(self.viewport())
         painter.setPen(QColor(widget_palette(self).muted_text))
@@ -30,3 +30,6 @@ class EmptyStateTable(QTableWidget):
             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
             self.empty_text,
         )
+
+    def _has_visible_rows(self) -> bool:
+        return self.rowCount() != 0

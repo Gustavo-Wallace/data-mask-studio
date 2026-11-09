@@ -6,6 +6,7 @@ from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractButton,
     QBoxLayout,
     QComboBox,
     QFileDialog,
@@ -247,6 +248,17 @@ class AnonymizationWidget(QWidget):
         selection_layout.addWidget(self.selected_count_label, stretch=1)
 
         self.config_table = ColumnConfigurationTable(translator=self._translator)
+        self.column_search_field = QLineEdit()
+        self.column_search_field.setClearButtonEnabled(True)
+        self.column_search_field.setMaximumWidth(420)
+        self.column_search_field.setEnabled(False)
+        self.column_search_count = QLabel()
+        self.column_search_count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        set_feedback_state(self.column_search_count, "neutral")
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(self.column_search_field, stretch=1)
+        search_layout.addWidget(self.column_search_count)
+        self.column_search_field.textChanged.connect(self._apply_column_filter)
 
         self.validate_button = QPushButton("Validar configuração")
         self.validate_button.clicked.connect(self.validate_current_configuration)
@@ -340,6 +352,7 @@ class AnonymizationWidget(QWidget):
         layout.addWidget(self.profile_controls)
         layout.addWidget(configuration_label)
         layout.addLayout(selection_layout)
+        layout.addLayout(search_layout)
         layout.addWidget(self.config_table, stretch=1)
         layout.addWidget(self.composite_section)
         self.transfer_controls = TransferPackageControls(self, translator=self._translator)
@@ -405,6 +418,14 @@ class AnonymizationWidget(QWidget):
         self._update_profile_disclosure()
         self.profile_controls.retranslate(translator)
         self.config_table.retranslate(translator)
+        self.column_search_field.setPlaceholderText(translator.text("masking.search.placeholder"))
+        self.column_search_field.setAccessibleName(translator.text("masking.search.placeholder"))
+        self.column_search_field.setToolTip(translator.text("masking.search.placeholder"))
+        clear_search = self.column_search_field.findChild(QAbstractButton)
+        if clear_search is not None:
+            clear_search.setToolTip(translator.text("masking.search.clear"))
+            clear_search.setAccessibleName(translator.text("masking.search.clear"))
+        self._render_column_search_count()
         self.composite_section.retranslate(translator)
         self.transfer_controls.retranslate(translator)
         if self._profile_name_dialog is not None:
@@ -541,7 +562,8 @@ class AnonymizationWidget(QWidget):
             + 2 * table.frameWidth()
         )
         table.setMinimumHeight(frame + 2 * row_height)
-        table.setMaximumHeight(frame + max(2, table.rowCount()) * row_height)
+        visible_rows = sum(not table.isRowHidden(row) for row in range(table.rowCount()))
+        table.setMaximumHeight(frame + max(2, visible_rows) * row_height)
         has_columns = table.rowCount() > 0
         policy = table.sizePolicy()
         policy.setVerticalPolicy(QSizePolicy.Policy.Preferred)
@@ -549,6 +571,17 @@ class AnonymizationWidget(QWidget):
         layout = self.layout()
         layout.setStretch(layout.indexOf(table), 4 if has_columns else 0)
         layout.setStretch(layout.count() - 1, 1)
+
+    def _render_column_search_count(self) -> None:
+        visible = sum(not self.config_table.isRowHidden(row) for row in range(self.config_table.rowCount()))
+        self.column_search_count.setText(self._translator.text(
+            "masking.search.count", visible=visible, total=self.config_table.rowCount(),
+        ))
+
+    def _apply_column_filter(self) -> None:
+        self.config_table.filter_rows(self.column_search_field.text())
+        self._render_column_search_count()
+        self._update_configuration_layout()
 
     def _update_profile_disclosure(self, *_args: object) -> None:
         """Recolhe apenas os controles de perfis, sem alterar o estado da página."""
@@ -734,9 +767,11 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(has_headers)
         self.unselect_all_button.setEnabled(has_headers)
         self.validate_button.setEnabled(has_headers)
+        self.column_search_field.setEnabled(has_headers)
         self._translate_column_widgets()
         self._update_selected_count()
         self.config_table.refresh_column_layout()
+        self._apply_column_filter()
 
     def _clear_configuration_table(self) -> None:
         self.config_table.setRowCount(0)
@@ -745,6 +780,9 @@ class AnonymizationWidget(QWidget):
         self._prefix_fields = []
         self._output_name_fields = []
         self._normalization_fields = []
+        self.column_search_field.clear()
+        self.column_search_field.setEnabled(False)
+        self._apply_column_filter()
         self._manually_changed_rows.clear()
         self.select_all_button.setEnabled(False)
         self.unselect_all_button.setEnabled(False)
@@ -775,6 +813,7 @@ class AnonymizationWidget(QWidget):
         self._column_configs[row].output_name = text
         self._refresh_validation_indicators()
         self._configuration_changed(row)
+        self._apply_column_filter()
 
     def _prefix_changed(self, row: int, text: str) -> None:
         if not self._applying_suggestion:
@@ -955,6 +994,7 @@ class AnonymizationWidget(QWidget):
         self.transfer_controls.setEnabled(not analyzing)
         self.composite_section.setEnabled(not analyzing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
+        self.column_search_field.setEnabled(not analyzing and has_file)
         self.select_button.setEnabled(not analyzing)
         self.clear_button.setEnabled(not analyzing and has_file)
         self.config_table.setEnabled(not analyzing)
@@ -1277,6 +1317,7 @@ class AnonymizationWidget(QWidget):
         self._update_selected_count()
         self._refresh_validation_indicators()
         self.config_table.refresh_column_layout()
+        self._apply_column_filter()
 
     def rename_selected_profile(self) -> None:
         profile = self._selected_profile()
@@ -1479,6 +1520,7 @@ class AnonymizationWidget(QWidget):
             self._update_transfer_controls()
         self.composite_section.setEnabled(not processing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
+        self.column_search_field.setEnabled(not processing and has_file)
         self.select_button.setEnabled(not processing)
         self.clear_button.setEnabled(not processing and has_file)
         self.config_table.setEnabled(not processing)

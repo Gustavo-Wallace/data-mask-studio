@@ -40,13 +40,37 @@ class ColumnConfigurationTable(EmptyStateTable):
     def retranslate(self, translator: Translator) -> None:
         """Update presentation without replacing cell widgets or their state."""
         self._translator = translator
-        self.empty_text = translator.text("masking.table.empty")
-        self.setAccessibleDescription(self.empty_text)
+        self._update_empty_text()
         self.setHorizontalHeaderLabels([
             translator.text(f"masking.table.{name}")
             for name in ("action", "header", "output_header", "prefix", "normalization")
         ])
         self.refresh_column_layout()
+
+    def _has_visible_rows(self) -> bool:
+        return any(not self.isRowHidden(row) for row in range(self.rowCount()))
+
+    def _update_empty_text(self) -> None:
+        self.empty_text = self._translator.text(
+            "masking.search.empty" if self.rowCount() and not self._has_visible_rows()
+            else "masking.table.empty"
+        )
+        self.setAccessibleDescription(self.empty_text)
+
+    def filter_rows(self, query: str) -> int:
+        """Presentation only: retain every physical row, item and editor."""
+        query = query.casefold()
+        visible = 0
+        for row in range(self.rowCount()):
+            header = self.item(row, 1)
+            output = self.cellWidget(row, 2)
+            matches = (not query or (header is not None and query in header.text().casefold())
+                       or (isinstance(output, QLineEdit) and query in output.text().casefold()))
+            self.setRowHidden(row, not matches)
+            visible += int(matches)
+        self._update_empty_text()
+        self.viewport().update()
+        return visible
 
     def refresh_column_layout(self) -> None:
         """Recalcula as seções após os widgets das células serem populados."""
