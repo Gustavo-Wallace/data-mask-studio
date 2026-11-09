@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.gui.components.presentation import set_button_role, set_feedback_state
+from data_mask_studio.gui.components.single_file_drop import SingleFileDrop
 from data_mask_studio.gui.html_restoration_widget import HTMLRestorationWidget
 from data_mask_studio.gui.restoration_widget import RestorationWidget
 from data_mask_studio.gui.visual_tokens import METRICS
@@ -74,6 +75,12 @@ class FileRestorationWidget(QWidget):
         self.html_widget.file_loaded.connect(lambda: self._file_loaded(self.html_widget))
         self.csv_widget.busy_changed.connect(self._sync_busy)
         self.html_widget.busy_changed.connect(self._sync_busy)
+        self._file_drop = SingleFileDrop(
+            self, (self.select_button, self.csv_widget.select_button, self.csv_widget.path_field,
+                   self.html_widget.select_button, self.html_widget.path_field),
+            extensions=frozenset({".csv", ".html", ".htm"}), select_file=self.load_file,
+            available=lambda: not self._busy(),
+        )
         self.retranslate(self._translator)
 
     def retranslate(self, translator: Translator) -> None:
@@ -82,6 +89,9 @@ class FileRestorationWidget(QWidget):
         self.guidance.setText(translator.text("restoration.file.guidance"))
         self.csv_widget.retranslate(translator)
         self.html_widget.retranslate(translator)
+        for button in (self.select_button, self.csv_widget.select_button, self.html_widget.select_button):
+            button.setToolTip(translator.text("restoration.file.drop_hint"))
+            button.setAccessibleDescription(translator.text("restoration.file.drop_hint"))
         self._render_format()
         if self._selection_message_id is not None:
             self.selection_status.setText(translator.text(self._selection_message_id))

@@ -67,6 +67,7 @@ from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls, ProfileNameDialog
 from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.single_file_drop import SingleFileDrop
 from data_mask_studio.gui.components.presentation import (
     FeedbackState, confirm_destructive_action, set_feedback_state,
 )
@@ -363,6 +364,12 @@ class AnonymizationWidget(QWidget):
             QWidget.setTabOrder(previous, following)
         self._set_status_id("masking.status.initial")
         self._refresh_profiles()
+        self._file_drop = SingleFileDrop(
+            self, (self.select_button, self.path_field), extensions=frozenset({".csv"}),
+            select_file=self.load_csv,
+            available=lambda: (self.select_button.isEnabled() and not self._analyzing
+                               and self._worker is None and self._detection_worker is None),
+        )
         self.retranslate(self._translator)
 
     def retranslate(self, translator: Translator) -> None:
@@ -385,6 +392,8 @@ class AnonymizationWidget(QWidget):
             "masking.cancel_analysis" if self._analyzing else "masking.analyze"
         ))
         self.path_field.setPlaceholderText(translator.text("masking.no_file"))
+        self.select_button.setToolTip(translator.text("masking.file.drop_hint"))
+        self.select_button.setAccessibleDescription(translator.text("masking.file.drop_hint"))
         self.path_field.setAccessibleName(translator.text("masking.path_accessible"))
         self._details_layout.labelForField(self.file_name_label).setText(
             translator.text("masking.metadata.file")
