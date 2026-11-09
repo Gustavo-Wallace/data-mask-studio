@@ -122,6 +122,8 @@
     "masking.file.save_title": "Save masked CSV",
     "masking.file.filter": "CSV files (*.csv)",
     "masking.file.drop_hint": "Select or drop one local CSV file here.",
+    "batch.files.drop_hint": "Add or drop local CSV files and folders here. Subfolders are not included.",
+    "batch_restoration.files.drop_hint": "Add or drop local CSV, HTML, HTM files and folders here. Subfolders are not included.",
     "masking.file.overwrite_title": "Confirm replacement",
     "masking.file.overwrite_text": "The output file already exists. Replace it?",
     "masking.status.initial": "Select a CSV file to begin.",

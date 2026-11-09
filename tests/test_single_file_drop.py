@@ -260,7 +260,8 @@ def test_drag_highlight_is_scoped_theme_aware_and_cleared_without_focus_or_geome
                          Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
     QApplication.sendEvent(target, move)
     assert move.isAccepted() and move.dropAction() == Qt.DropAction.CopyAction
-    assert f'QLineEdit[fileDropActive="true"] {{ border-color: {colors.focus}; }}' in application_stylesheet(colors)
+    assert (f'QPushButton[fileDropActive="true"], QLineEdit[fileDropActive="true"], '
+            f'QTableWidget[fileDropActive="true"] {{ border-color: {colors.focus}; }}') in application_stylesheet(colors)
     assert target.geometry() == geometry and app.focusWidget() is focus and target.text() == text
     QApplication.sendEvent(target, QDragLeaveEvent())
     assert not target.property("fileDropActive")

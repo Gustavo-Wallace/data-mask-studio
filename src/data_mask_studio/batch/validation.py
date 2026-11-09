@@ -28,8 +28,11 @@ def add_files(files: list[BatchFile], paths: Iterable[str | Path]) -> int:
     return added
 
 
-def discover_csv_files(directory: str | Path) -> list[Path]:
+def discover_csv_files(directory: str | Path, *, follow_symlinks: bool = True) -> list[Path]:
+    """Immediate entries; drops can opt out of the selectors' legacy link policy."""
     folder = Path(directory).expanduser().absolute()
+    if not follow_symlinks and (folder.is_symlink() or folder.is_junction()):
+        return []
     if not folder.is_dir():
         raise BatchError("A pasta selecionada não existe.")
     try:
@@ -37,7 +40,8 @@ def discover_csv_files(directory: str | Path) -> list[Path]:
             (
                 item.absolute()
                 for item in folder.iterdir()
-                if item.is_file() and item.suffix.lower() == ".csv"
+                if (follow_symlinks or not (item.is_symlink() or item.is_junction()))
+                and item.is_file() and item.suffix.lower() == ".csv"
             ),
             key=lambda item: item.name.casefold(),
         )

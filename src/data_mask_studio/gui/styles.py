@@ -303,7 +303,7 @@ def _render_stylesheet(colors: ThemePalette) -> str:
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
     QToolTip { color: $input_text; background: $raised_surface; border: 1px solid $tooltip_border; padding: 4px; }
     /* Processing presentation */
-    QPushButton[fileDropActive="true"], QLineEdit[fileDropActive="true"] { border-color: $focus; }
+    QPushButton[fileDropActive="true"], QLineEdit[fileDropActive="true"], QTableWidget[fileDropActive="true"] { border-color: $focus; }
     QComboBox[columnAction="preserve"] { background-color: $action_preserve; border-color: $neutral_indicator; }
     QComboBox[columnAction="mask"] { background-color: $action_mask; border-color: $accent; }
     QComboBox[columnAction="exclude"] { background-color: $danger_surface; border-color: $danger_border; }

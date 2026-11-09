@@ -46,6 +46,7 @@ from data_mask_studio.gui.batch_restoration_worker import (
     BatchRestorationProcessingWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
+from data_mask_studio.gui.components.batch_file_drop import BatchFileDrop, discover_drop_files
 from data_mask_studio.gui.components.presentation import (
     FeedbackState, TruncatedTextToolTipDelegate, configure_result_area,
     set_button_role, set_feedback_state,
@@ -319,11 +320,19 @@ class BatchRestorationWidget(QWidget):
         self._update_options_disclosure()
         self._update_actions()
         self._set_status_id("batch_restoration.status.initial")
+        self._file_drop = BatchFileDrop(
+            self, (self.add_files_button, self.add_folder_button, self.file_table.viewport()),
+            extensions=frozenset({".csv", ".html", ".htm"}), select_paths=self._add_dropped_paths,
+            available=lambda: (self.add_files_button.isEnabled()
+                               and self._analysis_worker is None and self._processing_worker is None),
+        )
         self.retranslate(self._translator)
 
     def retranslate(self, translator: Translator) -> None:
         """Update existing presentation, never files, gates, checkboxes or workers."""
         self._translator = translator
+        for control in (self.add_files_button, self.add_folder_button, self.file_table):
+            control.setToolTip(translator.text("batch_restoration.files.drop_hint"))
         for widget, message_id in (
             (self.add_files_button, "batch.add_files"), (self.add_folder_button, "batch.add_folder"),
             (self.remove_button, "batch.remove"), (self.clear_button, "batch.clear"),
@@ -549,6 +558,17 @@ class BatchRestorationWidget(QWidget):
             self._set_status_id("batch_restoration.status.folder_empty")
             return
         self.add_paths(found)
+
+    def _add_dropped_paths(self, paths: tuple[Path, ...]) -> None:
+        try:
+            found = discover_drop_files(paths, discover_files)
+        except BatchRestorationError as error:
+            self._set_status(str(error), True)
+            return
+        if found:
+            self.add_paths(found)
+        else:
+            self._set_status_id("batch_restoration.status.folder_empty")
 
     def remove_selected(self) -> None:
         rows = sorted(

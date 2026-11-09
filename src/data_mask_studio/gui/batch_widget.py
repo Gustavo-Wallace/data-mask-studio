@@ -40,6 +40,7 @@ from data_mask_studio.gui.batch_worker import (
     BatchValidationWorker,
 )
 from data_mask_studio.gui.components import EmptyStateTable, EmptyStateTextEdit
+from data_mask_studio.gui.components.batch_file_drop import BatchFileDrop, discover_drop_files
 from data_mask_studio.gui.components.presentation import (
     FeedbackState, configure_result_area, set_button_role, set_feedback_state,
 )
@@ -216,11 +217,19 @@ class BatchWidget(QWidget):
         self._set_status_id("batch.status.initial")
         self.refresh_profiles()
         self._update_actions()
+        self._file_drop = BatchFileDrop(
+            self, (self.add_files_button, self.add_folder_button, self.file_table.viewport()),
+            extensions=frozenset({".csv"}), select_paths=self._add_dropped_paths,
+            available=lambda: (self.add_files_button.isEnabled()
+                               and self._validation_worker is None and self._processing_worker is None),
+        )
         self.retranslate(self._translator)
 
     def retranslate(self, translator: Translator) -> None:
         """Presentation only: no profile reload, model reset, gating or worker calls."""
         self._translator = translator
+        for control in (self.add_files_button, self.add_folder_button, self.file_table):
+            control.setToolTip(translator.text("batch.files.drop_hint"))
         for widget, message_id in (
             (self.add_files_button, "batch.add_files"),
             (self.add_folder_button, "batch.add_folder"),
@@ -451,6 +460,17 @@ class BatchWidget(QWidget):
         )
         if paths:
             self.add_paths(paths)
+
+    def _add_dropped_paths(self, paths: tuple[Path, ...]) -> None:
+        try:
+            found = discover_drop_files(paths, discover_csv_files)
+        except BatchError as error:
+            self._set_status(str(error), is_error=True)
+            return
+        if found:
+            self.add_paths(found)
+        else:
+            self._set_status_id("batch.folder_empty")
 
     def _choose_folder(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, self._translator.text("batch.add_folder"))

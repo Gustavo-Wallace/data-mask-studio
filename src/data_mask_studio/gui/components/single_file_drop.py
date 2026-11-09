@@ -3,50 +3,51 @@
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QMimeData, QObject, Qt
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QEvent, QMimeData, QObject, Qt, QUrl
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QWidget
 
 
-class SingleFileDrop(QObject):
+def local_drop_path(url: QUrl) -> Path | None:
+    """Decode local absolute paths without probing remote URL authorities."""
+    if (not url.isValid() or not url.isLocalFile() or url.host()
+            or url.hasQuery() or url.hasFragment()):
+        return None
+    path = Path(url.toLocalFile())
+    if not path.is_absolute() or path.drive.startswith("\\\\"):
+        return None
+    return path
+
+
+class FileDrop(QObject):
+    """Shared Qt delivery/highlighting; subclasses decide acceptable inputs."""
+
     def __init__(
         self, owner: QWidget, targets: Iterable[QWidget], *,
-        extensions: frozenset[str], select_file: Callable[[str], object],
+        select_paths: Callable[[tuple[Path, ...]], object],
         available: Callable[[], bool],
     ) -> None:
         super().__init__(owner)
         self._targets = tuple(targets)
-        self._extensions = extensions
-        self._select_file = select_file
+        self._select_paths = select_paths
         self._available = available
         for target in self._targets:
             target.setAcceptDrops(True)
             target.installEventFilter(self)
 
-    def _candidate(self, target: QWidget, mime: QMimeData) -> str | None:
+    def _candidate(self, target: QWidget, mime: QMimeData) -> tuple[Path, ...] | None:
         if (not target.isEnabled() or not target.isVisible()
                 or QApplication.activeModalWidget() is not None or not self._available()):
             return None
-        if not mime.hasUrls():
-            return None
-        urls = mime.urls()
-        if len(urls) != 1:
-            return None
-        url = urls[0]
-        if (not url.isValid() or not url.isLocalFile() or url.host()
-                or url.hasQuery() or url.hasFragment()):
-            return None
-        path = Path(url.toLocalFile())
-        # Do not probe network authorities, relative paths or directories.
-        if (not path.is_absolute() or path.drive.startswith("\\\\")
-                or path.suffix.casefold() not in self._extensions):
-            return None
-        try:
-            return str(path) if path.is_file() else None
-        except (OSError, ValueError):
-            return None
+        return self._paths_from_mime(mime)
+
+    def _paths_from_mime(self, mime: QMimeData) -> tuple[Path, ...] | None:
+        raise NotImplementedError
 
     @staticmethod
     def _highlight(target: QWidget, active: bool) -> None:
+        view = target.parentWidget()
+        if isinstance(view, QAbstractItemView) and view.viewport() is target:
+            target = view  # Events arrive on the viewport; the view owns its border.
         if bool(target.property("fileDropActive")) == active:
             return
         target.setProperty("fileDropActive", active)
@@ -77,7 +78,29 @@ class SingleFileDrop(QObject):
                 event.setDropAction(Qt.DropAction.CopyAction)
                 event.accept()
                 if kind == QEvent.Type.Drop:
-                    self._select_file(path)
+                    self._select_paths(path)
             # Invalid MIME data must not fall through to QLineEdit's text drop.
             return True
         return super().eventFilter(target, event)
+
+
+class SingleFileDrop(FileDrop):
+    def __init__(
+        self, owner: QWidget, targets: Iterable[QWidget], *,
+        extensions: frozenset[str], select_file: Callable[[str], object],
+        available: Callable[[], bool],
+    ) -> None:
+        self._extensions = extensions
+        super().__init__(owner, targets, select_paths=lambda paths: select_file(str(paths[0])),
+                         available=available)
+
+    def _paths_from_mime(self, mime: QMimeData) -> tuple[Path, ...] | None:
+        if not mime.hasUrls() or len(urls := mime.urls()) != 1:
+            return None
+        path = local_drop_path(urls[0])
+        if path is None or path.suffix.casefold() not in self._extensions:
+            return None
+        try:
+            return (path,) if path.is_file() else None
+        except (OSError, ValueError):
+            return None
