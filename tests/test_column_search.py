@@ -59,7 +59,7 @@ def test_search_matches_original_or_current_output_header_case_insensitively(pag
     assert widget._column_configs == configs
     if not expected:
         assert not widget.config_table._has_visible_rows()
-        assert widget.config_table.empty_text == "Nenhuma coluna corresponde à busca."
+        assert widget.config_table.empty_text == "Nenhuma coluna corresponde aos filtros."
 
 
 def test_live_typing_and_native_clear_action_reveal_existing_rows_without_rebuilding(page):

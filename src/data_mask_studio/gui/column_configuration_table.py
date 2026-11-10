@@ -1,6 +1,6 @@
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QResizeEvent
-from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QLineEdit, QStyle
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHeaderView, QLineEdit, QStyle
 
 from data_mask_studio.gui.components.empty_state_table import EmptyStateTable
 from data_mask_studio.gui.components.presentation import TruncatedTextToolTipDelegate
@@ -57,15 +57,19 @@ class ColumnConfigurationTable(EmptyStateTable):
         )
         self.setAccessibleDescription(self.empty_text)
 
-    def filter_rows(self, query: str) -> int:
+    def filter_rows(self, query: str, action: str = "all") -> int:
         """Presentation only: retain every physical row, item and editor."""
         query = query.casefold()
         visible = 0
         for row in range(self.rowCount()):
             header = self.item(row, 1)
             output = self.cellWidget(row, 2)
-            matches = (not query or (header is not None and query in header.text().casefold())
-                       or (isinstance(output, QLineEdit) and query in output.text().casefold()))
+            action_field = self.cellWidget(row, 0)
+            matches_text = (not query or (header is not None and query in header.text().casefold())
+                            or (isinstance(output, QLineEdit) and query in output.text().casefold()))
+            matches_action = (action == "all" or (isinstance(action_field, QComboBox)
+                                                  and action_field.currentData() == action))
+            matches = matches_text and matches_action
             self.setRowHidden(row, not matches)
             visible += int(matches)
         self._update_empty_text()

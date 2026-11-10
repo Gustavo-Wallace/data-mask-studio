@@ -252,13 +252,21 @@ class AnonymizationWidget(QWidget):
         self.column_search_field.setClearButtonEnabled(True)
         self.column_search_field.setMaximumWidth(420)
         self.column_search_field.setEnabled(False)
+        self.column_action_filter = ScrollSafeComboBox()
+        self.column_action_filter.addItem("", "all")
+        for action in (ColumnAction.MASK, ColumnAction.PRESERVE, ColumnAction.EXCLUDE):
+            self.column_action_filter.addItem("", action.value)
+        self.column_action_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.column_action_filter.setEnabled(False)
         self.column_search_count = QLabel()
         self.column_search_count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         set_feedback_state(self.column_search_count, "neutral")
         search_layout = QHBoxLayout()
         search_layout.addWidget(self.column_search_field, stretch=1)
+        search_layout.addWidget(self.column_action_filter)
         search_layout.addWidget(self.column_search_count)
         self.column_search_field.textChanged.connect(self._apply_column_filter)
+        self.column_action_filter.currentIndexChanged.connect(self._apply_column_filter)
 
         self.validate_button = QPushButton("Validar configuração")
         self.validate_button.clicked.connect(self.validate_current_configuration)
@@ -421,6 +429,12 @@ class AnonymizationWidget(QWidget):
         self.column_search_field.setPlaceholderText(translator.text("masking.search.placeholder"))
         self.column_search_field.setAccessibleName(translator.text("masking.search.placeholder"))
         self.column_search_field.setToolTip(translator.text("masking.search.placeholder"))
+        self.column_action_filter.setAccessibleName(translator.text("masking.search.action_filter"))
+        self.column_action_filter.setToolTip(translator.text("masking.search.action_filter"))
+        with QSignalBlocker(self.column_action_filter):
+            for index, message_id in enumerate(("masking.search.all_actions", "masking.action.mask",
+                                                "masking.action.preserve", "masking.action.exclude")):
+                self.column_action_filter.setItemText(index, translator.text(message_id))
         clear_search = self.column_search_field.findChild(QAbstractButton)
         if clear_search is not None:
             clear_search.setToolTip(translator.text("masking.search.clear"))
@@ -579,7 +593,7 @@ class AnonymizationWidget(QWidget):
         ))
 
     def _apply_column_filter(self) -> None:
-        self.config_table.filter_rows(self.column_search_field.text())
+        self.config_table.filter_rows(self.column_search_field.text(), self.column_action_filter.currentData())
         self._render_column_search_count()
         self._update_configuration_layout()
 
@@ -768,6 +782,7 @@ class AnonymizationWidget(QWidget):
         self.unselect_all_button.setEnabled(has_headers)
         self.validate_button.setEnabled(has_headers)
         self.column_search_field.setEnabled(has_headers)
+        self.column_action_filter.setEnabled(has_headers)
         self._translate_column_widgets()
         self._update_selected_count()
         self.config_table.refresh_column_layout()
@@ -782,6 +797,9 @@ class AnonymizationWidget(QWidget):
         self._normalization_fields = []
         self.column_search_field.clear()
         self.column_search_field.setEnabled(False)
+        with QSignalBlocker(self.column_action_filter):
+            self.column_action_filter.setCurrentIndex(0)
+        self.column_action_filter.setEnabled(False)
         self._apply_column_filter()
         self._manually_changed_rows.clear()
         self.select_all_button.setEnabled(False)
@@ -808,6 +826,9 @@ class AnonymizationWidget(QWidget):
         self._update_selected_count()
         self._refresh_validation_indicators()
         self._configuration_changed(row)
+
+        if self.column_action_filter.currentData() != "all":
+            self._apply_column_filter()
 
     def _output_name_changed(self, row: int, text: str) -> None:
         self._column_configs[row].output_name = text
@@ -995,6 +1016,7 @@ class AnonymizationWidget(QWidget):
         self.composite_section.setEnabled(not analyzing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
         self.column_search_field.setEnabled(not analyzing and has_file)
+        self.column_action_filter.setEnabled(not analyzing and has_file)
         self.select_button.setEnabled(not analyzing)
         self.clear_button.setEnabled(not analyzing and has_file)
         self.config_table.setEnabled(not analyzing)
@@ -1112,6 +1134,7 @@ class AnonymizationWidget(QWidget):
         self._configuration_dirty = True
         self._update_selected_count()
         self.config_table.refresh_column_layout()
+        self._apply_column_filter()
         self.validate_current_configuration()
 
     def clear_detection_suggestions(self) -> None:
@@ -1521,6 +1544,7 @@ class AnonymizationWidget(QWidget):
         self.composite_section.setEnabled(not processing and self._inspection_result is not None)
         has_file = self._inspection_result is not None
         self.column_search_field.setEnabled(not processing and has_file)
+        self.column_action_filter.setEnabled(not processing and has_file)
         self.select_button.setEnabled(not processing)
         self.clear_button.setEnabled(not processing and has_file)
         self.config_table.setEnabled(not processing)
