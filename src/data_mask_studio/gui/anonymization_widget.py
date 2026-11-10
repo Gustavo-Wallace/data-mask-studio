@@ -210,7 +210,6 @@ class AnonymizationWidget(QWidget):
         details_layout.addRow(metadata_layout)
 
         configuration_label = QLabel("Configuração das colunas")
-        configuration_label.setWordWrap(True)
         self.configuration_label = configuration_label
         configuration_label.setStyleSheet(section_title_stylesheet())
 
@@ -243,14 +242,11 @@ class AnonymizationWidget(QWidget):
         self.unselect_all_button.setEnabled(False)
 
         self.preview_schema_button = QPushButton()
-        # A compact header action: keep the existing colors/focus styling, but
+        # A compact configuration action: keep the existing colors/focus styling, but
         # use the natural text height rather than the full-size control minimum.
         self.preview_schema_button.setStyleSheet("min-height: 0px;")
         self.preview_schema_button.setEnabled(False)
         self.preview_schema_button.clicked.connect(self._show_output_schema)
-        configuration_header = QHBoxLayout()
-        configuration_header.addWidget(configuration_label, stretch=1)
-        configuration_header.addWidget(self.preview_schema_button)
 
         self.selected_count_label = QLabel("0 colunas para mascarar")
         self.selected_count_label.setWordWrap(True)
@@ -275,9 +271,11 @@ class AnonymizationWidget(QWidget):
         self.column_action_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.column_action_filter.setEnabled(False)
         self.column_search_count = QLabel()
+        self.column_search_count.setWordWrap(True)
         self.column_search_count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         set_feedback_state(self.column_search_count, "neutral")
         search_layout = QHBoxLayout()
+        search_layout.addWidget(self.preview_schema_button)
         search_layout.addWidget(self.column_search_field, stretch=1)
         search_layout.addWidget(self.column_action_filter)
         search_layout.addWidget(self.column_search_count)
@@ -375,7 +373,7 @@ class AnonymizationWidget(QWidget):
         layout.addLayout(details_layout)
         layout.addWidget(self.profile_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.profile_controls)
-        layout.addLayout(configuration_header)
+        layout.addWidget(configuration_label)
         layout.addLayout(selection_layout)
         layout.addLayout(search_layout)
         layout.addWidget(self.config_table, stretch=1)
@@ -397,8 +395,8 @@ class AnonymizationWidget(QWidget):
         profile_tab_order = (
             self.path_field, self.profile_toggle, self.profile_combo,
             self.apply_profile_button, self.save_profile_button, self.update_profile_button,
-            self.rename_profile_button, self.delete_profile_button, self.preview_schema_button,
-            self.select_all_button,
+            self.rename_profile_button, self.delete_profile_button, self.select_all_button,
+            self.unselect_all_button, self.preview_schema_button, self.column_search_field,
         )
         for previous, following in zip(profile_tab_order, profile_tab_order[1:]):
             QWidget.setTabOrder(previous, following)

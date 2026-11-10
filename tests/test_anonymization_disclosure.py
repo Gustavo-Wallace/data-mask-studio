@@ -238,8 +238,23 @@ def test_collapsing_profiles_preserves_values_and_restores_keyboard_focus(page):
     app.processEvents()
     assert widget.select_all_button.hasFocus()
     QTest.keyClick(widget.select_all_button, Qt.Key.Key_Tab, Qt.KeyboardModifier.ShiftModifier)
+    # QWidget key simulation leaves the last modifier in QApplication state.
+    QTest.keyRelease(widget.profile_toggle, Qt.Key.Key_Shift)
     app.processEvents()
     assert widget.profile_toggle.hasFocus()
+    # The optional preview follows the bulk actions, matching visual order.
+    for control in (widget.select_all_button, widget.unselect_all_button,
+                    widget.preview_schema_button, widget.column_search_field):
+        QTest.keyClick(app.focusWidget(), Qt.Key.Key_Tab)
+        app.processEvents()
+        assert control.hasFocus()
+    for control in (widget.preview_schema_button, widget.unselect_all_button,
+                    widget.select_all_button, widget.profile_toggle):
+        QTest.keyClick(app.focusWidget(), Qt.Key.Key_Tab, Qt.KeyboardModifier.ShiftModifier)
+        QTest.keyRelease(widget.profile_toggle, Qt.Key.Key_Shift)
+        app.processEvents()
+        assert control.hasFocus()
+    assert app.keyboardModifiers() == Qt.KeyboardModifier.NoModifier
     widget.profile_toggle.click()
     assert widget.profile_controls.isVisible() and widget._prefix_fields[0].text() == "MANUAL"
 
