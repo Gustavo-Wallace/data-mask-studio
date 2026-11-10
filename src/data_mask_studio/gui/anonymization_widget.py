@@ -67,6 +67,7 @@ from data_mask_studio.gui.column_configuration_table import (
     ColumnConfigurationTable,
 )
 from data_mask_studio.gui.detection_dialog import DetectionDialog
+from data_mask_studio.gui.output_schema_dialog import OutputSchemaDialog
 from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls, ProfileNameDialog
 from data_mask_studio.gui.dialog_localization import localize_standard_buttons
@@ -209,6 +210,7 @@ class AnonymizationWidget(QWidget):
         details_layout.addRow(metadata_layout)
 
         configuration_label = QLabel("Configuração das colunas")
+        configuration_label.setWordWrap(True)
         self.configuration_label = configuration_label
         configuration_label.setStyleSheet(section_title_stylesheet())
 
@@ -239,6 +241,16 @@ class AnonymizationWidget(QWidget):
         self.unselect_all_button = QPushButton("Preservar todas")
         self.unselect_all_button.clicked.connect(self.unselect_all_columns)
         self.unselect_all_button.setEnabled(False)
+
+        self.preview_schema_button = QPushButton()
+        # A compact header action: keep the existing colors/focus styling, but
+        # use the natural text height rather than the full-size control minimum.
+        self.preview_schema_button.setStyleSheet("min-height: 0px;")
+        self.preview_schema_button.setEnabled(False)
+        self.preview_schema_button.clicked.connect(self._show_output_schema)
+        configuration_header = QHBoxLayout()
+        configuration_header.addWidget(configuration_label, stretch=1)
+        configuration_header.addWidget(self.preview_schema_button)
 
         self.selected_count_label = QLabel("0 colunas para mascarar")
         self.selected_count_label.setWordWrap(True)
@@ -322,6 +334,7 @@ class AnonymizationWidget(QWidget):
         self._worker: AnonymizationWorker | None = None
         self._detection_worker: DetectionWorker | None = None
         self._detection_dialog: DetectionDialog | None = None
+        self._schema_dialog: OutputSchemaDialog | None = None
         self._suggestions: tuple[ColumnSuggestion, ...] = ()
         self._manually_changed_rows: set[int] = set()
         self._applying_suggestion = False
@@ -362,7 +375,7 @@ class AnonymizationWidget(QWidget):
         layout.addLayout(details_layout)
         layout.addWidget(self.profile_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.profile_controls)
-        layout.addWidget(configuration_label)
+        layout.addLayout(configuration_header)
         layout.addLayout(selection_layout)
         layout.addLayout(search_layout)
         layout.addWidget(self.config_table, stretch=1)
@@ -384,7 +397,8 @@ class AnonymizationWidget(QWidget):
         profile_tab_order = (
             self.path_field, self.profile_toggle, self.profile_combo,
             self.apply_profile_button, self.save_profile_button, self.update_profile_button,
-            self.rename_profile_button, self.delete_profile_button, self.select_all_button,
+            self.rename_profile_button, self.delete_profile_button, self.preview_schema_button,
+            self.select_all_button,
         )
         for previous, following in zip(profile_tab_order, profile_tab_order[1:]):
             QWidget.setTabOrder(previous, following)
@@ -432,6 +446,7 @@ class AnonymizationWidget(QWidget):
             (self.select_all_button, "masking.mask_all"),
             (self.unselect_all_button, "masking.preserve_all"),
             (self.validate_button, "masking.validate"),
+            (self.preview_schema_button, "masking.schema.preview"),
             (self.generate_button, "masking.generate"),
             (self.cancel_button, "dialog.button.cancel"),
             (self.open_folder_button, "masking.open_folder"),
@@ -478,6 +493,8 @@ class AnonymizationWidget(QWidget):
             self._render_confirmation()
         if self._detection_dialog is not None:
             self._detection_dialog.retranslate(translator)
+        if self._schema_dialog is not None:
+            self._schema_dialog.retranslate(translator)
         self._translate_column_widgets()
         self._render_selected_count()
         if self._inspection_result is not None:
@@ -817,6 +834,7 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(has_headers)
         self.unselect_all_button.setEnabled(has_headers)
         self.validate_button.setEnabled(has_headers)
+        self.preview_schema_button.setEnabled(has_headers)
         self.column_search_field.setEnabled(has_headers)
         self.column_action_filter.setEnabled(has_headers)
         self._translate_column_widgets()
@@ -841,6 +859,7 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(False)
         self.unselect_all_button.setEnabled(False)
         self.validate_button.setEnabled(False)
+        self.preview_schema_button.setEnabled(False)
         self.selected_count_label.setText(self._translator.text("masking.count.empty"))
 
     def _action_changed(self, row: int) -> None:
@@ -1020,6 +1039,23 @@ class AnonymizationWidget(QWidget):
                 ancestor.ensureWidgetVisible(field, 0, METRICS["panel_spacing"])
             ancestor = ancestor.parentWidget()
 
+    def _show_output_schema(self) -> None:
+        if (not self.preview_schema_button.isEnabled() or self._schema_dialog is not None
+                or self._worker is not None or self._detection_worker is not None or self._analyzing):
+            return
+        try:
+            plan = self._build_current_plan()
+        except PlanningError as error:
+            self._show_validation_error(error)
+            return
+        dialog = OutputSchemaDialog(plan, self, translator=self._translator)
+        self._schema_dialog = dialog
+        try:
+            dialog.exec()
+        finally:
+            self._schema_dialog = None
+            dialog.deleteLater()
+
     def _build_current_plan(self, composites=None):
         if self._inspection_result is None:
             raise gui_validation_error(PlanningError, MaskingValidationFeedback("masking.error.no_csv"), self._translator)
@@ -1107,6 +1143,7 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(not analyzing and has_file)
         self.unselect_all_button.setEnabled(not analyzing and has_file)
         self.validate_button.setEnabled(not analyzing and has_file)
+        self.preview_schema_button.setEnabled(not analyzing and has_file)
         self.generate_button.setEnabled(
             not analyzing and has_file and self._configuration_validated
         )
@@ -1635,6 +1672,7 @@ class AnonymizationWidget(QWidget):
         self.select_all_button.setEnabled(not processing and has_file)
         self.unselect_all_button.setEnabled(not processing and has_file)
         self.validate_button.setEnabled(not processing and has_file)
+        self.preview_schema_button.setEnabled(not processing and has_file)
         self.analyze_button.setEnabled(not processing and has_file)
         self.generate_button.setEnabled(
             not processing and has_file and self._configuration_validated
