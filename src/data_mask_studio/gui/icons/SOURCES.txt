@@ -1,0 +1,12 @@
+Selected, unmodified SVGs from Lucide 0.468.0 (ISC, with Feather MIT portions).
+https://github.com/lucide-icons/lucide/tree/0.468.0/icons
+Tag commit: f12b0de177fbc2a6795e99be065887e72b237123
+Included icons: archive-restore, file-lock-2, file-output, files, info,
+list-restart, search, settings, wrench.
+
+Lucide license: https://github.com/lucide-icons/lucide/blob/0.468.0/LICENSE
+Feather license: https://github.com/feathericons/feather/blob/v4.29.2/LICENSE
+Both notices accompany these assets and are included in packaged builds.
+
+DMS renders these outlines at 18 logical pixels using its semantic palette.
+No icon library or network connection is required at runtime.

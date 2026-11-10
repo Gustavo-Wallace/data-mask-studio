@@ -15,6 +15,7 @@ if not icon_path.is_file():
 
 datas = [(str(icon_path), "assets/branding")]
 datas += collect_data_files("data_mask_studio.i18n", includes=["catalogs/*.json"])
+datas += collect_data_files("data_mask_studio.gui", includes=["icons/*.svg", "icons/*.txt"])
 
 analysis = Analysis(
     [str(entry_point)],

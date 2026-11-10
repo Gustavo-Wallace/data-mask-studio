@@ -32,6 +32,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "data_mask_studio.i18n" = ["catalogs/*.json"]
+"data_mask_studio.gui" = ["icons/*.svg", "icons/*.txt"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

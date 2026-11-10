@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -12,6 +12,10 @@ from PySide6.QtWidgets import (
 )
 
 from data_mask_studio.gui.visual_tokens import METRICS
+from data_mask_studio.gui.styles import widget_palette
+from data_mask_studio.gui.components.navigation_icons import (
+    ICON_SIZE, NAVIGATION_ICONS, navigation_icon,
+)
 from data_mask_studio.i18n import Translator
 
 
@@ -118,6 +122,7 @@ class SidebarNavigation(QWidget):
         self.setFixedWidth(220)
         self._current_index = 0
         self._buttons: list[QPushButton] = []
+        self._icon_names: dict[QPushButton, str] = {}
         self._categories: list[NavigationCategory] = []
         self._category_items: list[NavigationItem] = []
         self._group = QButtonGroup(self)
@@ -147,6 +152,9 @@ class SidebarNavigation(QWidget):
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             button.setAccessibleName(item.title)
             button.setAccessibleDescription(item.accessible_description)
+            icon_name = NAVIGATION_ICONS.get(item.title_message_id)
+            if icon_name is not None:
+                self._add_icon(button, icon_name)
             button.installEventFilter(self)
             button.clicked.connect(
                 lambda _checked=False, page_index=index: self.set_current_index(
@@ -167,11 +175,35 @@ class SidebarNavigation(QWidget):
         self.about_button = QPushButton()
         self.about_button.setObjectName("navigationUtility")
         self.about_button.setAutoDefault(False)
+        self._add_icon(self.about_button, NAVIGATION_ICONS["common.about"])
+        self.about_button.installEventFilter(self)
         self.about_button.clicked.connect(self.about_requested.emit)
         layout.addWidget(self.about_button)
         if self._buttons:
             self._buttons[0].setChecked(True)
         self.retranslate(self._translator)
+
+    def _add_icon(self, button: QPushButton, name: str) -> None:
+        self._icon_names[button] = name
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        button.toggled.connect(lambda _checked: self._update_icon(button))
+        self._update_icon(button)
+
+    def _update_icon(self, button: QPushButton, *, hovered: bool | None = None) -> None:
+        colors = widget_palette(button)
+        if not button.isEnabled():
+            foreground = colors.disabled_text
+        elif button.isChecked():
+            foreground = colors.navigation_active_text
+        elif button is getattr(self, "about_button", None) and (
+            button.underMouse() if hovered is None else hovered
+        ):
+            foreground = colors.hover_text
+        else:
+            foreground = colors.muted_text
+        icon = navigation_icon(self._icon_names[button], foreground, colors.disabled_text)
+        if button.icon().cacheKey() != icon.cacheKey():
+            button.setIcon(icon)
 
     def retranslate(self, translator: Translator) -> None:
         """Update labels without replacing buttons, routes or connections."""
@@ -227,6 +259,13 @@ class SidebarNavigation(QWidget):
         return self._buttons[index].isEnabled()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched in self._icon_names:
+            if event.type() in (QEvent.Type.Enter, QEvent.Type.Leave):
+                self._update_icon(watched, hovered=event.type() == QEvent.Type.Enter)
+            elif event.type() in (
+                QEvent.Type.EnabledChange, QEvent.Type.PaletteChange, QEvent.Type.StyleChange,
+            ):
+                self._update_icon(watched)
         if watched in self._buttons and event.type() == QEvent.Type.KeyPress:
             key = event.key()  # type: ignore[attr-defined]
             if key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
