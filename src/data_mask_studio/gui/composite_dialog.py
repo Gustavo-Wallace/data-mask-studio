@@ -12,6 +12,7 @@ from data_mask_studio.csv_tools.models import CSVInspectionResult
 from data_mask_studio.anonymization.models import ColumnAction
 from data_mask_studio.csv_tools.source_binding import SourceBindingError, bind_source, source_ref_at
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.normalization_help import set_normalization_help
 from data_mask_studio.gui.components.presentation import (
     configure_dialog_layout, set_button_role, set_feedback_state,
 )
@@ -77,6 +78,8 @@ class ComponentRow(QWidget):
             for index in range(self.normalization.count()):
                 rule = NormalizationRule(self.normalization.itemData(index))
                 self.normalization.setItemText(index, translator.text(f"masking.normalization.{rule.value}"))
+        set_normalization_help(self.normalization, translator,
+                               context_id="masking.composite.normalization_tooltip")
         self.up.setAccessibleName(translator.text("composite.editor.move_up"))
         self.down.setAccessibleName(translator.text("composite.editor.move_down"))
         self.remove.setText(translator.text("composite.editor.remove"))

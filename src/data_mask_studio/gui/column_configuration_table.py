@@ -45,6 +45,8 @@ class ColumnConfigurationTable(EmptyStateTable):
             translator.text(f"masking.table.{name}")
             for name in ("action", "header", "output_header", "prefix", "normalization")
         ])
+        self.horizontalHeaderItem(3).setToolTip(translator.text("masking.column.prefix_tooltip"))
+        self.horizontalHeaderItem(4).setToolTip(translator.text("masking.column.normalization_tooltip"))
         self.refresh_column_layout()
 
     def _has_visible_rows(self) -> bool:

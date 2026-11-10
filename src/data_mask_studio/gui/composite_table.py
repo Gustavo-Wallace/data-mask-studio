@@ -45,6 +45,7 @@ class CompositeTable(QTableWidget):
                 "masking.composite.actions",
             )
         ])
+        self.horizontalHeaderItem(3).setToolTip(translator.text("masking.composite.prefix_hint"))
         self.refresh_layout()
 
     def set_width_reference(self, table):

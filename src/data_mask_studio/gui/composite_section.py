@@ -41,8 +41,11 @@ class CompositeSection(QGroupBox):
         """Translate existing controls, preserving configuration, focus and signals."""
         self._translator = translator
         self.setTitle(translator.text("masking.composite.title"))
+        self.setToolTip(translator.text("masking.composite.context_help"))
+        self.setAccessibleDescription(translator.text("masking.composite.context_help"))
         self.add_button.setText(translator.text("masking.composite.add"))
         self.add_button.setToolTip(translator.text("masking.composite.add_tooltip"))
+        self.add_button.setAccessibleDescription(translator.text("masking.composite.context_help"))
         self.empty_label.setText(translator.text("masking.composite.empty"))
         self.table.retranslate(translator)
         if getattr(self, "_editor_dialog", None) is not None:
@@ -155,9 +158,9 @@ class CompositeSection(QGroupBox):
         composite = self.configurations[index]
         error = composite_action_error(composite.action, composite.prefix)
         # Untyped service errors retain their safe existing wording until 05D.2.
-        self.table.cellWidget(index, 3).setToolTip(
-            error or self._translator.text("masking.composite.prefix_hint")
-        )
+        hint = error or self._translator.text("masking.composite.prefix_hint")
+        self.table.cellWidget(index, 3).setToolTip(hint)
+        self.table.cellWidget(index, 3).setAccessibleDescription(hint)
 
     def edit(self, index=None):
         inspection = self._context()

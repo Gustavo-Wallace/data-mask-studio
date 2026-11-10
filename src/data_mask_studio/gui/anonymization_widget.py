@@ -68,6 +68,7 @@ from data_mask_studio.gui.detection_worker import DetectionWorker
 from data_mask_studio.gui.profile_controls import ProfileControls, ProfileNameDialog
 from data_mask_studio.gui.dialog_localization import localize_standard_buttons
 from data_mask_studio.gui.components.scroll_safe_combo_box import ScrollSafeComboBox
+from data_mask_studio.gui.components.normalization_help import set_normalization_help
 from data_mask_studio.gui.components.single_file_drop import SingleFileDrop
 from data_mask_studio.gui.components.presentation import (
     FeedbackState, confirm_destructive_action, set_feedback_state,
@@ -375,6 +376,7 @@ class AnonymizationWidget(QWidget):
         self.setLayout(layout)
         self.config_table.model().rowsInserted.connect(self._update_configuration_layout)
         self.config_table.model().rowsRemoved.connect(self._update_configuration_layout)
+        self.config_table.horizontalScrollBar().rangeChanged.connect(self._update_configuration_layout)
         self._update_configuration_layout()
         profile_tab_order = (
             self.path_field, self.profile_toggle, self.profile_combo,
@@ -490,7 +492,10 @@ class AnonymizationWidget(QWidget):
                 field.setAccessibleName(self._translator.text(message_id, header=configuration.header))
             self._output_name_fields[row].setPlaceholderText(self._translator.text("masking.table.output_placeholder"))
             self._prefix_fields[row].setPlaceholderText(self._translator.text("masking.table.prefix_placeholder"))
-            normalization.setToolTip(self._translator.text("masking.column.normalization_tooltip"))
+            prefix_help = self._translator.text("masking.column.prefix_tooltip")
+            self._prefix_fields[row].setToolTip(prefix_help)
+            self._prefix_fields[row].setAccessibleDescription(prefix_help)
+            set_normalization_help(normalization, self._translator)
         self.config_table.refresh_column_layout()
 
     def _set_status_id(self, message_id: str, *, is_error: bool = False,
@@ -570,13 +575,20 @@ class AnonymizationWidget(QWidget):
         """Compact empty/small tables; let larger configurations use spare space."""
         table = self.config_table
         row_height = table.verticalHeader().defaultSectionSize()
+        scrollbar_height = table.horizontalScrollBar().sizeHint().height()
         frame = (
             table.horizontalHeader().sizeHint().height()
-            + table.horizontalScrollBar().sizeHint().height()
+            + scrollbar_height
             + 2 * table.frameWidth()
         )
-        table.setMinimumHeight(frame + 2 * row_height)
         visible_rows = sum(not table.isRowHidden(row) for row in range(table.rowCount()))
+        # Five rows plus a quarter of the next one signal internal scrolling.
+        # Short/filtered lists still shrink, and larger windows may use spare space.
+        minimum_height = frame + 2 * row_height
+        if visible_rows >= 6:
+            preview_frame = frame - (scrollbar_height if table.horizontalScrollBar().maximum() == 0 else 0)
+            minimum_height = preview_frame + round(5.25 * row_height)
+        table.setMinimumHeight(minimum_height)
         table.setMaximumHeight(frame + max(2, visible_rows) * row_height)
         has_columns = table.rowCount() > 0
         policy = table.sizePolicy()
@@ -750,10 +762,6 @@ class AnonymizationWidget(QWidget):
             normalization_field.setEnabled(True)
             normalization_field.setAccessibleName(
                 f"Normalização da coluna {configuration.header}"
-            )
-            normalization_field.setToolTip(
-                "Em Preservar, altera somente o valor em claro no CSV de saída; "
-                "não gera token nem grava no cofre."
             )
             self.config_table.setCellWidget(row, 4, normalization_field)
 

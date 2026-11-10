@@ -109,7 +109,7 @@ def test_composite_owned_labels_translate_but_freeform_validation_errors_do_not(
     prefix.setText("CORR")
     assert prefix.property("validationError") is False
     section.retranslate(Translator("en"))
-    assert prefix.toolTip() == "Use the prefix without a hyphen, for example CORR."
+    assert prefix.toolTip() == Translator("en").text("masking.composite.prefix_hint")
 
 
 def test_composite_editor_receives_main_section_translator(tmp_path, monkeypatch):
