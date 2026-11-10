@@ -3,7 +3,7 @@ from pathlib import Path
 import time
 
 from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QResizeEvent
+from PySide6.QtGui import QDesktopServices, QKeySequence, QResizeEvent, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractButton,
@@ -396,7 +396,32 @@ class AnonymizationWidget(QWidget):
             available=lambda: (self.select_button.isEnabled() and not self._analyzing
                                and self._worker is None and self._detection_worker is None),
         )
+        self._open_file_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        self._find_column_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        for shortcut in (self._open_file_shortcut, self._find_column_shortcut):
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.setAutoRepeat(False)
+        self._open_file_shortcut.activated.connect(self._open_file_from_shortcut)
+        self._find_column_shortcut.activated.connect(self._focus_search_from_shortcut)
         self.retranslate(self._translator)
+
+    def _shortcut_available(self) -> bool:
+        return (self.isVisible() and self.isEnabled() and self.window().isActiveWindow()
+                and self._worker is None and self._detection_worker is None and not self._analyzing
+                and QApplication.activeModalWidget() is None and QApplication.activePopupWidget() is None)
+
+    def _open_file_from_shortcut(self) -> None:
+        if self._shortcut_available() and self.select_button.isEnabled():
+            self.select_button.click()
+
+    def _focus_search_from_shortcut(self) -> None:
+        if self._shortcut_available() and self.column_search_field.isEnabled():
+            self.column_search_field.setFocus(Qt.FocusReason.OtherFocusReason)
+            ancestor = self.parentWidget()
+            while ancestor is not None:
+                if isinstance(ancestor, QScrollArea):
+                    ancestor.ensureWidgetVisible(self.column_search_field, 0, METRICS["panel_spacing"])
+                ancestor = ancestor.parentWidget()
 
     def retranslate(self, translator: Translator) -> None:
         """Update presentation only; editors, data, validation and workers stay intact."""

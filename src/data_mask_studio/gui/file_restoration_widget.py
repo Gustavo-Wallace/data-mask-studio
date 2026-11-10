@@ -4,8 +4,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget,
+    QApplication, QFileDialog, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from data_mask_studio.gui.components.presentation import set_button_role, set_feedback_state
@@ -81,7 +82,22 @@ class FileRestorationWidget(QWidget):
             extensions=frozenset({".csv", ".html", ".htm"}), select_file=self.load_file,
             available=lambda: not self._busy(),
         )
+        self._open_file_shortcut = QShortcut(QKeySequence("Ctrl+O"), self)
+        self._open_file_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._open_file_shortcut.setAutoRepeat(False)
+        self._open_file_shortcut.activated.connect(self._open_file_from_shortcut)
         self.retranslate(self._translator)
+
+    def _open_file_from_shortcut(self) -> None:
+        if (not self.isVisible() or not self.isEnabled() or not self.window().isActiveWindow()
+                or self._busy() or QApplication.activeModalWidget() is not None
+                or QApplication.activePopupWidget() is not None):
+            return
+        current = self.stack.currentWidget()
+        button = (current.select_button if current in (self.csv_widget, self.html_widget)
+                  else self.select_button)
+        if button.isEnabled():
+            button.click()
 
     def retranslate(self, translator: Translator) -> None:
         self._translator = translator
