@@ -7,6 +7,7 @@ from PySide6.QtGui import QDesktopServices, QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractButton,
+    QAbstractItemView,
     QBoxLayout,
     QComboBox,
     QFileDialog,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
+    QScrollArea,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -30,6 +32,7 @@ from data_mask_studio.anonymization import (
     AnonymizationResult,
     ColumnAction,
     ColumnConfig,
+    ConfigurationValidationResult,
     create_column_configs,
     normalize_prefix,
     validate_configuration,
@@ -270,7 +273,7 @@ class AnonymizationWidget(QWidget):
         self.column_action_filter.currentIndexChanged.connect(self._apply_column_filter)
 
         self.validate_button = QPushButton("Validar configuração")
-        self.validate_button.clicked.connect(self.validate_current_configuration)
+        self.validate_button.clicked.connect(lambda: self.validate_current_configuration(navigate_to_error=True))
         self.validate_button.setEnabled(False)
 
         self.generate_button = QPushButton("Gerar CSV mascarado")
@@ -922,7 +925,7 @@ class AnonymizationWidget(QWidget):
             else:
                 set_validation_indicator(prefix_field, True)
 
-    def validate_current_configuration(self) -> None:
+    def validate_current_configuration(self, *, navigate_to_error: bool = False) -> None:
         self._update_transfer_controls()
         result = validate_configuration(self._column_configs)
         self._refresh_validation_indicators()
@@ -932,6 +935,8 @@ class AnonymizationWidget(QWidget):
             self._configuration_validated = False
             self.generate_button.setEnabled(False)
             self._show_validation_error(error)
+            if navigate_to_error:
+                self._navigate_to_invalid_field(result)
         else:
             self._configuration_validated = True
             self.generate_button.setEnabled(True)
@@ -943,6 +948,52 @@ class AnonymizationWidget(QWidget):
             )
             self._set_status_id("masking.status.valid", masked=result.selected_count,
                                 preserved=preserved, excluded=excluded, state="success")
+
+    def _navigate_to_invalid_field(self, result: ConfigurationValidationResult) -> None:
+        if (self._worker is not None or self._detection_worker is not None or self._analyzing
+                or QApplication.activeModalWidget() is not None):
+            return
+        # Results and editors share physical input order, including duplicate headers.
+        for row, (row_result, output, prefix) in enumerate(zip(
+            result.column_results, self._output_name_fields, self._prefix_fields,
+        )):
+            if row_result.is_valid:
+                continue
+            for column, field in ((2, output), (3, prefix)):
+                if field.property("validationError") is True and field.isEnabled():
+                    table = self.config_table
+                    if table.isRowHidden(row):
+                        clear_search = not table.row_matches(row, self.column_search_field.text())
+                        reset_action = not table.row_matches(row, "", self.column_action_filter.currentData())
+                        with QSignalBlocker(self.column_search_field), QSignalBlocker(self.column_action_filter):
+                            if clear_search:
+                                self.column_search_field.clear()
+                            if reset_action:
+                                self.column_action_filter.setCurrentIndex(self.column_action_filter.findData("all"))
+                        self._apply_column_filter()
+                    self._focus_invalid_editor(table, row, column, field)
+                    return
+        # Only the existing composite-prefix indicator identifies an editable field.
+        # Output collisions/component/global planner errors have no reliable target.
+        for row, configuration in enumerate(self.composite_section.configurations):
+            field = self.composite_section.table.cellWidget(row, 3)
+            if (configuration.action is ColumnAction.MASK and field is not None
+                    and field.property("validationError") is True and field.isEnabled()):
+                self._focus_invalid_editor(self.composite_section.table, row, 3, field)
+                return
+
+    def _focus_invalid_editor(self, table, row: int, column: int, field: QLineEdit) -> None:
+        # Settle newly revealed rows before mapping the editor into outer scroll areas.
+        self.layout().activate()
+        table.doItemsLayout()
+        table.setCurrentCell(row, column)
+        table.scrollTo(table.model().index(row, column), QAbstractItemView.ScrollHint.PositionAtCenter)
+        field.setFocus(Qt.FocusReason.OtherFocusReason)
+        ancestor = table.parentWidget()
+        while ancestor is not None:
+            if isinstance(ancestor, QScrollArea):
+                ancestor.ensureWidgetVisible(field, 0, METRICS["panel_spacing"])
+            ancestor = ancestor.parentWidget()
 
     def _build_current_plan(self, composites=None):
         if self._inspection_result is None:

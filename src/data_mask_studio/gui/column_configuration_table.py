@@ -59,19 +59,25 @@ class ColumnConfigurationTable(EmptyStateTable):
         )
         self.setAccessibleDescription(self.empty_text)
 
+    def row_matches(self, row: int, query: str, action: str = "all") -> bool:
+        """Shared presentation predicate, also used to reveal a validation target."""
+        if not 0 <= row < self.rowCount():
+            return False
+        query = query.casefold()
+        header = self.item(row, 1)
+        output = self.cellWidget(row, 2)
+        action_field = self.cellWidget(row, 0)
+        matches_text = (not query or (header is not None and query in header.text().casefold())
+                        or (isinstance(output, QLineEdit) and query in output.text().casefold()))
+        matches_action = (action == "all" or (isinstance(action_field, QComboBox)
+                                              and action_field.currentData() == action))
+        return matches_text and matches_action
+
     def filter_rows(self, query: str, action: str = "all") -> int:
         """Presentation only: retain every physical row, item and editor."""
-        query = query.casefold()
         visible = 0
         for row in range(self.rowCount()):
-            header = self.item(row, 1)
-            output = self.cellWidget(row, 2)
-            action_field = self.cellWidget(row, 0)
-            matches_text = (not query or (header is not None and query in header.text().casefold())
-                            or (isinstance(output, QLineEdit) and query in output.text().casefold()))
-            matches_action = (action == "all" or (isinstance(action_field, QComboBox)
-                                                  and action_field.currentData() == action))
-            matches = matches_text and matches_action
+            matches = self.row_matches(row, query, action)
             self.setRowHidden(row, not matches)
             visible += int(matches)
         self._update_empty_text()
