@@ -8,6 +8,7 @@ import pytest
 from PySide6.QtWidgets import QFileDialog, QLineEdit
 
 from qt_lifecycle import qt_widget_lifecycle
+from localization_fixtures import presentation_translators
 from data_mask_studio.anonymization import ColumnAction
 from data_mask_studio.anonymization.models import AnonymizationResult
 from data_mask_studio.app import create_application
@@ -39,11 +40,11 @@ def masking_pages(tmp_path, monkeypatch):
     app = create_application([])
     pages = []
 
-    def create(locale="pt-BR", *, load=True):
+    def create(locale="pt-BR", *, load=True, translator=None):
         directory = tmp_path / f"{locale}-{len(pages)}"
         directory.mkdir()
         repository = VaultRepository(directory / "vault.db", VaultCipher(b"V" * 32))
-        translator = Translator(locale)
+        translator = translator if translator is not None else Translator(locale)
         widget = AnonymizationWidget(
             key_provider=SyntheticKey(), vault_repository_factory=lambda: repository,
             profile_service=ProfileService(ProfileRepository(directory / "profiles.json")),
@@ -88,8 +89,8 @@ def configure(widget):
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_idle_guidance_uses_explicit_translator_without_selecting_a_file(masking_pages, locale):
-    _, widget, _, _, translator = masking_pages(locale, load=False)
+def test_idle_guidance_uses_explicit_translator_without_selecting_a_file(masking_pages, locale, presentation_translators):
+    _, widget, _, _, translator = masking_pages(locale, load=False, translator=presentation_translators[locale])
     assert widget.path_field.placeholderText() == translator.text("masking.no_file")
     assert widget.status_label.text() == translator.text("masking.status.initial")
     assert widget.status_label.property("feedbackState") == "neutral"
@@ -101,8 +102,8 @@ def test_idle_guidance_uses_explicit_translator_without_selecting_a_file(masking
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_masking_main_labels_and_stable_column_choices(masking_pages, locale):
-    _, widget, source, _, translator = masking_pages(locale)
+def test_masking_main_labels_and_stable_column_choices(masking_pages, locale, presentation_translators):
+    _, widget, source, _, translator = masking_pages(locale, translator=presentation_translators[locale])
     assert widget.select_button.text() == translator.text("masking.select_csv")
     assert widget.validate_button.text() == translator.text("masking.validate")
     assert widget.generate_button.text() == translator.text("masking.generate")
@@ -131,8 +132,8 @@ def test_masking_main_labels_and_stable_column_choices(masking_pages, locale):
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_bulk_actions_and_validation_are_locale_independent(masking_pages, locale):
-    _, widget, _, _, _ = masking_pages(locale)
+def test_bulk_actions_and_validation_are_locale_independent(masking_pages, locale, presentation_translators):
+    _, widget, _, _, _ = masking_pages(locale, translator=presentation_translators[locale])
     widget.select_all_button.click()
     assert all(column.action is ColumnAction.MASK for column in widget._column_configs)
     widget.validate_button.click()
@@ -149,8 +150,8 @@ def test_bulk_actions_and_validation_are_locale_independent(masking_pages, local
     assert widget.status_label.property("feedbackState") == "error"
 
 
-def test_retranslate_preserves_editors_plan_package_inputs_and_validation(masking_pages):
-    app, widget, _, _, _ = masking_pages()
+def test_retranslate_preserves_editors_plan_package_inputs_and_validation(masking_pages, presentation_translators):
+    app, widget, _, _, _ = masking_pages(translator=presentation_translators["pt-BR"])
     plan = configure(widget)
     controls = widget.transfer_controls
     controls.checkbox.setChecked(True)
@@ -176,7 +177,7 @@ def test_retranslate_preserves_editors_plan_package_inputs_and_validation(maskin
         combo.currentIndexChanged.connect(index_changes.append)
     worker_refs = widget._worker, widget._detection_worker
     for locale in ("en", "pt-BR", "en"):
-        translator = Translator(locale)
+        translator = presentation_translators[locale]
         widget.retranslate(translator)
         app.processEvents()
         assert widget._translator is translator
@@ -196,11 +197,11 @@ def test_retranslate_preserves_editors_plan_package_inputs_and_validation(maskin
 
 
 @pytest.mark.parametrize("package", [False, True])
-def test_real_workers_produce_identical_csv_across_locales(masking_pages, monkeypatch, package):
+def test_real_workers_produce_identical_csv_across_locales(masking_pages, monkeypatch, package, presentation_translators):
     outputs, payloads = [], []
     original_start = AnonymizationWorker.start
     for locale in ("pt-BR", "en"):
-        app, widget, source, repository, _ = masking_pages(locale)
+        app, widget, source, repository, _ = masking_pages(locale, translator=presentation_translators[locale])
         plan = configure(widget)
         output = source.with_name("synthetic_masked.csv")
         controls = widget.transfer_controls
@@ -250,7 +251,7 @@ def test_real_workers_produce_identical_csv_across_locales(masking_pages, monkey
             payloads.append(payload)
         else:
             assert result.transfer_package_path is None and not output.with_suffix(".dmspackage").exists()
-        widget.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
+        widget.retranslate(presentation_translators["en" if locale == "pt-BR" else "pt-BR"])
         assert widget._last_output_path == output and widget.open_folder_button.isEnabled()
         assert str(output) in widget.output_path_label.text()
     assert outputs[0] == outputs[1]
@@ -261,9 +262,9 @@ def test_real_workers_produce_identical_csv_across_locales(masking_pages, monkey
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
 @pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
 def test_retranslation_during_worker_preserves_terminal_and_secret_lifecycle(
-    masking_pages, tmp_path, monkeypatch, locale, outcome,
+    masking_pages, tmp_path, monkeypatch, locale, outcome, presentation_translators,
 ):
-    app, widget, source, _, _ = masking_pages(locale)
+    app, widget, source, _, _ = masking_pages(locale, translator=presentation_translators[locale])
     configure(widget)
     controls = widget.transfer_controls
     controls.checkbox.setChecked(True)
@@ -276,7 +277,7 @@ def test_retranslation_during_worker_preserves_terminal_and_secret_lifecycle(
     worker = widget._worker
     before = (widget.generate_button.isEnabled(), widget.select_button.isEnabled(),
               widget.config_table.isEnabled(), widget.cancel_button.isEnabled())
-    widget.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
+    widget.retranslate(presentation_translators["en" if locale == "pt-BR" else "pt-BR"])
     assert widget._worker is worker
     assert before == (widget.generate_button.isEnabled(), widget.select_button.isEnabled(),
                       widget.config_table.isEnabled(), widget.cancel_button.isEnabled())
@@ -295,7 +296,7 @@ def test_retranslation_during_worker_preserves_terminal_and_secret_lifecycle(
         assert widget.status_label.text() == message
         assert widget.status_label.property("feedbackState") == "error"
         assert widget._last_output_path is None and not widget.open_folder_button.isEnabled()
-        widget.retranslate(Translator(locale))
+        widget.retranslate(presentation_translators[locale])
         assert widget.status_label.text() == message
     else:
         worker.cancelled.emit()
@@ -312,22 +313,22 @@ def test_retranslation_during_worker_preserves_terminal_and_secret_lifecycle(
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_unknown_failures_use_safe_localized_message(masking_pages, locale):
-    _, widget, _, _, _ = masking_pages(locale)
+def test_unknown_failures_use_safe_localized_message(masking_pages, locale, presentation_translators):
+    _, widget, _, _, _ = masking_pages(locale, translator=presentation_translators[locale])
     secret = "synthetic-private-exception-detail"
     widget._processing_failed(RuntimeError(secret))
     assert secret not in widget.status_label.text()
     assert widget.status_label.text() and widget.status_label.property("feedbackState") == "error"
     before = widget.status_label.text()
-    widget.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
+    widget.retranslate(presentation_translators["en" if locale == "pt-BR" else "pt-BR"])
     assert widget.status_label.text() != before and secret not in widget.status_label.text()
 
 
 @pytest.mark.parametrize("outcome", ["failure", "cancel"])
 def test_retranslation_cannot_restore_previous_success_after_a_second_operation(
-    masking_pages, monkeypatch, outcome,
+    masking_pages, monkeypatch, outcome, presentation_translators,
 ):
-    app, widget, source, _, _ = masking_pages()
+    app, widget, source, _, _ = masking_pages(translator=presentation_translators["pt-BR"])
     configure(widget)
     previous_output = source.with_name("previous_masked.csv")
     widget._processing_completed(AnonymizationResult(previous_output, 2, 0.1, new_mappings=2))
@@ -347,7 +348,7 @@ def test_retranslation_cannot_restore_previous_success_after_a_second_operation(
     app.processEvents()
     assert widget._worker is None
     for locale in ("en", "pt-BR"):
-        widget.retranslate(Translator(locale))
+        widget.retranslate(presentation_translators[locale])
         assert widget.status_label.property("feedbackState") == expected_state
         assert str(previous_output) not in widget.output_path_label.text()
         assert widget._last_output_path is None and not widget.open_folder_button.isEnabled()
@@ -356,9 +357,9 @@ def test_retranslation_cannot_restore_previous_success_after_a_second_operation(
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
 def test_localized_file_choosers_preserve_extension_and_cancellation_contracts(
-    masking_pages, monkeypatch, locale,
+    masking_pages, monkeypatch, locale, presentation_translators,
 ):
-    _, widget, source, _, _ = masking_pages(locale)
+    _, widget, source, _, _ = masking_pages(locale, translator=presentation_translators[locale])
     plan = configure(widget)
     calls = []
 

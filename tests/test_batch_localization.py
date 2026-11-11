@@ -11,6 +11,7 @@ from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from qt_lifecycle import qt_widget_lifecycle
+from localization_fixtures import presentation_translators
 from data_mask_studio.anonymization import AnonymizationResult, ColumnAction, ColumnConfig, NormalizationFallback
 from data_mask_studio.app import create_application
 from data_mask_studio.batch import BatchError, BatchFile, BatchFileStatus, BatchProgress, BatchSummary
@@ -40,7 +41,7 @@ def batch_pages(tmp_path, monkeypatch):
     app = create_application([])
     pages = []
 
-    def create(locale="pt-BR"):
+    def create(locale="pt-BR", *, translator=None):
         root = tmp_path / f"{locale}-{len(pages)}"
         root.mkdir()
         first = root / "first.csv"
@@ -59,7 +60,7 @@ def batch_pages(tmp_path, monkeypatch):
             ColumnConfig("Nota", action=ColumnAction.EXCLUDE),
         ], inspection=inspect_csv(first), composites=(composite,))
         repository = VaultRepository(root / "vault.db", VaultCipher(b"V" * 32))
-        translator = Translator(locale)
+        translator = translator if translator is not None else Translator(locale)
         widget = BatchWidget(profiles, SyntheticKey(), lambda: repository, translator=translator)
         pages.append(widget)
         output = root / "output"
@@ -73,8 +74,8 @@ def batch_pages(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_batch_labels_headers_empty_states_and_profile_identity(batch_pages, locale):
-    _, widget, _, profile, _, translator, _ = batch_pages(locale)
+def test_batch_labels_headers_empty_states_and_profile_identity(batch_pages, locale, presentation_translators):
+    _, widget, _, profile, _, translator, _ = batch_pages(locale, translator=presentation_translators[locale])
     assert widget.start_button.text() == translator.text("batch.start")
     assert widget.add_files_button.text() == translator.text("batch.add_files")
     assert widget.validate_button.text() == translator.text("batch.validate")
@@ -93,8 +94,8 @@ def test_batch_labels_headers_empty_states_and_profile_identity(batch_pages, loc
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
 @pytest.mark.parametrize("case", ["pending", "zero_compatible", "mixed", "compatible", "revalidation"])
-def test_start_eligibility_and_real_publication_are_independent_of_language(batch_pages, locale, case):
-    app, widget, paths, profile, repository, translator, output = batch_pages(locale)
+def test_start_eligibility_and_real_publication_are_independent_of_language(batch_pages, locale, case, presentation_translators):
+    app, widget, paths, profile, repository, translator, output = batch_pages(locale, translator=presentation_translators[locale])
     incompatible_paths = paths if case == "zero_compatible" else paths[1:] if case == "mixed" else ()
     for path in incompatible_paths:
         path.write_text("Unknown\nSynthetic\n", encoding="utf-8")
@@ -158,8 +159,8 @@ def test_start_eligibility_and_real_publication_are_independent_of_language(batc
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_all_typed_statuses_translate_without_rewriting_service_messages(batch_pages, locale):
-    _, widget, paths, _, _, translator, output = batch_pages(locale)
+def test_all_typed_statuses_translate_without_rewriting_service_messages(batch_pages, locale, presentation_translators):
+    _, widget, paths, _, _, translator, output = batch_pages(locale, translator=presentation_translators[locale])
     widget.files = [BatchFile(paths[0].with_name(f"{status.value}.csv"), status=status,
                               result_message="Safe free-form service warning.") for status in BatchFileStatus]
     completed = next(item for item in widget.files if item.status is BatchFileStatus.COMPLETED)
@@ -174,13 +175,13 @@ def test_all_typed_statuses_translate_without_rewriting_service_messages(batch_p
             assert "IP: 2" in widget.file_table.item(row, 4).text()
         else:
             assert widget.file_table.item(row, 4).text() == item.result_message
-    widget.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
+    widget.retranslate(presentation_translators["en" if locale == "pt-BR" else "pt-BR"])
     assert [asdict(item) for item in widget.files] == before
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_added_file_and_record_counts_use_singular_and_plural(batch_pages, locale):
-    _, widget, paths, _, _, translator, _ = batch_pages(locale)
+def test_added_file_and_record_counts_use_singular_and_plural(batch_pages, locale, presentation_translators):
+    _, widget, paths, _, _, translator, _ = batch_pages(locale, translator=presentation_translators[locale])
     assert widget.add_paths(paths[:1]) == 1
     assert widget.status_label.text() == translator.plural("batch.files_added", 1)
     widget.clear_files()
@@ -192,8 +193,8 @@ def test_added_file_and_record_counts_use_singular_and_plural(batch_pages, local
     assert widget.current_progress_label.textFormat() == Qt.TextFormat.PlainText
 
 
-def test_retranslate_preserves_file_objects_cells_selection_report_focus_and_gate(batch_pages):
-    app, widget, paths, profile, _, _, output = batch_pages()
+def test_retranslate_preserves_file_objects_cells_selection_report_focus_and_gate(batch_pages, presentation_translators):
+    app, widget, paths, profile, _, _, output = batch_pages(translator=presentation_translators["pt-BR"])
     widget.add_paths(paths)
     widget.files[0].status = BatchFileStatus.COMPLETED
     widget.files[0].output_path = output / "first_masked.csv"
@@ -220,7 +221,7 @@ def test_retranslate_preserves_file_objects_cells_selection_report_focus_and_gat
     paths_before = widget.output_field.text(), widget._output_directory
     document = widget._profile_service.repository.path.read_bytes()
     for locale in ("en", "pt-BR", "en"):
-        widget.retranslate(Translator(locale))
+        widget.retranslate(presentation_translators[locale])
         app.processEvents()
         assert (widget.files, tuple(widget.files), tuple(widget.file_table.item(r, c) for r in range(2) for c in range(5))) == objects
         assert [asdict(item) for item in widget.files] == state
@@ -235,11 +236,11 @@ def test_retranslate_preserves_file_objects_cells_selection_report_focus_and_gat
         assert widget._requires_revalidation and not widget.start_button.isEnabled()
 
 
-def test_real_batch_workers_produce_byte_identical_outputs_and_equal_counts(batch_pages, monkeypatch):
+def test_real_batch_workers_produce_byte_identical_outputs_and_equal_counts(batch_pages, monkeypatch, presentation_translators):
     outputs, metrics = [], []
     original_start = BatchProcessingWorker.start
     for locale in ("pt-BR", "en"):
-        app, widget, paths, _, repository, translator, output = batch_pages(locale)
+        app, widget, paths, _, repository, translator, output = batch_pages(locale, translator=presentation_translators[locale])
         widget.add_paths(paths)
         widget.validate_files()
         finish(app, widget, "_validation_worker")
@@ -280,8 +281,8 @@ def test_real_batch_workers_produce_byte_identical_outputs_and_equal_counts(batc
     ("pending", "batch.error.validate_first"), ("incompatible", "batch.error.no_compatible"),
     ("output_missing", "batch.error.no_output"), ("output_invalid", "batch.error.invalid_output"),
 ])
-def test_localized_configuration_errors_keep_handler_gates_authoritative(batch_pages, monkeypatch, locale, case, message_id):
-    _, widget, paths, _, _, translator, _ = batch_pages(locale)
+def test_localized_configuration_errors_keep_handler_gates_authoritative(batch_pages, monkeypatch, locale, case, message_id, presentation_translators):
+    _, widget, paths, _, _, translator, _ = batch_pages(locale, translator=presentation_translators[locale])
     monkeypatch.setattr(BatchProcessingWorker, "start", lambda _: pytest.fail("Invalid configuration started a worker"))
     if case != "empty":
         widget.add_paths(paths)
@@ -305,8 +306,8 @@ def test_localized_configuration_errors_keep_handler_gates_authoritative(batch_p
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
 @pytest.mark.parametrize("outcome,expected", [("complete", "success"), ("incompatible", "warning"),
                                               ("failure", "error"), ("cancel", "warning")])
-def test_structured_summary_metrics_and_severity_remain_distinct(batch_pages, locale, outcome, expected):
-    _, widget, _, _, _, translator, output = batch_pages(locale)
+def test_structured_summary_metrics_and_severity_remain_distinct(batch_pages, locale, outcome, expected, presentation_translators):
+    _, widget, _, _, _, translator, output = batch_pages(locale, translator=presentation_translators[locale])
     incompatible, errors, cancelled = int(outcome == "incompatible"), int(outcome == "failure"), int(outcome == "cancel")
     summary = BatchSummary(3, 3 - incompatible, 3 - incompatible - errors - cancelled, incompatible,
                            errors, cancelled, 12, 4, 5, 2.25, output)
@@ -317,14 +318,14 @@ def test_structured_summary_metrics_and_severity_remain_distinct(batch_pages, lo
         assert translator.text(f"batch.summary.{key}", count=count) in text
     assert translator.text("batch.summary.duration", seconds="2.25") in text
     assert str(output) in text and widget.status_label.property("feedbackState") == expected
-    widget.retranslate(Translator("en" if locale == "pt-BR" else "pt-BR"))
+    widget.retranslate(presentation_translators["en" if locale == "pt-BR" else "pt-BR"])
     assert widget.status_label.property("feedbackState") == expected and widget._displayed_summary is summary
 
 
 @pytest.mark.parametrize("phase", ["validation", "processing"])
 @pytest.mark.parametrize("outcome", ["failure", "cancel"])
-def test_retranslation_preserves_busy_workers_cancel_and_fresh_validation_gates(batch_pages, monkeypatch, phase, outcome):
-    app, widget, paths, _, _, _, output = batch_pages("en")
+def test_retranslation_preserves_busy_workers_cancel_and_fresh_validation_gates(batch_pages, monkeypatch, phase, outcome, presentation_translators):
+    app, widget, paths, _, _, _, output = batch_pages("en", translator=presentation_translators["en"])
     widget.add_paths(paths)
     for item in widget.files:
         item.status = BatchFileStatus.COMPATIBLE
@@ -338,7 +339,7 @@ def test_retranslation_preserves_busy_workers_cancel_and_fresh_validation_gates(
     worker = getattr(widget, attribute)
     before = tuple(widget.files), widget._requires_revalidation, widget.overall_progress.minimum(), widget.overall_progress.maximum()
     for target in ("pt-BR", "en"):
-        widget.retranslate(Translator(target))
+        widget.retranslate(presentation_translators[target])
         assert getattr(widget, attribute) is worker
         assert (tuple(widget.files), widget._requires_revalidation, widget.overall_progress.minimum(), widget.overall_progress.maximum()) == before
         assert not widget.start_button.isEnabled() and not widget.validate_button.isEnabled()
@@ -350,7 +351,7 @@ def test_retranslation_preserves_busy_workers_cancel_and_fresh_validation_gates(
     else:
         widget.cancel()
         assert worker._cancellation.is_requested() and not widget.cancel_button.isEnabled()
-        widget.retranslate(Translator("pt-BR"))
+        widget.retranslate(presentation_translators["pt-BR"])
         assert not widget.cancel_button.isEnabled()
         if phase == "validation":
             worker.completed.emit()
@@ -359,7 +360,7 @@ def test_retranslation_preserves_busy_workers_cancel_and_fresh_validation_gates(
     app.processEvents()
     assert getattr(widget, attribute) is None and widget._displayed_summary is None
     assert not widget.summary_output.toPlainText() and not widget.current_progress_label.text()
-    widget.retranslate(Translator("en"))
+    widget.retranslate(presentation_translators["en"])
     assert not widget.summary_output.toPlainText() and widget.status_label.property("feedbackState") != "success"
     if phase == "validation":
         assert widget._requires_revalidation and not widget.start_button.isEnabled()
@@ -368,8 +369,8 @@ def test_retranslation_preserves_busy_workers_cancel_and_fresh_validation_gates(
 
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
-def test_file_directory_dialogs_keep_filters_order_duplicates_and_cancel(batch_pages, tmp_path, monkeypatch, locale):
-    _, widget, paths, _, _, translator, _ = batch_pages(locale)
+def test_file_directory_dialogs_keep_filters_order_duplicates_and_cancel(batch_pages, tmp_path, monkeypatch, locale, presentation_translators):
+    _, widget, paths, _, _, translator, _ = batch_pages(locale, translator=presentation_translators[locale])
     calls = []
     monkeypatch.setattr(QFileDialog, "getOpenFileNames", lambda *args: calls.append(args) or ([str(paths[1]), str(paths[0]), str(paths[1])], ""))
     widget._choose_files()
@@ -398,8 +399,8 @@ def test_file_directory_dialogs_keep_filters_order_duplicates_and_cancel(batch_p
 
 @pytest.mark.parametrize("locale", ["pt-BR", "en"])
 @pytest.mark.parametrize("key", [Qt.Key.Key_Return, Qt.Key.Key_Escape])
-def test_create_output_confirmation_keeps_no_default_and_no_side_effects(batch_pages, locale, key):
-    app, widget, paths, _, _, translator, output = batch_pages(locale)
+def test_create_output_confirmation_keeps_no_default_and_no_side_effects(batch_pages, locale, key, presentation_translators):
+    app, widget, paths, _, _, translator, output = batch_pages(locale, translator=presentation_translators[locale])
     widget.add_paths(paths)
     for item in widget.files:
         item.status = BatchFileStatus.COMPATIBLE
@@ -422,9 +423,9 @@ def test_create_output_confirmation_keeps_no_default_and_no_side_effects(batch_p
 
 
 @pytest.mark.parametrize("change", ["update", "delete"])
-def test_english_native_batch_profile_notifications_remain_deferred(page, monkeypatch, change):
+def test_english_native_batch_profile_notifications_remain_deferred(page, monkeypatch, change, presentation_translators):
     app, window, widget, _, profile, output = page
-    window.retranslate(Translator("en"))
+    window.retranslate(presentation_translators["en"])
     validate(page)
     pause = pause_after_first(page, monkeypatch, "processing")
     widget.start_processing()
@@ -434,8 +435,8 @@ def test_english_native_batch_profile_notifications_remain_deferred(page, monkey
         first = widget.files[0].output_path
         change_profile(page, change, navigation=True)
         assert widget._profiles_refresh_pending and widget._selected_profile() == profile
-        window.retranslate(Translator("pt-BR"))
-        window.retranslate(Translator("en"))
+        window.retranslate(presentation_translators["pt-BR"])
+        window.retranslate(presentation_translators["en"])
         assert widget._processing_worker is worker and widget.files[0].output_path == first
         assert widget.files[0].status is BatchFileStatus.COMPLETED
     finally:
@@ -451,7 +452,7 @@ def test_english_native_batch_profile_notifications_remain_deferred(page, monkey
     assert widget._processing_worker is None
 
 
-def test_main_window_shares_explicit_translator_but_does_not_activate_saved_english(tmp_path, monkeypatch):
+def test_main_window_shares_explicit_translator_but_does_not_activate_saved_english(tmp_path, monkeypatch, presentation_translators):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated-appdata"))
     assert PreferencesService().save_language("en").error is None
     create_application([])
@@ -459,7 +460,7 @@ def test_main_window_shares_explicit_translator_but_does_not_activate_saved_engl
     assert window.batch_widget.start_button.text() == "Iniciar mascaramento"
     maintenance_button = window.maintenance_widget.refresh_button
     assert maintenance_button.text() == "Atualizar diagnóstico"
-    translator = Translator("en")
+    translator = presentation_translators["en"]
     window.retranslate(translator)
     assert window.batch_widget._translator is translator
     assert window.batch_widget.start_button.text() == "Start masking"
@@ -468,12 +469,12 @@ def test_main_window_shares_explicit_translator_but_does_not_activate_saved_engl
     assert maintenance_button.text() == "Update diagnostic"
 
 
-def test_freeform_batch_errors_survive_retranslation_without_old_success(batch_pages):
-    _, widget, paths, _, _, _, _ = batch_pages("en")
+def test_freeform_batch_errors_survive_retranslation_without_old_success(batch_pages, presentation_translators):
+    _, widget, paths, _, _, _, _ = batch_pages("en", translator=presentation_translators["en"])
     widget.add_paths(paths)
     widget._set_status_id("batch.status.completed", state="success")
     error = BatchError("Synthetic safe service error; unchanged contract.")
     widget._worker_failed(error)
-    widget.retranslate(Translator("pt-BR"))
+    widget.retranslate(presentation_translators["pt-BR"])
     assert widget.status_label.text() == str(error)
     assert widget.status_label.property("feedbackState") == "error"
