@@ -206,6 +206,9 @@ def historical_timings(directory):
 
 def prepare(args):
     args.output_dir.mkdir(parents=True, exist_ok=False)
+    # We own this container; pytest owns (and initializes) each leaf basetemp.
+    # Collection does not request tmp_path, so it will not create this parent.
+    args.basetemp.mkdir(parents=True, exist_ok=True)
     baseline = invoke_pytest(["--collect-only"], args.output_dir / "collection.json",
                              args.basetemp / "collection", collect=True)
     require(not baseline["started_nodeids"], "Collection unexpectedly executed tests")
@@ -304,7 +307,8 @@ def main(argv=None):
     for name, handler in (("collect", collect_only), ("run", run_shard)):
         command = commands.add_parser(name)
         command.add_argument("--output-dir", type=Path, required=True)
-        command.add_argument("--basetemp", type=Path, required=True)
+        command.add_argument("--basetemp", type=Path, required=True,
+                             help="Pilot-owned parent of the pytest-owned phase directories")
         command.add_argument("--timing-dir", type=Path)
         if name == "run":
             command.add_argument("--shard-index", type=int, choices=range(SHARD_COUNT), required=True)

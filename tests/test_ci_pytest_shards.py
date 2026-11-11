@@ -162,10 +162,12 @@ def synthetic_suite(tmp_path):
     (tests / "test_a.py").write_text(
         'import pytest\nfrom pathlib import Path\n'
         '@pytest.mark.parametrize("value", [1, 2])\n'
-        'def test_value(value):\n'
+        'def test_value(value, tmp_path):\n'
         '    Path("executed.txt").write_text("synthetic")\n'
+        '    assert tmp_path.is_dir()\n'
         '    assert value > 0\n', encoding="utf-8")
-    (tests / "test_b.py").write_text('def test_other():\n    assert 2 + 2 == 4\n', encoding="utf-8")
+    (tests / "test_b.py").write_text(
+        'def test_other(tmp_path):\n    assert tmp_path.is_dir()\n    assert 2 + 2 == 4\n', encoding="utf-8")
     return tests
 
 
@@ -189,14 +191,19 @@ def test_real_collection_only_covers_all_parameters_without_executing_tests(tmp_
     assert any(node.endswith("[1]") for node in plan["nodeids"])
     assert any(node.endswith("[2]") for node in plan["nodeids"])
     assert not (tmp_path / "executed.txt").exists()
+    assert (tmp_path / "pytest-temp").is_dir()
+    assert not (tmp_path / "pytest-temp/collection").exists()
+    assert not (tmp_path / "pytest-temp/execution").exists()
 
 
 def test_two_real_synthetic_shards_execute_once_and_generate_reusable_timings(tmp_path):
     synthetic_suite(tmp_path)
     for index in range(2):
+        assert not (tmp_path / f"pytest-{index}").exists()
         result = command(tmp_path, "run", "--shard-index", str(index), "--output-dir",
                          f"reports/p03-shard-{index}", "--basetemp", f"pytest-{index}")
         assert result.returncode == 0, result.stdout + result.stderr
+        assert (tmp_path / f"pytest-{index}/execution").is_dir()
     plan, executions = pilot.verified_reports(tmp_path / "reports")
     assert sum(len(record["started_nodeids"]) for record in executions.values()) == 3
     assert set(pilot.historical_timings(tmp_path / "reports")) == set(plan["modules"])
@@ -205,6 +212,40 @@ def test_two_real_synthetic_shards_execute_once_and_generate_reusable_timings(tm
                      "--timing-dir", "reports")
     assert result.returncode == 0, result.stdout + result.stderr
     assert pilot.read_json(tmp_path / "timed/coverage.json")["historical_modules"] == 2
+
+
+def test_missing_pytest_leaf_after_start_is_not_recreated_or_retried(tmp_path):
+    tests = synthetic_suite(tmp_path)
+    (tests / "test_a.py").write_text(
+        'from pathlib import Path\n'
+        'def test_remove_empty_owned_base(request):\n'
+        '    base = request.config._tmp_path_factory.getbasetemp()\n'
+        '    assert base == Path("pytest-temp/execution").resolve()\n'
+        '    assert not list(base.iterdir())\n'
+        '    base.rmdir()\n'
+        'def test_next_fixture(tmp_path):\n'
+        '    assert tmp_path.is_dir()\n', encoding="utf-8")
+    result = command(tmp_path, "run", "--shard-index", "0", "--output-dir", "reports/p03-shard-0",
+                     "--basetemp", "pytest-temp")
+    assert result.returncode == 1
+    assert "FileNotFoundError" in result.stdout
+    assert (tmp_path / "pytest-temp").is_dir()
+    assert not (tmp_path / "pytest-temp/execution").exists()
+    record = pilot.read_json(tmp_path / "reports/p03-shard-0/execution.json")
+    assert record["exit_code"] == 1 and record["outcomes"]["setup:failed"] == 1
+    assert len(record["started_nodeids"]) == 2  # No retry.
+
+
+def test_invalid_basetemp_container_is_preserved_and_fails_before_collection(tmp_path):
+    synthetic_suite(tmp_path)
+    blocked = tmp_path / "pytest-temp"
+    blocked.write_bytes(b"synthetic non-directory sentinel")
+    result = command(tmp_path, "run", "--shard-index", "0", "--output-dir", "reports/p03-shard-0",
+                     "--basetemp", "pytest-temp")
+    assert result.returncode == 1
+    assert blocked.read_bytes() == b"synthetic non-directory sentinel"
+    assert not (tmp_path / "reports/p03-shard-0/collection.json").exists()
+    assert not (tmp_path / "executed.txt").exists()
 
 
 def test_collection_guard_fails_before_running_any_synthetic_test(tmp_path, monkeypatch):
