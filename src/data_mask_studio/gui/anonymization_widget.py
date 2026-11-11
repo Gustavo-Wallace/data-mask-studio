@@ -1,8 +1,9 @@
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 import time
 
-from PySide6.QtCore import QSignalBlocker, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QResizeEvent, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,11 +18,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QProgressBar,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QScrollArea,
     QStyle,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -56,6 +59,9 @@ from data_mask_studio.detection import (
     SuggestedType,
 )
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
+from data_mask_studio.gui.configuration_history import (
+    ConfigurationHistory, ConfigurationSnapshot, PhysicalColumnState,
+)
 from data_mask_studio.gui.composite_section import CompositeSection
 from data_mask_studio.gui.transfer_package_controls import TransferPackageControls
 from data_mask_studio.gui.masking_validation_feedback import (
@@ -153,6 +159,10 @@ class AnonymizationWidget(QWidget):
         self._completed_result = None
         self._status_result = None
         self._analyzing = False
+        self._configuration_history = ConfigurationHistory()
+        self._history_generation = 0
+        self._history_depth = 0
+        self._history_restoring = False
         self._profile_name_dialog: ProfileNameDialog | None = None
         self._confirmation_dialog: QMessageBox | None = None
         self._confirmation_message = None
@@ -330,7 +340,7 @@ class AnonymizationWidget(QWidget):
             lambda: self._inspection_result, self._build_current_plan, self,
             translator=self._translator,
         )
-        self.composite_section.changed.connect(self._configuration_changed)
+        self.composite_section.changed.connect(self._composite_configuration_changed)
         self.composite_section.table.set_width_reference(self.config_table)
         self.composite_section.setEnabled(False)
         self._worker: AnonymizationWorker | None = None
@@ -419,7 +429,143 @@ class AnonymizationWidget(QWidget):
             shortcut.setAutoRepeat(False)
         self._open_file_shortcut.activated.connect(self._open_file_from_shortcut)
         self._find_column_shortcut.activated.connect(self._focus_search_from_shortcut)
+        self._undo_configuration_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
+        self._redo_configuration_shortcut = QShortcut(QKeySequence("Ctrl+Y"), self)
+        for shortcut in (self._undo_configuration_shortcut, self._redo_configuration_shortcut):
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.setAutoRepeat(False)
+        self._undo_configuration_shortcut.activated.connect(self.undo_configuration)
+        self._redo_configuration_shortcut.activated.connect(self.redo_configuration)
+        QApplication.instance().focusChanged.connect(self._update_history_shortcuts)
+        self._update_history_shortcuts()
         self.retranslate(self._translator)
+
+    def _configuration_snapshot(self) -> ConfigurationSnapshot:
+        return ConfigurationSnapshot(
+            self._history_generation,
+            tuple(PhysicalColumnState(index, column.header, column.action, column.prefix,
+                                      column.normalization_rule, column.output_name)
+                  for index, column in enumerate(self._column_configs)),
+            frozenset(self._manually_changed_rows), frozenset(self._unreviewed_sources),
+            self._configuration_dirty,
+        )
+
+    def _history_idle(self) -> bool:
+        return (self.isEnabled() and self._inspection_result is not None
+                and self.config_table.isEnabled() and not self._analyzing
+                and self._worker is None and self._detection_worker is None)
+
+    @staticmethod
+    def _text_editor_has_focus() -> bool:
+        focused = QApplication.focusWidget()
+        while focused is not None:
+            if isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                return True
+            focused = focused.parentWidget()
+        return False
+
+    def _update_history_shortcuts(self, *_args) -> None:
+        if not hasattr(self, "_undo_configuration_shortcut"):
+            return
+        available = (self.isVisible() and self._history_idle() and not self._history_restoring
+                     and not self._text_editor_has_focus())
+        self._undo_configuration_shortcut.setEnabled(available and self._configuration_history.can_undo)
+        self._redo_configuration_shortcut.setEnabled(available and self._configuration_history.can_redo)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._update_history_shortcuts()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._update_history_shortcuts()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.EnabledChange:
+            self._update_history_shortcuts()
+
+    def _reset_configuration_history(self) -> None:
+        self._configuration_history.clear()
+        self._update_history_shortcuts()
+
+    @contextmanager
+    def _configuration_edit(self):
+        before = (self._configuration_snapshot() if self._history_depth == 0
+                  and not self._history_restoring and not self._applying_suggestion
+                  and self._history_idle() else None)
+        self._history_depth += 1
+        try:
+            yield
+        except Exception:
+            self._reset_configuration_history()
+            raise
+        else:
+            if before is not None:
+                self._configuration_history.record(before, self._configuration_snapshot())
+        finally:
+            self._history_depth -= 1
+            self._update_history_shortcuts()
+
+    def _composite_configuration_changed(self) -> None:
+        self._reset_configuration_history()
+        self._configuration_changed()
+
+    def undo_configuration(self) -> None:
+        self._move_configuration_history(redo=False)
+
+    def redo_configuration(self) -> None:
+        self._move_configuration_history(redo=True)
+
+    def _move_configuration_history(self, *, redo: bool) -> None:
+        if not self._shortcut_available() or not self._history_idle() or self._text_editor_has_focus():
+            return
+        current = self._configuration_snapshot()
+        history = self._configuration_history
+        target = history.redo(current) if redo else history.undo(current)
+        if target is not None:
+            self._restore_configuration_snapshot(target)
+        self._update_history_shortcuts()
+
+    def _restore_configuration_snapshot(self, snapshot: ConfigurationSnapshot) -> None:
+        current = self._configuration_snapshot()
+        identities = lambda state: tuple((column.input_index, column.header) for column in state.columns)
+        if (self._inspection_result is None or snapshot.generation != current.generation
+                or identities(snapshot) != identities(current)
+                or [column.header for column in snapshot.columns] != self._inspection_result.headers):
+            self._reset_configuration_history()
+            return
+        self._history_restoring = True
+        try:
+            for state, configuration in zip(snapshot.columns, self._column_configs, strict=True):
+                row = state.input_index
+                action, prefix = self._action_fields[row], self._prefix_fields[row]
+                output, normalization = self._output_name_fields[row], self._normalization_fields[row]
+                blockers = tuple(QSignalBlocker(field) for field in (action, prefix, output, normalization))
+                configuration.action, configuration.prefix = state.action, state.prefix
+                configuration.normalization_rule, configuration.output_name = state.normalization_rule, state.output_name
+                action.setCurrentIndex(action.findData(state.action.value))
+                normalization.setCurrentIndex(normalization.findData(state.normalization_rule.value))
+                # Unchanged text fields retain their native editor history.
+                if prefix.text() != state.prefix:
+                    prefix.setText(state.prefix)
+                if output.text() != state.output_name:
+                    output.setText(state.output_name)
+                prefix.setEnabled(state.action is ColumnAction.MASK)
+                output.setEnabled(state.action is not ColumnAction.EXCLUDE)
+                normalization.setEnabled(state.action is not ColumnAction.EXCLUDE)
+                self._apply_action_indicator(action, state.action)
+                del blockers
+            self._manually_changed_rows = set(snapshot.manually_changed_rows)
+            self._unreviewed_sources = set(snapshot.unreviewed_sources)
+            self._configuration_changed()
+            self._configuration_dirty = snapshot.dirty
+            self._update_selected_count()
+            self._refresh_validation_indicators()
+            self.config_table.refresh_column_layout()
+            self._apply_column_filter()
+        finally:
+            self._history_restoring = False
 
     def _shortcut_available(self) -> bool:
         return (self.isVisible() and self.isEnabled() and self.window().isActiveWindow()
@@ -845,6 +991,8 @@ class AnonymizationWidget(QWidget):
         self._apply_column_filter()
 
     def _clear_configuration_table(self) -> None:
+        self._history_generation += 1
+        self._reset_configuration_history()
         self.config_table.setRowCount(0)
         self._column_configs = []
         self._action_fields = []
@@ -865,35 +1013,40 @@ class AnonymizationWidget(QWidget):
         self.selected_count_label.setText(self._translator.text("masking.count.empty"))
 
     def _action_changed(self, row: int) -> None:
-        if not self._applying_suggestion:
-            self._manually_changed_rows.add(row)
-        configuration = self._column_configs[row]
-        prefix_field = self._prefix_fields[row]
-        normalization_field = self._normalization_fields[row]
-        configuration.action = ColumnAction(self._action_fields[row].currentData())
-        self._output_name_fields[row].setEnabled(configuration.action is not ColumnAction.EXCLUDE)
-        self._apply_action_indicator(self._action_fields[row], configuration.action)
-        is_masked = configuration.action is ColumnAction.MASK
-        prefix_field.setEnabled(is_masked)
-        normalization_field.setEnabled(
-            configuration.action is not ColumnAction.EXCLUDE
-        )
-        if is_masked and not prefix_field.text():
-            prefix_field.setText(normalize_prefix(configuration.header))
-        self._update_selected_count()
-        self._refresh_validation_indicators()
-        self._configuration_changed(row)
+        with self._configuration_edit():
+            if not self._applying_suggestion:
+                self._manually_changed_rows.add(row)
+            configuration = self._column_configs[row]
+            prefix_field = self._prefix_fields[row]
+            normalization_field = self._normalization_fields[row]
+            configuration.action = ColumnAction(self._action_fields[row].currentData())
+            self._output_name_fields[row].setEnabled(configuration.action is not ColumnAction.EXCLUDE)
+            self._apply_action_indicator(self._action_fields[row], configuration.action)
+            is_masked = configuration.action is ColumnAction.MASK
+            prefix_field.setEnabled(is_masked)
+            normalization_field.setEnabled(
+                configuration.action is not ColumnAction.EXCLUDE
+            )
+            if is_masked and not prefix_field.text():
+                prefix_field.setText(normalize_prefix(configuration.header))
+            self._update_selected_count()
+            self._refresh_validation_indicators()
+            self._configuration_changed(row)
 
-        if self.column_action_filter.currentData() != "all":
-            self._apply_column_filter()
+            if self.column_action_filter.currentData() != "all":
+                self._apply_column_filter()
 
     def _output_name_changed(self, row: int, text: str) -> None:
+        if self._history_depth == 0 and not self._history_restoring:
+            self._reset_configuration_history()
         self._column_configs[row].output_name = text
         self._refresh_validation_indicators()
         self._configuration_changed(row)
         self._apply_column_filter()
 
     def _prefix_changed(self, row: int, text: str) -> None:
+        if self._history_depth == 0 and not self._history_restoring:
+            self._reset_configuration_history()
         if not self._applying_suggestion:
             self._manually_changed_rows.add(row)
         self._column_configs[row].prefix = text
@@ -901,11 +1054,12 @@ class AnonymizationWidget(QWidget):
         self._configuration_changed(row)
 
     def _normalization_changed(self, row: int) -> None:
-        if not self._applying_suggestion:
-            self._manually_changed_rows.add(row)
-        value = self._normalization_fields[row].currentData()
-        self._column_configs[row].normalization_rule = NormalizationRule(value)
-        self._configuration_changed(row)
+        with self._configuration_edit():
+            if not self._applying_suggestion:
+                self._manually_changed_rows.add(row)
+            value = self._normalization_fields[row].currentData()
+            self._column_configs[row].normalization_rule = NormalizationRule(value)
+            self._configuration_changed(row)
 
     def _configuration_changed(self, review_row: int | None = None) -> None:
         self._update_transfer_controls()
@@ -928,16 +1082,18 @@ class AnonymizationWidget(QWidget):
             self.transfer_controls.set_output_path(source.with_name(suggested_output_name(source)))
 
     def select_all_columns(self) -> None:
-        for action_field in self._action_fields:
-            action_field.setCurrentIndex(
-                action_field.findData(ColumnAction.MASK.value)
-            )
+        with self._configuration_edit():
+            for action_field in self._action_fields:
+                action_field.setCurrentIndex(
+                    action_field.findData(ColumnAction.MASK.value)
+                )
 
     def unselect_all_columns(self) -> None:
-        for action_field in self._action_fields:
-            action_field.setCurrentIndex(
-                action_field.findData(ColumnAction.PRESERVE.value)
-            )
+        with self._configuration_edit():
+            for action_field in self._action_fields:
+                action_field.setCurrentIndex(
+                    action_field.findData(ColumnAction.PRESERVE.value)
+                )
 
     def _update_selected_count(self) -> None:
         self._update_transfer_controls()
@@ -1131,6 +1287,7 @@ class AnonymizationWidget(QWidget):
         self._detection_worker = None
         if worker is not None:
             worker.deleteLater()
+        self._update_history_shortcuts()
 
     def _set_detection_state(self, analyzing: bool) -> None:
         self._analyzing = analyzing
@@ -1164,6 +1321,7 @@ class AnonymizationWidget(QWidget):
                 button.setEnabled(False)
         else:
             self._update_profile_actions()
+        self._update_history_shortcuts()
 
     def apply_detection_suggestion(self, row: int) -> None:
         if not 0 <= row < len(self._suggestions):
@@ -1218,6 +1376,8 @@ class AnonymizationWidget(QWidget):
         )
 
     def _apply_detection_rows(self, rows: tuple[int, ...]) -> None:
+        if rows:
+            self._reset_configuration_history()
         self._applying_suggestion = True
         try:
             for row in rows:
@@ -1354,6 +1514,7 @@ class AnonymizationWidget(QWidget):
         except ProfileError as error:
             self._set_profile_error(error)
             return
+        self._reset_configuration_history()
         self._refresh_profiles(profile.identifier)
         self._set_status_id("profile.saved", name=profile.name, state="success")
 
@@ -1379,6 +1540,7 @@ class AnonymizationWidget(QWidget):
         except ProfileError as error:
             self._set_profile_error(error)
             return
+        self._reset_configuration_history()
         self._refresh_profiles(updated.identifier)
         self._set_status_id("profile.updated", name=updated.name, state="success")
 
@@ -1428,6 +1590,7 @@ class AnonymizationWidget(QWidget):
     def _apply_profile_configurations(
         self, configurations: tuple[ProfileColumn, ...]
     ) -> None:
+        self._reset_configuration_history()
         for row, profile_column in enumerate(configurations):
             configuration = self._column_configs[row]
             output_name_field = self._output_name_fields[row]
@@ -1477,6 +1640,7 @@ class AnonymizationWidget(QWidget):
         except ProfileError as error:
             self._set_profile_error(error)
             return
+        self._reset_configuration_history()
         self._refresh_profiles(renamed.identifier)
         self._set_status_id("profile.renamed", name=renamed.name, state="success")
 
@@ -1497,6 +1661,7 @@ class AnonymizationWidget(QWidget):
         except ProfileError as error:
             self._set_profile_error(error)
             return
+        self._reset_configuration_history()
         self._refresh_profiles()
         self._set_status_id("profile.deleted", name=profile.name, state="success")
 
@@ -1652,6 +1817,7 @@ class AnonymizationWidget(QWidget):
         self._worker = None
         if worker is not None:
             worker.deleteLater()
+        self._update_history_shortcuts()
 
     def cancel_processing(self) -> None:
         if self._worker is not None and self._worker.isRunning():
@@ -1660,6 +1826,8 @@ class AnonymizationWidget(QWidget):
             self._set_status_id("masking.status.cancelling")
 
     def _set_processing_state(self, processing: bool) -> None:
+        if processing:
+            self._reset_configuration_history()
         self.transfer_controls.setEnabled(not processing)
         if not processing:
             self.transfer_controls.clear_passwords()
@@ -1694,6 +1862,7 @@ class AnonymizationWidget(QWidget):
             self._update_profile_actions()
         self.cancel_button.setVisible(processing)
         self.cancel_button.setEnabled(processing)
+        self._update_history_shortcuts()
 
     def _clear_output_result(self) -> None:
         self._completed_result = None

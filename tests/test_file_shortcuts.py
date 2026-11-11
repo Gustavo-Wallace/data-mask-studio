@@ -303,7 +303,10 @@ def test_retranslation_does_not_duplicate_shortcuts_or_change_their_context(gui,
     mask.column_search_field.setText("CPF")
     before = deepcopy(mask._column_configs)
     shortcuts = window.findChildren(QShortcut)
-    assert len(shortcuts) == 3
+    assert len(shortcuts) == 5
+    assert sorted(shortcut.key().toString(QKeySequence.SequenceFormat.PortableText) for shortcut in shortcuts) == [
+        "Ctrl+F", "Ctrl+O", "Ctrl+O", "Ctrl+Y", "Ctrl+Z",
+    ]
     ambiguous = [QSignalSpy(shortcut.activatedAmbiguously) for shortcut in shortcuts]
     calls = watch_picker(monkeypatch)
     for locale in ("en", "pt-BR", "en"):
