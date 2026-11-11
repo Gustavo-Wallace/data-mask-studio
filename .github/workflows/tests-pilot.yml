@@ -1,0 +1,88 @@
+{
+  "name": "Windows two-shard pytest pilot",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "timing_run_id": {
+          "description": "Optional successful pilot run ID to reuse measured module timings",
+          "type": "string",
+          "required": false,
+          "default": ""
+        }
+      }
+    }
+  },
+  "permissions": {"contents": "read", "actions": "read"},
+  "jobs": {
+    "shards": {
+      "name": "Pilot Windows shard ${{ matrix.shard }}",
+      "runs-on": "windows-latest",
+      "timeout-minutes": 45,
+      "strategy": {"max-parallel": 2, "fail-fast": false, "matrix": {"shard": [0, 1]}},
+      "env": {"QT_QPA_PLATFORM": "offscreen"},
+      "steps": [
+        {"uses": "actions/checkout@v4"},
+        {
+          "name": "Isolate application, temporary files and reports",
+          "shell": "pwsh",
+          "run": "$pilotRoot = Join-Path $env:RUNNER_TEMP \"dms-p03-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-shard-${{ matrix.shard }}\"\n$local = Join-Path $pilotRoot 'localappdata'\n$temp = Join-Path $pilotRoot 'temp'\nNew-Item -ItemType Directory -Force -Path $local,$temp | Out-Null\n@(\"PILOT_ROOT=$pilotRoot\", \"LOCALAPPDATA=$local\", \"TEMP=$temp\", \"TMP=$temp\") | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append"
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {"python-version": "3.12", "cache": "pip", "cache-dependency-path": "pyproject.toml"}
+        },
+        {"name": "Install existing development dependencies", "run": "python -m pip install -e \".[dev]\""},
+        {
+          "name": "Load optional measured timings",
+          "if": "${{ inputs.timing_run_id != '' }}",
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "pattern": "p03-shard-*",
+            "path": "${{ runner.temp }}/dms-p03-history",
+            "run-id": "${{ inputs.timing_run_id }}",
+            "github-token": "${{ github.token }}"
+          }
+        },
+        {
+          "name": "Collect, verify and execute whole modules sequentially",
+          "shell": "pwsh",
+          "env": {"TIMING_RUN_ID": "${{ inputs.timing_run_id }}"},
+          "run": "$pilotArgs = @('scripts/ci_pytest_shards.py', 'run', '--shard-index', '${{ matrix.shard }}', '--output-dir', (Join-Path $env:PILOT_ROOT 'reports'), '--basetemp', (Join-Path $env:PILOT_ROOT 'pytest'))\nif ($env:TIMING_RUN_ID) { $pilotArgs += @('--timing-dir', (Join-Path $env:RUNNER_TEMP 'dms-p03-history')) }\npython @pilotArgs\nexit $LASTEXITCODE"
+        },
+        {
+          "name": "Retain only collection, timing and pytest reports",
+          "if": "${{ always() && env.PILOT_ROOT != '' }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "p03-shard-${{ matrix.shard }}",
+            "path": "${{ env.PILOT_ROOT }}/reports/",
+            "if-no-files-found": "warn",
+            "overwrite": true,
+            "retention-days": 14
+          }
+        }
+      ]
+    },
+    "aggregate": {
+      "name": "Pilot aggregate (not a production required check)",
+      "needs": ["shards"],
+      "if": "${{ always() }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 5,
+      "steps": [
+        {"uses": "actions/checkout@v4"},
+        {"uses": "actions/setup-python@v5", "with": {"python-version": "3.12"}},
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {"pattern": "p03-shard-*", "path": "${{ runner.temp }}/dms-p03-results"}
+        },
+        {
+          "name": "Require both shards and exact executed coverage; record wall time",
+          "if": "${{ always() }}",
+          "env": {"MATRIX_RESULT": "${{ needs.shards.result }}", "GH_TOKEN": "${{ github.token }}"},
+          "run": "python scripts/ci_pytest_shards.py aggregate --reports-dir \"${{ runner.temp }}/dms-p03-results\" --matrix-result \"$MATRIX_RESULT\""
+        }
+      ]
+    }
+  }
+}
