@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QScrollArea,
+    QStyle,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -275,6 +276,9 @@ class AnonymizationWidget(QWidget):
         self.column_search_count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         set_feedback_state(self.column_search_count, "neutral")
         search_layout = QHBoxLayout()
+        # Inline controls use the style's compact gap, not the page-section gap;
+        # retain enough width when the outer vertical scrollbar is present.
+        search_layout.setSpacing(self.style().pixelMetric(QStyle.PixelMetric.PM_LayoutHorizontalSpacing))
         search_layout.addWidget(self.preview_schema_button)
         search_layout.addWidget(self.column_search_field, stretch=1)
         search_layout.addWidget(self.column_action_filter)

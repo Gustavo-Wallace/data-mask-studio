@@ -15,6 +15,9 @@ from data_mask_studio.anonymization import AnonymizationResult, ColumnAction, ge
 from data_mask_studio.app import create_application
 from data_mask_studio.csv_tools.csv_anonymizer import CSVAnonymizationError
 from data_mask_studio.gui.anonymization_worker import AnonymizationWorker
+from data_mask_studio.gui.styles import apply_widget_palette
+from data_mask_studio.gui.theme_palette import DARK_PALETTE, LIGHT_PALETTE
+from data_mask_studio.i18n import Translator
 from data_mask_studio.normalization import NormalizationRule
 from test_composite_gui import create as create_composite
 from test_main_navigation import build_window
@@ -128,6 +131,27 @@ def test_many_columns_use_spare_space_and_keep_internal_scrolling_after_resize(p
     assert table.rowCount() == 3 and table.height() <= table.maximumHeight()
     assert table.height() < height
     assert_workspace(widget)
+
+
+@pytest.mark.parametrize("locale", ["pt-BR", "en"])
+@pytest.mark.parametrize("colors", [DARK_PALETTE, LIGHT_PALETTE], ids=["dark", "light"])
+def test_configuration_toolbar_fits_beside_outer_vertical_scrollbar(page, tmp_path, locale, colors):
+    app, window, widget = page
+    load(page, tmp_path, columns=12)
+    window.retranslate(Translator(locale))
+    apply_widget_palette(window, colors)
+    window.resize(960, 640)
+    settle(app)
+    area = window.page_shells[0].scroll_area
+    assert area.verticalScrollBar().maximum() > 0
+    assert area.horizontalScrollBar().maximum() == 0
+    for control in (widget.preview_schema_button, widget.column_search_field,
+                    widget.column_action_filter, widget.column_search_count):
+        assert control.isVisible() and control.isEnabled()
+        left = control.mapTo(area.viewport(), QPoint()).x()
+        assert 0 <= left and left + control.width() <= area.viewport().width()
+    assert_reachable(app, area, widget.validate_button)
+    assert_reachable(app, area, widget.generate_button)
 
 
 def test_long_metadata_and_progress_do_not_force_page_horizontal_overflow(page, tmp_path):
