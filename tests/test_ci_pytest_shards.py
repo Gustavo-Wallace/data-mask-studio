@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from xml.etree import ElementTree
 
 import pytest
 
@@ -155,6 +156,174 @@ def test_final_gate_requires_successful_job_state_even_with_complete_reports(tmp
     assert pilot.main(["aggregate", "--reports-dir", str(tmp_path), "--matrix-result", state]) == (state != "success")
 
 
+@pytest.fixture
+def strict_reports(tmp_path, monkeypatch):
+    """Complete synthetic production artifacts, independent of pilot history."""
+    plan = reports(tmp_path)
+    plan["commit"] = "a" * 40
+    monkeypatch.setenv("GITHUB_SHA", plan["commit"])
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    for index, shard in enumerate(plan["shards"]):
+        directory = tmp_path / f"p03-shard-{index}"
+        pilot.write_json(directory / "manifest.json", {"shard_index": index, "plan": plan})
+        pilot.write_json(directory / "collection.json", {
+            "exit_code": 0, "deselected": [], "collection_skips": [], "started_nodeids": [],
+            "nodeids": plan["nodeids"], "modules": plan["modules"],
+        })
+        execution = pilot.read_json(directory / "execution.json")
+        execution["phase_nodeids"] = {phase: shard["nodeids"] for phase in ("setup", "call", "teardown")}
+        execution["outcomes"] = {f"{phase}:passed": len(shard["nodeids"])
+                                 for phase in ("setup", "call", "teardown")}
+        pilot.write_json(directory / "execution.json", execution)
+        xml = ElementTree.Element("testsuites")
+        group = ElementTree.SubElement(xml, "testsuite")
+        for node in shard["nodeids"]:
+            ElementTree.SubElement(group, "testcase", name=node)
+        ElementTree.ElementTree(xml).write(directory / "pytest.xml", encoding="utf-8")
+    return tmp_path
+
+
+def strict_aggregate(directory, state="success"):
+    return pilot.main(["aggregate", "--reports-dir", str(directory),
+                       "--matrix-result", state, "--strict-execution"])
+
+
+def test_production_gate_accepts_complete_current_commit_artifacts(strict_reports):
+    assert strict_aggregate(strict_reports) == 0
+
+
+@pytest.mark.parametrize("state", ["failure", "cancelled", "skipped", "", "unknown"])
+def test_production_gate_never_accepts_non_successful_shards(strict_reports, state):
+    assert strict_aggregate(strict_reports, state) == 1
+
+
+@pytest.mark.parametrize("defect", [
+    "missing-shard", "missing-execution", "missing-collection", "missing-xml", "corrupt-json", "corrupt-xml",
+    "baseline-deselection", "baseline-omission", "failed", "deselected", "not-started", "started-twice",
+    "missing-call", "duplicate-call", "missing-teardown", "setup-skip", "call-skip", "teardown-failure",
+    "xml-incomplete", "xml-skipped", "xml-failure", "xml-error", "duplicate-manifest",
+])
+def test_production_gate_rejects_incomplete_or_unsuccessful_artifacts(strict_reports, defect):
+    directory = strict_reports / "p03-shard-0"
+    if defect.startswith("missing-") and defect.split("-", 1)[1] in {"shard", "execution", "collection", "xml"}:
+        filename = {"shard": "manifest.json", "execution": "execution.json",
+                    "collection": "collection.json", "xml": "pytest.xml"}[defect.split("-", 1)[1]]
+        (directory / filename).unlink()
+    elif defect == "corrupt-json":
+        (directory / "execution.json").write_text("{", encoding="utf-8")
+    elif defect == "corrupt-xml":
+        (directory / "pytest.xml").write_text("<testsuites>", encoding="utf-8")
+    elif defect.startswith("baseline-"):
+        path = directory / "collection.json"
+        value = pilot.read_json(path)
+        if defect == "baseline-deselection":
+            value["deselected"] = [value["nodeids"][0]]
+        else:
+            value["nodeids"].pop()
+        pilot.write_json(path, value)
+    elif defect.startswith("xml-"):
+        path = directory / "pytest.xml"
+        xml = ElementTree.parse(path)
+        group = xml.getroot().find("testsuite")
+        if defect == "xml-incomplete":
+            group.remove(group.find("testcase"))
+        else:
+            ElementTree.SubElement(group.find("testcase"), defect.removeprefix("xml-"))
+        xml.write(path, encoding="utf-8")
+    elif defect == "duplicate-manifest":
+        extra = strict_reports / "extra"
+        extra.mkdir()
+        pilot.write_json(extra / "manifest.json", pilot.read_json(directory / "manifest.json"))
+    else:
+        path = directory / "execution.json"
+        value = pilot.read_json(path)
+        if defect == "failed":
+            value["exit_code"] = 1
+        elif defect == "deselected":
+            value["deselected"] = [value["nodeids"][0]]
+        elif defect == "not-started":
+            value["started_nodeids"].pop()
+        elif defect == "started-twice":
+            value["started_nodeids"].append(value["started_nodeids"][0])
+        elif defect in {"missing-call", "missing-teardown"}:
+            value["phase_nodeids"][defect.removeprefix("missing-")].pop()
+        elif defect == "duplicate-call":
+            value["phase_nodeids"]["call"].append(value["nodeids"][0])
+        else:
+            phase, outcome = defect.split("-")
+            value["outcomes"][f"{phase}:passed"] -= 1
+            value["outcomes"][f"{phase}:{'skipped' if outcome == 'skip' else 'failed'}"] = 1
+        pilot.write_json(path, value)
+    assert strict_aggregate(strict_reports) == 1
+
+
+@pytest.mark.parametrize("defect", ["old-commit", "duplicate-node", "timing-history", "noncanonical-partition",
+                                   "collection-skip"])
+def test_production_gate_rejects_agreed_but_invalid_baselines(strict_reports, defect):
+    paths = sorted(strict_reports.rglob("manifest.json"))
+    plan = pilot.read_json(paths[0])["plan"]
+    if defect == "old-commit":
+        plan["commit"] = "b" * 40
+    elif defect == "duplicate-node":
+        plan["nodeids"].append(plan["nodeids"][0])
+    elif defect == "timing-history":
+        plan.update(balancing="historical-phase-seconds", historical_modules=1)
+    elif defect == "noncanonical-partition":
+        plan["shards"].reverse()  # Still exact-once, but not the agreed case-count algorithm.
+        for index, shard in enumerate(plan["shards"]):
+            path = strict_reports / f"p03-shard-{index}/execution.json"
+            value = pilot.read_json(path)
+            value.update(nodeids=shard["nodeids"], modules=shard["modules"], started_nodeids=shard["nodeids"])
+            pilot.write_json(path, value)
+    else:
+        plan["collection_skips"] = ["tests/test_unexpected.py"]
+        path = strict_reports / "p03-shard-0/execution.json"
+        value = pilot.read_json(path)
+        value["collection_skips"] = plan["collection_skips"]
+        pilot.write_json(path, value)
+    for index, path in enumerate(paths):
+        pilot.write_json(path, {"shard_index": index, "plan": plan})
+    assert strict_aggregate(strict_reports) == 1
+
+
+@pytest.mark.parametrize("exception", [OSError, ValueError, KeyError, TypeError, RuntimeError])
+def test_wall_clock_api_is_best_effort_only(strict_reports, monkeypatch, capsys, exception):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    def unavailable():
+        raise exception("synthetic metrics failure")
+
+    monkeypatch.setattr(pilot, "workflow_elapsed", unavailable)
+    assert strict_aggregate(strict_reports) == 0
+    assert "WARNING: Could not record workflow elapsed time" in capsys.readouterr().out
+    assert strict_aggregate(strict_reports, "cancelled") == 1
+    (strict_reports / "p03-shard-0/execution.json").unlink()
+    assert strict_aggregate(strict_reports) == 1  # Metrics cannot conceal missing evidence.
+
+
+def test_metrics_does_not_swallow_process_interruption(strict_reports, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    def interrupted():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(pilot, "workflow_elapsed", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        strict_aggregate(strict_reports)
+
+
+def test_existing_pilot_metrics_policy_is_not_changed(strict_reports, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    def unavailable():
+        raise OSError("synthetic metrics failure")
+
+    monkeypatch.setattr(pilot, "workflow_elapsed", unavailable)
+    assert pilot.main(["aggregate", "--reports-dir", str(strict_reports), "--matrix-result", "success"]) == 1
+    assert strict_aggregate(strict_reports) == 0
+
+
 def synthetic_suite(tmp_path):
     tests = tmp_path / "tests"
     tests.mkdir()
@@ -196,7 +365,8 @@ def test_real_collection_only_covers_all_parameters_without_executing_tests(tmp_
     assert not (tmp_path / "pytest-temp/execution").exists()
 
 
-def test_two_real_synthetic_shards_execute_once_and_generate_reusable_timings(tmp_path):
+def test_two_real_synthetic_shards_execute_once_and_generate_reusable_timings(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
     synthetic_suite(tmp_path)
     for index in range(2):
         assert not (tmp_path / f"pytest-{index}").exists()
@@ -208,10 +378,38 @@ def test_two_real_synthetic_shards_execute_once_and_generate_reusable_timings(tm
     assert sum(len(record["started_nodeids"]) for record in executions.values()) == 3
     assert set(pilot.historical_timings(tmp_path / "reports")) == set(plan["modules"])
     assert all(record["duration_seconds"] > 0 for record in executions.values())
+    assert pilot.verified_reports(tmp_path / "reports", strict_execution=True) == (plan, executions)
+    assert command(tmp_path, "aggregate", "--reports-dir", "reports", "--matrix-result", "success",
+                   "--strict-execution").returncode == 0
     result = command(tmp_path, "collect", "--output-dir", "timed", "--basetemp", "pytest-timed",
                      "--timing-dir", "reports")
     assert result.returncode == 0, result.stdout + result.stderr
     assert pilot.read_json(tmp_path / "timed/coverage.json")["historical_modules"] == 2
+
+
+@pytest.mark.parametrize("when", ["setup", "call"])
+def test_real_synthetic_runtime_skips_cannot_pass_production_gate(tmp_path, monkeypatch, when):
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    tests = synthetic_suite(tmp_path)
+    (tests / "test_a.py").write_text(
+        'import pytest\n'
+        '@pytest.fixture\n'
+        'def prerequisite():\n'
+        + ('    pytest.skip("synthetic prerequisite")\n' if when == "setup" else '    return True\n')
+        + '@pytest.mark.parametrize("value", [1, 2])\n'
+        'def test_value(value, prerequisite):\n'
+        + ('    pytest.skip("synthetic call skip")\n' if when == "call" else '    assert prerequisite\n'),
+        encoding="utf-8",
+    )
+    for index in range(2):
+        result = command(tmp_path, "run", "--shard-index", str(index), "--output-dir",
+                         f"reports/p03-shard-{index}", "--basetemp", f"pytest-{index}")
+        assert result.returncode == 0, result.stdout + result.stderr
+    pilot.verified_reports(tmp_path / "reports")  # Existing pilot/history behavior is unchanged.
+    result = command(tmp_path, "aggregate", "--reports-dir", "reports", "--matrix-result", "success",
+                     "--strict-execution")
+    assert result.returncode == 1
+    assert "Unexpected skip, failure, or incomplete execution phase" in result.stdout
 
 
 def test_missing_pytest_leaf_after_start_is_not_recreated_or_retried(tmp_path):

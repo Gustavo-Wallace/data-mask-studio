@@ -1,0 +1,43 @@
+{
+  "name": "Manual Windows sequential fallback",
+  "on": {"workflow_dispatch": {}},
+  "permissions": {"contents": "read"},
+  "jobs": {
+    "serial_tests": {
+      "name": "Windows serial fallback",
+      "runs-on": "windows-latest",
+      "timeout-minutes": 45,
+      "env": {"QT_QPA_PLATFORM": "offscreen"},
+      "steps": [
+        {"uses": "actions/checkout@v4"},
+        {
+          "name": "Isolate the full sequential run",
+          "shell": "pwsh",
+          "run": "$root = Join-Path $env:RUNNER_TEMP \"DataMaskStudio-serial-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT\"\n$local = Join-Path $root 'localappdata'\n$temp = Join-Path $root 'temp'\n$reports = Join-Path $root 'reports'\nNew-Item -ItemType Directory -Force -Path $local,$temp,$reports | Out-Null\n@(\"DMS_SERIAL_ROOT=$root\", \"LOCALAPPDATA=$local\", \"TEMP=$temp\", \"TMP=$temp\") | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append"
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {"python-version": "3.12", "cache": "pip", "cache-dependency-path": "pyproject.toml"}
+        },
+        {"name": "Install existing development dependencies", "run": "python -m pip install -e \".[dev]\""},
+        {
+          "name": "Run the complete suite in one pytest process",
+          "shell": "pwsh",
+          "run": "python -m pytest --basetemp (Join-Path $env:DMS_SERIAL_ROOT 'pytest') --junitxml (Join-Path $env:DMS_SERIAL_ROOT 'reports/pytest.xml')\nexit $LASTEXITCODE"
+        },
+        {
+          "name": "Retain sequential pytest results",
+          "if": "${{ always() && env.DMS_SERIAL_ROOT != '' }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "ci-serial-results",
+            "path": "${{ env.DMS_SERIAL_ROOT }}/reports/",
+            "if-no-files-found": "error",
+            "overwrite": true,
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}

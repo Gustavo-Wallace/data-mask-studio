@@ -1,45 +1,74 @@
-name: Testes
-
-on:
-  push:
-    branches:
-      - main
-      - "ui/**"
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  tests:
-    runs-on: windows-latest
-    timeout-minutes: 45
-    env:
-      QT_QPA_PLATFORM: offscreen
-    steps:
-      - name: Obter o código
-        uses: actions/checkout@v4
-
-      - name: Configurar Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      - name: Preparar diretório local isolado
-        shell: pwsh
-        run: |
-          $isolatedPath = Join-Path $env:RUNNER_TEMP "DataMaskStudio-CI"
-          New-Item -ItemType Directory -Force -Path $isolatedPath | Out-Null
-          "LOCALAPPDATA=$isolatedPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Instalar o projeto e dependências de desenvolvimento
-        run: python -m pip install -e ".[dev]"
-
-      - name: Executar a suíte de testes
-        shell: pwsh
-        run: python -m pytest --basetemp (Join-Path $env:RUNNER_TEMP "data-mask-studio-pytest")
+{
+  "name": "Testes",
+  "on": {
+    "push": {"branches": ["main", "ui/**"]},
+    "pull_request": {"branches": ["main"]},
+    "workflow_dispatch": {}
+  },
+  "permissions": {"contents": "read", "actions": "read"},
+  "jobs": {
+    "windows_shards": {
+      "name": "Windows test shard ${{ matrix.shard }}",
+      "runs-on": "windows-latest",
+      "timeout-minutes": 45,
+      "strategy": {"max-parallel": 2, "fail-fast": false, "matrix": {"shard": [0, 1]}},
+      "env": {"QT_QPA_PLATFORM": "offscreen"},
+      "steps": [
+        {"uses": "actions/checkout@v4"},
+        {
+          "name": "Isolate each shard environment",
+          "shell": "pwsh",
+          "run": "$root = Join-Path $env:RUNNER_TEMP \"DataMaskStudio-CI-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-shard-${{ matrix.shard }}\"\n$local = Join-Path $root 'localappdata'\n$temp = Join-Path $root 'temp'\nNew-Item -ItemType Directory -Force -Path $local,$temp | Out-Null\n@(\"DMS_CI_ROOT=$root\", \"LOCALAPPDATA=$local\", \"TEMP=$temp\", \"TMP=$temp\") | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append"
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {"python-version": "3.12", "cache": "pip", "cache-dependency-path": "pyproject.toml"}
+        },
+        {"name": "Install existing development dependencies", "run": "python -m pip install -e \".[dev]\""},
+        {
+          "name": "Collect and run whole modules sequentially",
+          "shell": "pwsh",
+          "run": "python scripts/ci_pytest_shards.py run --shard-index ${{ matrix.shard }} --output-dir (Join-Path $env:DMS_CI_ROOT 'reports') --basetemp (Join-Path $env:DMS_CI_ROOT 'pytest')\nexit $LASTEXITCODE"
+        },
+        {
+          "name": "Preserve manifests and pytest results even on failure",
+          "if": "${{ always() && env.DMS_CI_ROOT != '' }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "ci-tests-shard-${{ matrix.shard }}",
+            "path": "${{ env.DMS_CI_ROOT }}/reports/",
+            "if-no-files-found": "error",
+            "overwrite": true,
+            "retention-days": 14
+          }
+        }
+      ]
+    },
+    "tests": {
+      "name": "tests",
+      "needs": ["windows_shards"],
+      "if": "${{ always() }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 5,
+      "steps": [
+        {"uses": "actions/checkout@v4"},
+        {"uses": "actions/setup-python@v5", "with": {"python-version": "3.12"}},
+        {
+          "name": "Download both current-run shard reports",
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "pattern": "ci-tests-shard-*",
+            "path": "${{ runner.temp }}/ci-test-results",
+            "merge-multiple": false
+          }
+        },
+        {
+          "name": "Require complete successful Windows coverage",
+          "if": "${{ always() }}",
+          "env": {"MATRIX_RESULT": "${{ needs.windows_shards.result }}", "GH_TOKEN": "${{ github.token }}"},
+          "run": "python scripts/ci_pytest_shards.py aggregate --reports-dir \"${{ runner.temp }}/ci-test-results\" --matrix-result \"$MATRIX_RESULT\" --strict-execution"
+        }
+      ]
+    }
+  }
+}

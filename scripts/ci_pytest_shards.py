@@ -1,4 +1,4 @@
-"""Opt-in, two-process/VM CI pilot; never changes tests or their eligibility.
+"""Two-process/VM CI sharding; never changes tests or their eligibility.
 
 The pytest plugin records collection and phase durations only. Each shard first
 collects the entire suite in a separate interpreter, then runs complete modules
@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 
 
 SHARD_COUNT = 2
@@ -92,6 +93,7 @@ class CollectionRecorder:
         self.destination, self.expected = destination, expected
         self.started = time.perf_counter()
         self.modules, self.nodeids, self.started_nodeids = [], [], []
+        self.phase_nodeids = {phase: [] for phase in ("setup", "call", "teardown")}
         self.deselected, self.collection_skips = [], []
         self.module_seconds, self.outcomes = Counter(), Counter()
 
@@ -119,6 +121,7 @@ class CollectionRecorder:
     def pytest_runtest_logreport(self, report):
         self.module_seconds[module_name(report.nodeid)] += report.duration
         self.outcomes[f"{report.when}:{report.outcome}"] += 1
+        self.phase_nodeids[report.when].append(report.nodeid)
         if report.when == "setup":
             self.started_nodeids.append(report.nodeid)
 
@@ -126,6 +129,7 @@ class CollectionRecorder:
         write_json(self.destination, {
             "modules": self.modules, "nodeids": self.nodeids,
             "started_nodeids": self.started_nodeids, "deselected": self.deselected,
+            "phase_nodeids": self.phase_nodeids,
             "collection_skips": self.collection_skips, "exit_code": int(exitstatus),
             "duration_seconds": time.perf_counter() - self.started,
             "module_seconds": dict(self.module_seconds), "outcomes": dict(self.outcomes),
@@ -166,7 +170,40 @@ def invoke_pytest(arguments, record, basetemp, *, expected=None, collect=False):
     return result
 
 
-def verified_reports(directory):
+def verify_strict_execution(path, plan, execution, expected):
+    """Windows production policy: no skips, every phase, complete result artifacts.
+
+    Existing Windows skips are non-Windows guards or a missing PowerShell
+    prerequisite. Neither is expected on windows-latest. Keep pilot/history
+    compatibility by enabling this policy only on the production aggregate.
+    """
+    require(plan["commit"] == os.environ.get("GITHUB_SHA") and bool(os.environ.get("GITHUB_SHA")),
+            "Reports do not belong to the current commit")
+    require(plan["balancing"] == "collected-case-count-estimate" and plan["historical_modules"] == 0,
+            "Production requires deterministic case-count partitioning")
+    require(plan["shards"] == partition(plan["nodeids"], plan["modules"]),
+            "Production partition differs from deterministic case-count assignment")
+    require(not plan["collection_skips"] and not execution["collection_skips"],
+            "Unexpected collection skip in Windows production CI")
+    baseline = read_json(path.with_name("collection.json"))
+    require(baseline["exit_code"] == 0 and not baseline["deselected"]
+            and not baseline["collection_skips"] and not baseline["started_nodeids"]
+            and baseline["nodeids"] == plan["nodeids"] and baseline["modules"] == plan["modules"],
+            "Full collection artifact disagrees with the manifest")
+    expected_phases = {f"{phase}:passed": len(expected["nodeids"])
+                       for phase in ("setup", "call", "teardown")}
+    require(execution["outcomes"] == expected_phases,
+            "Unexpected skip, failure, or incomplete execution phase")
+    require(set(execution["phase_nodeids"]) == {"setup", "call", "teardown"}, "Missing execution phases")
+    for phase, nodeids in execution["phase_nodeids"].items():
+        require(Counter(nodeids) == Counter(expected["nodeids"]), f"Incomplete or duplicate {phase} execution")
+    cases = list(ElementTree.parse(path.with_name("pytest.xml")).getroot().iter("testcase"))
+    require(len(cases) == len(expected["nodeids"]), "Incomplete pytest XML artifact")
+    require(not any(case.find(tag) is not None for case in cases for tag in ("failure", "error", "skipped")),
+            "Pytest XML reports failed or skipped tests")
+
+
+def verified_reports(directory, *, strict_execution=False):
     manifests = sorted(Path(directory).rglob("manifest.json"))
     require(len(manifests) == SHARD_COUNT, "Missing or duplicate shard reports")
     reports = [read_json(path) for path in manifests]
@@ -185,6 +222,8 @@ def verified_reports(directory):
                 and execution["modules"] == expected["modules"], f"Shard {index} collection mismatch")
         require(Counter(execution["started_nodeids"]) == Counter(expected["nodeids"]),
                 f"Shard {index} did not execute each collected test exactly once")
+        if strict_execution:
+            verify_strict_execution(path, plan, execution, expected)
         seen_skips.extend(execution["collection_skips"])
         executions[index] = execution
     require(Counter(seen_skips) == Counter(plan["collection_skips"]), "Collection skip disagreement")
@@ -271,12 +310,13 @@ def workflow_elapsed():
 
 
 def aggregate(args):
-    lines = ["## Two-shard Windows pilot", f"Matrix result: {args.matrix_result}"]
+    scope = "tests" if args.strict_execution else "pilot"
+    lines = [f"## Two-shard Windows {scope}", f"Matrix result: {args.matrix_result}"]
     errors = []
     if args.matrix_result != "success":
         errors.append("Both Windows jobs must finish successfully (failure/cancellation/skip is not success).")
     try:
-        plan, executions = verified_reports(args.reports_dir)
+        plan, executions = verified_reports(args.reports_dir, strict_execution=args.strict_execution)
         lines.append(f"Exact-once coverage verified: {len(plan['nodeids'])} tests, {len(plan['modules'])} modules.")
         lines.append(f"Balancing: {plan['balancing']}; timed modules: {plan['historical_modules']}.")
         for index, result in sorted(executions.items()):
@@ -284,14 +324,20 @@ def aggregate(args):
                          f"pytest process {result['process_seconds']:.2f}s; phases {result['outcomes']}.")
         for path in sorted(args.reports_dir.rglob("elapsed.json")):
             lines.append(f"{path.parent.name}: collection + execution {read_json(path)['shard_seconds']:.2f}s.")
-    except (ValueError, KeyError, OSError) as error:
+    except (ValueError, KeyError, OSError, ElementTree.ParseError) as error:
         errors.append(str(error))
     if os.environ.get("GITHUB_ACTIONS") == "true":
         try:
             lines.append(f"Workflow wall-clock elapsed through final gate: {workflow_elapsed():.2f}s.")
             lines.append("GitHub's run Summary records the final total, including the remaining job cleanup.")
-        except (ValueError, KeyError, OSError) as error:
-            errors.append(f"Could not record workflow elapsed time: {type(error).__name__}")
+        except Exception as error:
+            # Metrics cannot turn valid coverage red, or invalid coverage green.
+            # Do not catch BaseException: cancellation must still terminate.
+            message = f"Could not record workflow elapsed time: {type(error).__name__}"
+            if args.strict_execution:
+                lines.append(f"WARNING: {message}")
+            else:
+                errors.append(message)  # Preserve the existing opt-in pilot policy.
     lines.extend(f"ERROR: {error}" for error in errors)
     text = "\n\n".join(lines) + "\n"
     print(text)
@@ -316,6 +362,8 @@ def main(argv=None):
     command = commands.add_parser("aggregate")
     command.add_argument("--reports-dir", type=Path, required=True)
     command.add_argument("--matrix-result", required=True)
+    command.add_argument("--strict-execution", action="store_true",
+                         help="Require current-commit full artifacts, all phases passed and no Windows skips")
     command.set_defaults(handler=aggregate)
     args = parser.parse_args(argv)
     try:
