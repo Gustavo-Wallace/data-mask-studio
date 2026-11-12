@@ -10,6 +10,7 @@ from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QMessageBox
 
 from qt_lifecycle import qt_widget_lifecycle
+from language_save_diagnostics import language_save_diagnostics
 from data_mask_studio import app as app_module
 from data_mask_studio.gui import theme_resolution as resolution
 from data_mask_studio.gui.settings_widget import SettingsWidget
@@ -190,7 +191,7 @@ def test_theme_retranslation_preserves_drafts_focus_and_workers_without_io(app, 
 
 
 def test_theme_save_during_owned_work_is_deferred_and_language_draft_remains_independent(
-    app, tmp_path, monkeypatch,
+    app, tmp_path, monkeypatch, language_save_diagnostics,
 ):
     service = PreferencesService(tmp_path / "preferences.json")
     window = build_localized_window(tmp_path, preferences_service=service, live_language_switching=True)
@@ -201,6 +202,7 @@ def test_theme_save_during_owned_work_is_deferred_and_language_draft_remains_ind
     pages, translator = window.page_widgets, window._translator
     style, palette, qss = app.style(), app.palette(), app.styleSheet()
     worker = WaitingWorker()
+    language_save_diagnostics.watch(window, service, worker)
     worker.start()
     assert worker.entered.wait(2)
     try:
@@ -224,7 +226,9 @@ def test_theme_save_during_owned_work_is_deferred_and_language_draft_remains_ind
     # A live language save must retain an independent, still-unsaved theme draft.
     settings.theme_combo.setCurrentIndex(settings.theme_combo.findData("dark"))
     settings.language_combo.setCurrentIndex(settings.language_combo.findData("en"))
+    language_save_diagnostics.capture("before_language_save")
     settings.save_button.click()
+    language_save_diagnostics.capture("after_language_save")
     assert window._translator.locale == "en"
     assert settings.theme_combo.currentData() == "dark"
     assert service.load().preferences.theme.value == "light"
