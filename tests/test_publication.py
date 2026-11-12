@@ -311,16 +311,32 @@ def test_overwrite_pending_with_existing_destination_is_not_destructive(tmp_path
 
 
 def test_startup_reports_pending_without_traceback(monkeypatch):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
     import data_mask_studio.app as app
     from data_mask_studio.gui.dialog_localization import _DialogButtonTranslator, install_dialog_button_translations
     from data_mask_studio.i18n import Translator
     application = app.create_application([])
     original = application.findChild(_DialogButtonTranslator)._translator
     messages = []
+    dialogs = []
+    def acknowledge(message):
+        dialogs.append(message)
+        messages.append(message.text())
+        return app.QMessageBox.StandardButton.Ok
     monkeypatch.setattr(app, "MainWindow", lambda **kwargs: (_ for _ in ()).throw(PublicationError("Operação pendente.")))
-    monkeypatch.setattr(app.QMessageBox, "exec", lambda message: messages.append(message.text()) or app.QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(app.QMessageBox, "exec", acknowledge)
     try:
         assert app.run(translator=Translator("pt-BR")) == 1
     finally:
-        install_dialog_button_translations(application, translator=original)
+        try:
+            # Stubbed exec() runs no modal loop. Deliver only the deletion that
+            # app.run() already scheduled, for this test's exact dialog.
+            for message in dialogs:
+                if isValid(message):
+                    QCoreApplication.sendPostedEvents(message, QEvent.Type.DeferredDelete)
+        finally:
+            install_dialog_button_translations(application, translator=original)
     assert messages == ["Operação pendente."]
+    assert len(dialogs) == 1
+    assert not isValid(dialogs[0])
