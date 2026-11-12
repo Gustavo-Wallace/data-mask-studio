@@ -106,9 +106,9 @@ def test_full_sequential_fallback_is_manual_and_has_a_separate_check():
     assert upload["with"]["if-no-files-found"] == "error"
 
 
-def test_production_check_names_do_not_overlap_pilot_diagnostic_or_fallback():
+def test_production_check_names_do_not_overlap_pilot_or_fallback():
     names = []
-    for filename in ("tests.yml", "tests-pilot.yml", "qt-language-diagnostic.yml", "tests-sequential.yml"):
+    for filename in ("tests.yml", "tests-pilot.yml", "tests-sequential.yml"):
         for identifier, job in workflow(filename)["jobs"].items():
             template = job.get("name", identifier)
             indices = job.get("strategy", {}).get("matrix", {}).get("shard", [None])
