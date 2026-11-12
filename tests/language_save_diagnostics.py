@@ -75,8 +75,14 @@ class LanguageSaveTrace:
             return None
         key = id(obj)
         self.identities.setdefault(key, len(self.identities) + 1)
-        return {"ref": self.identities[key], "type": type(obj).__name__,
-                "visible": obj.isVisible(), "is_main_window": obj is self.window}
+        result = {"ref": self.identities[key], "type": type(obj).__name__,
+                  "visible": obj.isVisible(), "is_main_window": obj is self.window}
+        ownership = sys.modules.get("ci_qt_dialog_ownership")
+        if ownership is not None:
+            details = ownership.correlate_message_box(obj)
+            if details is not None:
+                result["ownership"] = details
+        return result
 
     def gui_state(self):
         from PySide6.QtGui import QGuiApplication

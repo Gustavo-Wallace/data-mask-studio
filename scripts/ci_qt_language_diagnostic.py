@@ -1,4 +1,4 @@
-"""Manual replay of original shard 1, with diagnostics in one test only."""
+"""Replay original shard 1 with dialog provenance and one-test language observations."""
 
 from __future__ import annotations
 
@@ -84,10 +84,13 @@ def run(args):
     os.environ["DMS_QT_LANGUAGE_DIAGNOSTICS"] = "1"
     trace = args.output_dir / "language-save.jsonl"
     os.environ["DMS_QT_LANGUAGE_TRACE"] = str(trace.resolve())
+    ownership_trace = args.output_dir / "dialog-ownership.jsonl"
+    os.environ["DMS_QT_DIALOG_TRACE"] = str(ownership_trace.resolve())
     code = 0
     try:
         # No repartition, full-suite collection, deselection, retries or xdist.
-        pilot.invoke_pytest([*shard["modules"], "--junitxml", str((args.output_dir / "pytest.xml").resolve())],
+        pilot.invoke_pytest(["-p", "ci_qt_dialog_ownership", *shard["modules"],
+                             "--junitxml", str((args.output_dir / "pytest.xml").resolve())],
                             args.output_dir / "execution.json", args.basetemp / "execution", expected=expected)
     except (ValueError, KeyError, OSError) as error:
         print(f"Original shard execution failed: {error}")
@@ -105,6 +108,12 @@ def run(args):
             pilot.require({"before_language_save", "after_language_save"}.issubset(
                 item["event"] for item in events), "Passing tests without save observations are not a diagnostic success")
         summary = summarize(events)
+        ownership_events = [json.loads(line) for line in ownership_trace.read_text(encoding="utf-8").splitlines()]
+        pilot.require(ownership_events and ownership_events[0]["event"] == "tracker.started"
+                      and ownership_events[-1]["event"] == "tracker.stopped", "Ownership trace is incomplete")
+        summary["guard_message_boxes"] = [obj["ownership"] for event in events if event["event"] == "gate.result"
+                                          for obj in event["state"]["other_windows"] if "ownership" in obj]
+        summary["ownership_log"] = "dialog-ownership.jsonl"
         summary["original_shard_count"] = len(record["nodeids"])
         summary["pytest_exit_code"] = record["exit_code"]
         pilot.write_json(args.output_dir / "diagnostic-summary.json", summary)

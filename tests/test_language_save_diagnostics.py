@@ -155,7 +155,7 @@ def test_missing_observation_is_reported_as_unknown_not_as_a_fix():
     assert diagnostic.summarize([]) == {"observation": "language_save_attempt_not_reached_or_not_observed"}
 
 
-@pytest.mark.parametrize("outcome", ["passed", "failed", "missing-trace"])
+@pytest.mark.parametrize("outcome", ["passed", "failed", "missing-trace", "missing-ownership"])
 def test_replay_dispatches_exactly_once_and_cannot_turn_a_failure_into_success(tmp_path, monkeypatch, outcome):
     manifest = context()
     source = tmp_path / "manifest.json"
@@ -169,6 +169,9 @@ def test_replay_dispatches_exactly_once_and_cannot_turn_a_failure_into_success(t
         assert basetemp.parent.is_dir()
         assert diagnostic.pilot.read_json(expected) == manifest["plan"]["shards"][1]
         assert os.environ["DMS_QT_LANGUAGE_DIAGNOSTICS"] == "1"
+        if outcome != "missing-ownership":
+            Path(os.environ["DMS_QT_DIALOG_TRACE"]).write_text(
+                '{"event":"tracker.started"}\n{"event":"tracker.stopped"}\n', encoding="utf-8")
         shard = manifest["plan"]["shards"][1]
         diagnostic.pilot.write_json(record, {**shard, "started_nodeids": shard["nodeids"],
                                            "deselected": [], "exit_code": int(outcome == "failed")})
@@ -185,9 +188,11 @@ def test_replay_dispatches_exactly_once_and_cannot_turn_a_failure_into_success(t
     monkeypatch.setattr(diagnostic.pilot, "invoke_pytest", record_invocation)
     monkeypatch.setenv("DMS_QT_LANGUAGE_DIAGNOSTICS", "0")
     monkeypatch.setenv("DMS_QT_LANGUAGE_TRACE", "unused")
+    monkeypatch.setenv("DMS_QT_DIALOG_TRACE", "unused")
     assert diagnostic.run(args) == (outcome != "passed")
     assert len(calls) == 1
-    assert calls[0][:-2] == expected["modules"]
+    assert calls[0][:2] == ["-p", "ci_qt_dialog_ownership"]
+    assert calls[0][2:-2] == expected["modules"]
     assert calls[0][-2] == "--junitxml"
 
 

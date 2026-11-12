@@ -14,7 +14,7 @@
   "permissions": {"contents": "read", "actions": "read"},
   "jobs": {
     "diagnostic": {
-      "name": "Original shard 1 with single-test observations",
+      "name": "Original shard 1 with dialog provenance and language observations",
       "runs-on": "windows-latest",
       "timeout-minutes": 45,
       "env": {"QT_QPA_PLATFORM": "offscreen"},
