@@ -1128,6 +1128,8 @@ class AnonymizationWidget(QWidget):
                 set_validation_indicator(prefix_field, True)
 
     def validate_current_configuration(self, *, navigate_to_error: bool = False) -> None:
+        if self._worker is not None:
+            return
         self._update_transfer_controls()
         result = validate_configuration(self._column_configs)
         self._refresh_validation_indicators()
@@ -1230,6 +1232,8 @@ class AnonymizationWidget(QWidget):
         )
 
     def analyze_columns(self) -> None:
+        if self._worker is not None:
+            return
         if self._detection_worker is not None and self._detection_worker.isRunning():
             self._detection_worker.request_cancel()
             self.analyze_button.setEnabled(False)
@@ -1255,6 +1259,8 @@ class AnonymizationWidget(QWidget):
         worker.start()
 
     def _detection_completed(self, result: DetectionResult) -> None:
+        if self._worker is not None:
+            return
         self._set_detection_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
@@ -1268,12 +1274,16 @@ class AnonymizationWidget(QWidget):
         self._set_status_id("masking.status.analyzed", state="success")
 
     def _detection_cancelled(self) -> None:
+        if self._worker is not None:
+            return
         self._set_detection_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
         self._set_status_id("masking.status.analysis_cancelled", state="warning")
 
     def _detection_failed(self, error: Exception) -> None:
+        if self._worker is not None:
+            return
         self._set_detection_state(False)
         self.progress_bar.setVisible(False)
         self.processed_count_label.setVisible(False)
@@ -1323,7 +1333,14 @@ class AnonymizationWidget(QWidget):
             self._update_profile_actions()
         self._update_history_shortcuts()
 
+    def _can_apply_detection_suggestions(self) -> bool:
+        sender = self.sender()
+        return (self._history_idle()
+                and (not isinstance(sender, DetectionDialog) or sender is self._detection_dialog))
+
     def apply_detection_suggestion(self, row: int) -> None:
+        if not self._can_apply_detection_suggestions():
+            return
         if not 0 <= row < len(self._suggestions):
             return
         suggestion = self._suggestions[row]
@@ -1338,6 +1355,8 @@ class AnonymizationWidget(QWidget):
         self._apply_detection_rows((row,))
 
     def apply_detection_suggestions(self, rows: tuple[int, ...]) -> None:
+        if not self._can_apply_detection_suggestions():
+            return
         applicable = tuple(
             row
             for row in rows
@@ -1376,6 +1395,10 @@ class AnonymizationWidget(QWidget):
         )
 
     def _apply_detection_rows(self, rows: tuple[int, ...]) -> None:
+        # Confirmation runs a nested Qt event loop: processing may have started
+        # since the request, even when the user subsequently answered Yes.
+        if not self._can_apply_detection_suggestions():
+            return
         if rows:
             self._reset_configuration_history()
         self._applying_suggestion = True
@@ -1421,6 +1444,8 @@ class AnonymizationWidget(QWidget):
         self.validate_current_configuration()
 
     def clear_detection_suggestions(self) -> None:
+        if not self._can_apply_detection_suggestions():
+            return
         self._clear_detection_suggestions()
         self._set_status_id("detection.cleared", state="success")
 
@@ -1817,6 +1842,8 @@ class AnonymizationWidget(QWidget):
         self._worker = None
         if worker is not None:
             worker.deleteLater()
+        if self._detection_dialog is not None:
+            self._detection_dialog.setEnabled(self._history_idle())
         self._update_history_shortcuts()
 
     def cancel_processing(self) -> None:
@@ -1862,6 +1889,10 @@ class AnonymizationWidget(QWidget):
             self._update_profile_actions()
         self.cancel_button.setVisible(processing)
         self.cancel_button.setEnabled(processing)
+        if processing and self._detection_dialog is not None:
+            # Keep reviewed selections, but resume only after finished cleanup,
+            # not on the earlier completed/failed/cancelled signal.
+            self._detection_dialog.setEnabled(False)
         self._update_history_shortcuts()
 
     def _clear_output_result(self) -> None:

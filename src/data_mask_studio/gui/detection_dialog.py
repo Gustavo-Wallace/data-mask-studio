@@ -183,13 +183,19 @@ class DetectionDialog(QDialog):
                 suggestion.suggested_type is not SuggestedType.UNKNOWN
             )
             apply_button.clicked.connect(
-                lambda _checked=False, current_row=row: self.individual_requested.emit(
+                lambda _checked=False, current_row=row: self._request_individual(
                     current_row
                 )
             )
             self.table.setCellWidget(row, 8, apply_button)
 
+    def _request_individual(self, row: int) -> None:
+        if self.isEnabled():
+            self.individual_requested.emit(row)
+
     def _request_high_confidence(self) -> None:
+        if not self.isEnabled():
+            return
         indexes = tuple(
             index
             for index, suggestion in enumerate(self._suggestions)
@@ -200,6 +206,8 @@ class DetectionDialog(QDialog):
             self.bulk_requested.emit(indexes)
 
     def _request_accepted(self) -> None:
+        if not self.isEnabled():
+            return
         indexes = tuple(
             index
             for index, field in enumerate(self._acceptance_fields)
@@ -209,5 +217,7 @@ class DetectionDialog(QDialog):
             self.bulk_requested.emit(indexes)
 
     def _clear_suggestions(self) -> None:
+        if not self.isEnabled():
+            return
         self.suggestions_cleared.emit()
         self.close()
