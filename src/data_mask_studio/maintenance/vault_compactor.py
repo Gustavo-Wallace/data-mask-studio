@@ -223,28 +223,49 @@ def _validate_database(database: Path) -> None:
 
 def _logical_digest(database: Path) -> bytes:
     digest = hashlib.sha256()
+
+    def frame(value: object) -> None:
+        # SQLite returns bytes/text/numbers/None. Include the type as well as
+        # the length so equal BLOB/text bytes cannot hide a stored-field change.
+        kind = type(value).__name__.encode("ascii")
+        encoded = value if isinstance(value, bytes) else str(value).encode("utf-8")
+        digest.update(len(kind).to_bytes(1, "big"))
+        digest.update(kind)
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+
     try:
         connection = sqlite3.connect(
             f"{database.resolve().as_uri()}?mode=ro&immutable=1", uri=True
         )
         try:
-            for query in (
-                "SELECT code, prefix, canonical_encrypted_value, canonical_nonce, "
-                "source_header, normalization_rule, first_seen, last_seen, "
-                "total_occurrences FROM vault_mappings ORDER BY code",
-                "SELECT identifier, code, encrypted_value, nonce, normalization_rule, "
-                "first_seen, last_seen, occurrence_count FROM vault_variations "
-                "ORDER BY identifier",
+            # compact() requires the current schema (4). Both composite tables
+            # are mandatory even for scalar-only vaults; never skip missing ones.
+            for table, columns in (
+                ("vault_mappings", ("code", "prefix", "canonical_encrypted_value", "canonical_nonce",
+                                    "source_header", "normalization_rule", "first_seen", "last_seen",
+                                    "total_occurrences")),
+                ("vault_variations", ("identifier", "code", "encrypted_value", "nonce", "normalization_rule",
+                                      "first_seen", "last_seen", "occurrence_count")),
+                ("composite_mappings", ("code", "prefix", "identity_version", "payload_version", "aad_version",
+                                        "component_count", "rules", "encrypted_value", "nonce", "first_seen",
+                                        "last_seen", "total_occurrences")),
+                ("composite_variations", ("identifier", "code", "encrypted_value", "nonce", "first_seen",
+                                          "last_seen", "occurrence_count")),
             ):
+                digest.update(b"T")
+                frame(table)
+                frame(len(columns))
+                for column in columns:
+                    frame(column)
+                # Names are fixed above; each table's first field is its primary
+                # key. Cursor iteration keeps Python memory bounded to one row.
+                query = f"SELECT {', '.join(columns)} FROM {table} ORDER BY {columns[0]}"
                 for row in connection.execute(query):
+                    digest.update(b"R")
                     for value in row:
-                        encoded = (
-                            bytes(value)
-                            if isinstance(value, bytes)
-                            else str(value).encode("utf-8")
-                        )
-                        digest.update(len(encoded).to_bytes(8, "big"))
-                        digest.update(encoded)
+                        frame(value)
+                digest.update(b"E")
         finally:
             connection.close()
     except sqlite3.Error as error:
