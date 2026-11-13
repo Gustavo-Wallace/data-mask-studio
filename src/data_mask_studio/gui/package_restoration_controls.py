@@ -73,7 +73,8 @@ class PackageRestorationControls(QWidget):
 
     def clear_password(self) -> None:
         self.show_password.setChecked(False)
-        self.password.clear()
+        # Discard native undo/redo as well, including an already-empty field.
+        self.password.setText("")
 
     def request(self) -> PackageRestorationRequest:
         path = Path(self.path.text()).expanduser()

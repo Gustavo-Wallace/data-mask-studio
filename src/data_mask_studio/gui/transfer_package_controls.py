@@ -101,8 +101,9 @@ class TransferPackageControls(QWidget):
 
     def clear_passwords(self):
         self.show_passwords.setChecked(False)
-        self.password.clear()
-        self.confirmation.clear()
+        # clear() is undoable after revealing a password; setText resets history.
+        self.password.setText("")
+        self.confirmation.setText("")
 
     def reset(self):
         self.checkbox.setChecked(False)

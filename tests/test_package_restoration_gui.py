@@ -108,19 +108,27 @@ def test_basic_validation_prevents_launch(gui, tmp_path, monkeypatch, case):
     assert PASSWORD not in widget.status_label.text()
 
 
-@pytest.mark.parametrize("reset", ["load", "clear", "success", "failure", "cancel"])
-def test_password_reset(gui, tmp_path, reset):
+@pytest.mark.parametrize("reset", ["load", "clear", "source", "browse", "success", "failure", "cancel"])
+def test_password_reset(gui, tmp_path, monkeypatch, reset):
     _, widget, source = gui
     enable(widget, tmp_path / "file.dmspackage")
     controls = widget.package_controls
     controls.show_password.setChecked(True)
     if reset == "load": widget.load_csv(str(source))
     elif reset == "clear": widget.clear_selection()
+    elif reset == "source": widget.source_combo.setCurrentIndex(0)
+    elif reset == "browse":
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args, **kwargs: (
+            str(tmp_path / "another.dmspackage"), ""))
+        controls.browse.click()
     elif reset == "failure": widget._failed(RuntimeError(PASSWORD))
     elif reset == "cancel": widget._cancelled()
     else: widget._worker_finished()
     assert not controls.password.text() and not controls.show_password.isChecked()
     assert controls.password.echoMode() is QLineEdit.EchoMode.Password
+    controls.password.setEchoMode(QLineEdit.EchoMode.Normal)
+    assert not controls.password.isUndoAvailable() and not controls.password.isRedoAvailable()
+    controls.password.setEchoMode(QLineEdit.EchoMode.Password)
 
 
 def test_short_password_forwarded_off_gui_thread_and_cancellation(gui, tmp_path, monkeypatch):

@@ -111,7 +111,7 @@ def test_request_is_passed_only_to_worker(gui, tmp_path, monkeypatch, enabled):
     widget._worker_finished()
 
 
-@pytest.mark.parametrize('action', ['clear', 'load', 'uncheck', 'success', 'failure', 'cancel'])
+@pytest.mark.parametrize('action', ['clear', 'load', 'uncheck', 'no_mask', 'success', 'failure', 'cancel'])
 def test_password_reset(gui, tmp_path, action):
     _, widget, _ = gui
     controls = enable(widget, tmp_path)
@@ -119,6 +119,7 @@ def test_password_reset(gui, tmp_path, action):
     if action == 'clear': widget.clear_selection()
     elif action == 'load': widget.load_csv(str(widget._inspection_result.path))
     elif action == 'uncheck': controls.checkbox.setChecked(False)
+    elif action == 'no_mask': widget.unselect_all_columns()
     elif action == 'success': widget._processing_completed(AnonymizationResult(tmp_path / 'out.csv', 1, 0.1))
     elif action == 'cancel': widget._processing_cancelled()
     else: widget._processing_failed(CSVAnonymizationError('Publicação pendente preservada para recuperação.'))
@@ -126,6 +127,10 @@ def test_password_reset(gui, tmp_path, action):
     assert not controls.show_passwords.isChecked()
     assert controls.password.echoMode() == controls.confirmation.echoMode() == QLineEdit.EchoMode.Password
     if action == 'failure': assert 'pendente' in widget.status_label.text()
+    for field in (controls.password, controls.confirmation):
+        field.setEchoMode(QLineEdit.EchoMode.Normal)
+        assert not field.isUndoAvailable() and not field.isRedoAvailable()
+        field.setEchoMode(QLineEdit.EchoMode.Password)
 
 
 def test_password_visibility_toggle_preserves_values_and_request(gui, tmp_path):
