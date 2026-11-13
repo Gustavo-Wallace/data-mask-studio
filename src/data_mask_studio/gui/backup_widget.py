@@ -453,7 +453,7 @@ class BackupWidget(QWidget):
         self.restore_progress.setRange(0, 1)
         self.restore_progress.setValue(1)
         self._status_id(self.restore_status, "backup.status.restored", count=result.mapping_count, state="success")
-        self.restore_password_field.clear()
+        self.restore_password_field.setText("")
         self._validated_result = None
         self.restore_button.setEnabled(False)
         self.environment_restored.emit()
@@ -560,12 +560,13 @@ class BackupWidget(QWidget):
         return self._worker is not None and self._worker.isRunning()
 
     def _clear_create_passwords(self) -> None:
-        self.create_password_field.clear()
-        self.confirm_password_field.clear()
+        # Unlike clear(), setText() discards recoverable native undo/redo history.
+        self.create_password_field.setText("")
+        self.confirm_password_field.setText("")
 
     def _clear_all_passwords(self) -> None:
         self._clear_create_passwords()
-        self.restore_password_field.clear()
+        self.restore_password_field.setText("")
 
     def _show_backup_error(self, label: QLabel, error: BackupError) -> None:
         identifier = backup_error_message_id(error)

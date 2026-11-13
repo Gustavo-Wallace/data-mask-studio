@@ -21,6 +21,7 @@ from data_mask_studio.i18n import Translator
 from data_mask_studio.maintenance import safe_diagnostic_report
 from data_mask_studio.preferences import PreferencesService
 from test_backup import prepare_environment, PASSWORD
+from test_backup_password_history import assert_password_history_erased
 from test_backup_screen_layout import validation_result
 from test_batch_profile_isolation import pump_until
 from test_maintenance_interface import prepare, widget_for, wait
@@ -69,6 +70,7 @@ def test_new_validation_does_not_retain_old_success_or_report_completion_after_f
     assert widget.progress.value() == 0
     assert widget.backup_result.toPlainText() != previous
     assert "Arquivo válido: sim" not in widget.backup_result.toPlainText()
+    assert_password_history_erased(widget.backup_password_field)
 
 
 def test_retired_backup_worker_cannot_publish_into_another_operation(page, monkeypatch):
@@ -105,6 +107,7 @@ def finish(app, widget):
     app.processEvents()
     assert widget._worker is None and not widget._backup_accept_result
     assert worker._password == ""
+    assert_password_history_erased(widget.backup_password_field)
 
 
 @pytest.mark.parametrize("locale", ["en", "pt-BR"])
@@ -337,6 +340,7 @@ def test_active_real_worker_and_queued_completion_preserve_ownership_during_retr
     assert widget.status_label.property("feedbackState") == ("warning" if cancel else "success")
     assert worker._password == "" and not widget.backup_password_field.text()
     assert not widget.show_backup_password.isChecked() and widget.cancel_button.isHidden()
+    assert_password_history_erased(widget.backup_password_field)
 
 
 @pytest.mark.parametrize("locale", ["en", "pt-BR"])

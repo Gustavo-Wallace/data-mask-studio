@@ -20,6 +20,7 @@ from data_mask_studio.gui.backup_worker import (
 )
 from data_mask_studio.metadata import application_version
 from test_backup_interface import PASSWORD, prepare_widget
+from test_backup_password_history import assert_password_history_erased
 from test_main_navigation import build_window
 
 
@@ -173,6 +174,8 @@ def test_password_visibility_and_keyboard_order_remain_unchanged(backup):
         assert next_control.hasFocus()
     assert widget.stop_worker()
     assert all(field.text() == "" for field in fields)
+    for field in fields:
+        assert_password_history_erased(field)
 
 
 @pytest.mark.parametrize("kind,worker_type", [
@@ -239,6 +242,15 @@ def test_worker_feedback_stays_in_existing_workflow_groups(backup, monkeypatch, 
     worker.finished.emit()
     assert widget._worker is None and widget.create_button.isEnabled()
     assert widget.create_cancel_button.isHidden() and widget.restore_cancel_button.isHidden()
+    fields = (widget.create_password_field, widget.confirm_password_field, widget.restore_password_field)
+    cleared = (fields if outcome == "cancelled" else fields[:2] if kind == "create"
+               else fields[2:] if kind == "restore" and outcome == "success" else ())
+    for field in fields:
+        if field in cleared:
+            assert_password_history_erased(field)
+        else:
+            # Validation and failed restoration retain inputs for the next step.
+            assert field.text() == PASSWORD
     assert widget.create_progress.maximum() == widget.restore_progress.maximum() == 1
 
 

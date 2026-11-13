@@ -964,7 +964,8 @@ class MaintenanceWidget(QWidget):
         self._temporary_accept_result = False
         self._compaction_accept_result = False
         self._worker = None
-        self.backup_password_field.clear()
+        # Also discard native undo/redo, even if the field is already empty.
+        self.backup_password_field.setText("")
         self.show_backup_password.setChecked(False)
         if worker is not None:
             worker.deleteLater()
