@@ -355,7 +355,8 @@ def test_removed_file_after_validation_does_not_stop_following_file(
     assert summary.completed_files == 1
 
 
-def test_structural_vault_error_stops_remaining_files(tmp_path: Path) -> None:
+@pytest.mark.parametrize("tracking", [True, False])
+def test_structural_vault_error_stops_remaining_files(tmp_path: Path, tracking) -> None:
     service, profile = make_profile_service(tmp_path)
     sources = [tmp_path / f"file-{index}.csv" for index in range(3)]
     for source in sources:
@@ -367,7 +368,7 @@ def test_structural_vault_error_stops_remaining_files(tmp_path: Path) -> None:
     repository = FailingRepository(tmp_path / "vault.db")
 
     summary = BatchService(service).process(
-        files, profile, output, FixedKeyProvider(), lambda: repository
+        files, profile, output, FixedKeyProvider(), lambda: repository, track_emitted_codes=tracking
     )
 
     assert [item.status for item in files] == [
@@ -378,10 +379,12 @@ def test_structural_vault_error_stops_remaining_files(tmp_path: Path) -> None:
     assert summary.completed_files == 1
     assert summary.cancelled_or_skipped_files == 1
     assert len(list(output.glob("*.csv"))) == 1
+    assert bool(files[0].processing_result.emitted_scalar_codes) is tracking
 
 
+@pytest.mark.parametrize("tracking", [True, False])
 def test_cancellation_rolls_back_current_file_and_skips_following_files(
-    tmp_path: Path,
+    tmp_path: Path, tracking,
 ) -> None:
     service, profile = make_profile_service(tmp_path)
     first = tmp_path / "first.csv"
@@ -403,6 +406,7 @@ def test_cancellation_rolls_back_current_file_and_skips_following_files(
         lambda: repository,
         cancellation=cancellation,
         progress_callback=lambda _progress: cancellation.request(),
+        track_emitted_codes=tracking,
     )
 
     assert [item.status for item in files] == [

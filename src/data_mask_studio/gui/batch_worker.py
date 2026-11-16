@@ -93,6 +93,7 @@ class BatchProcessingWorker(QThread):
                 cancellation=self._cancellation,
                 file_callback=self.file_changed.emit,
                 progress_callback=report,
+                track_emitted_codes=False,
             )
         except Exception as error:
             self.failed.emit(error)

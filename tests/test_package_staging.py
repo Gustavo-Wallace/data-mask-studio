@@ -29,7 +29,8 @@ def dump(repo):
         return tuple(db.iterdump())
 
 
-def test_mixed_existing_and_new_are_packaged_before_commit(tmp_path, monkeypatch):
+@pytest.mark.parametrize('tracking', [True, False])
+def test_mixed_existing_and_new_are_packaged_before_commit(tmp_path, monkeypatch, tracking):
     source, destination, repo, kwargs = case(tmp_path)
     old = anonymize_csv(source, tmp_path / 'seed.csv', **kwargs)
     with repo.transaction() as tx:
@@ -58,7 +59,7 @@ def test_mixed_existing_and_new_are_packaged_before_commit(tmp_path, monkeypatch
             observed.append(payload)
     monkeypatch.setattr(repo, 'transaction', transaction)
     result = anonymize_csv(source, destination, **kwargs, transfer_package_request=PackageStagingRequest(PASSWORD),
-                           transfer_package_destination=tmp_path / 'out.dmspackage')
+                           transfer_package_destination=tmp_path / 'out.dmspackage', track_emitted_codes=tracking)
     assert len(observed) == 1
     payload = observed[0]
     assert tuple(m.code for m in payload.scalar_mappings) == result.emitted_scalar_codes
@@ -78,7 +79,8 @@ def test_mixed_existing_and_new_are_packaged_before_commit(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize('failure', ['missing', 'corrupt', 'type', 'budget', 'encrypt', 'write', 'binding', 'payload', 'cancel'])
-def test_package_failure_rolls_back_without_final_files(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize('tracking', [True, False])
+def test_package_failure_rolls_back_without_final_files(tmp_path, monkeypatch, failure, tracking):
     source, destination, repo, kwargs = case(tmp_path)
     before = dump(repo)
     request = PackageStagingRequest(PASSWORD, max_payload_bytes=1 if failure == 'budget' else 64 * 1024 * 1024)
@@ -119,7 +121,7 @@ def test_package_failure_rolls_back_without_final_files(tmp_path, monkeypatch, f
         kwargs['should_cancel'] = lambda: bool(cancelled)
     with pytest.raises(ProcessingCancelled if failure == 'cancel' else CSVAnonymizationError) as error:
         anonymize_csv(source, destination, **kwargs, transfer_package_request=request,
-                      transfer_package_destination=tmp_path / 'out.dmspackage')
+                      transfer_package_destination=tmp_path / 'out.dmspackage', track_emitted_codes=tracking)
     assert 'private' not in str(error.value) and PASSWORD not in str(error.value)
     assert not destination.exists() and not list(tmp_path.glob('*.dmspackage'))
     assert not list(tmp_path.glob('.*.tmp'))

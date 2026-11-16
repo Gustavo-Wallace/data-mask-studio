@@ -73,6 +73,7 @@ class BatchService:
         cancellation: CancellationRequest | None = None,
         file_callback: FileCallback | None = None,
         progress_callback: ProgressCallback | None = None,
+        track_emitted_codes: bool = True,
     ) -> BatchSummary:
         compatible = [item for item in files if item.status is BatchFileStatus.COMPATIBLE]
         if not files:
@@ -166,6 +167,7 @@ class BatchService:
                         progress_callback=report_records,
                         should_cancel=cancellation.is_requested,
                         vault_repository=vault_repository,
+                        track_emitted_codes=track_emitted_codes,
                     )
                 except ProcessingCancelled:
                     _remove_reservation(reservation)

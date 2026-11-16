@@ -30,8 +30,10 @@ def pair_case(root):
     return source, destination, package, repo, kwargs
 
 
-def pending(root, monkeypatch, published=()):
+def pending(root, monkeypatch, published=(), *, tracking=True):
     source, destination, package, repo, kwargs = pair_case(root)
+    if not tracking:
+        kwargs['track_emitted_codes'] = False
     def interrupt(self, publisher):
         for role in published:
             artifact = self.data if role == 'csv' else self.data['package']
@@ -90,8 +92,9 @@ def test_success_and_durable_order(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('published', [(), ('csv',), ('package',), ('csv', 'package')])
-def test_recovery_all_states(tmp_path, monkeypatch, published):
-    _, destination, package, repo, _ = pending(tmp_path, monkeypatch, published)
+@pytest.mark.parametrize('tracking', [True, False])
+def test_recovery_all_states(tmp_path, monkeypatch, published, tracking):
+    _, destination, package, repo, _ = pending(tmp_path, monkeypatch, published, tracking=tracking)
     before = counts(repo)
     data = json.loads(journals(tmp_path)[0].read_bytes())['data']
     expected = [Path(a['destination'] if Path(a['destination']).exists() else a['temp']).read_bytes()

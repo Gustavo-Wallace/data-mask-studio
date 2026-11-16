@@ -118,6 +118,7 @@ class AnonymizationWorker(QThread):
                 progress_callback=report,
                 should_cancel=self._cancel_requested.is_set,
                 vault_repository=vault_repository,
+                track_emitted_codes=self._transfer_package_request is not None,
                 **package_options,
             )
         except ProcessingCancelled:

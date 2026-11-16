@@ -77,8 +77,13 @@ def anonymize_csv(
     processing_plan: ProcessingPlan | None = None,
     transfer_package_request: "PackageStagingRequest | None" = None,
     transfer_package_destination: str | Path | None = None,
+    track_emitted_codes: bool = True,
 ) -> AnonymizationResult:
-    """Stream CSV output; optional package publication is recoverable, not atomic."""
+    """Stream CSV output; optional package publication is recoverable, not atomic.
+
+    Public callers retain complete emitted-code metadata by default. Opting out
+    skips whole-file tracking only when no transfer package requires those codes.
+    """
     # Runtime boundary avoids making core result models depend on vault/package
     # initialization during imports.
     from data_mask_studio.transfer_package.binding import compute_file_binding
@@ -130,6 +135,7 @@ def anonymize_csv(
     fallback_counts: dict[int, int] = {}
     composite_fallbacks: dict[NormalizationRule, int] = {}
     scalar_occurrences = composite_occurrences = composite_tokens = 0
+    track_codes = track_emitted_codes or transfer_package_request is not None
     emitted_scalar_codes: set[str] = set()
     emitted_composite_codes: set[str] = set()
     physical_output_indices = {
@@ -255,11 +261,12 @@ def anonymize_csv(
                     writer.writerow(anonymized_row)
                     # canonical_values contains only successfully masked scalar
                     # cells, not preserved values that merely look like tokens.
-                    emitted_scalar_codes.update(
-                        anonymized_row[physical_output_indices[index]]
-                        for index in canonical_values
-                    )
-                    emitted_composite_codes.update(row_composite_codes)
+                    if track_codes:
+                        emitted_scalar_codes.update(
+                            anonymized_row[physical_output_indices[index]]
+                            for index in canonical_values
+                        )
+                        emitted_composite_codes.update(row_composite_codes)
                     records_processed += 1
                     if progress_callback is not None:
                         progress_callback(records_processed)
@@ -376,8 +383,8 @@ def anonymize_csv(
         composite_normalization_fallbacks=tuple(
             RuleFallbackCount(rule, count) for rule, count in composite_fallbacks.items()
         ),
-        emitted_scalar_codes=tuple(sorted(emitted_scalar_codes)),
-        emitted_composite_codes=tuple(sorted(emitted_composite_codes)),
+        emitted_scalar_codes=tuple(sorted(emitted_scalar_codes)) if track_codes else (),
+        emitted_composite_codes=tuple(sorted(emitted_composite_codes)) if track_codes else (),
         masked_file_binding=masked_file_binding,
         transfer_package_path=package_destination,
     )

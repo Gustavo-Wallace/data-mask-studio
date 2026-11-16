@@ -91,7 +91,8 @@ def test_no_mask_and_composite_preserve_do_not_track(tmp_path):
 
 
 @pytest.mark.parametrize('failure', ['row', 'cancel', 'publication'])
-def test_failed_operation_has_no_successful_result(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize('tracking', [True, False])
+def test_failed_operation_has_no_successful_result(tmp_path, monkeypatch, failure, tracking):
     source, destination, repo, kwargs = setup_case(tmp_path, [('Ana', '99999999999', '20')])
     if failure == 'row':
         with source.open('a', encoding='utf-8') as stream: stream.write('bad,row\n')
@@ -104,7 +105,7 @@ def test_failed_operation_has_no_successful_result(tmp_path, monkeypatch, failur
         monkeypatch.setattr('data_mask_studio.csv_tools.csv_anonymizer.publish', fail)
     result = None
     with pytest.raises(ProcessingCancelled if failure == 'cancel' else CSVAnonymizationError):
-        result = anonymize_csv(source, destination, **kwargs)
+        result = anonymize_csv(source, destination, **kwargs, track_emitted_codes=tracking)
     assert result is None and not destination.exists()
     if failure != 'publication':
         assert not list(tmp_path.glob('*.tmp'))
