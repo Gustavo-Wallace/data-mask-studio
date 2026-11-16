@@ -45,7 +45,7 @@ def _identities(values: Iterable[str], *, composite: bool) -> set[str]:
     try:
         if isinstance(values, (str, bytes)):
             raise ValueError
-        # Reuse the explicit v1 identity contract, including legacy scalars.
+        # Reuse the Base32-12 identity contract supported by restoration.
         return {_code(value, composite=composite) for value in values}
     except (TypeError, ValueError):
         raise PackageError("Identidade requerida inválida para transferência.") from None

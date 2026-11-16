@@ -1,7 +1,8 @@
 import csv
 import codecs
 import io
-from dataclasses import replace
+import json
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from data_mask_studio.vault import MappingCandidate, VaultRepository
 from data_mask_studio.normalization import NormalizationRule
 from test_composite_restoration import setup
 from test_restoration import configuration
+from test_transfer_package import seal_plaintext
 
 PASSWORD = 'synthetic restore package password'
 SCALAR = 'NAME-ABCDEFGHIJKL'
@@ -110,6 +112,56 @@ def test_incomplete_package_aborts_even_when_vault_has_mapping(tmp_path, kind, p
     with pytest.raises(MissingCodeError):
         restore_csv_from_package(replace(config, missing_code_policy=policy), output, package, PASSWORD)
     assert not output.exists() and not list(tmp_path.glob('*.tmp'))
+
+
+@pytest.mark.parametrize('mixed', [False, True])
+@pytest.mark.parametrize('existing', [False, True])
+def test_authenticated_hex24_package_is_rejected_before_output_staging(tmp_path, monkeypatch, mixed, existing):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from data_mask_studio.restoration import csv_restorer as module
+    from data_mask_studio.transfer_package import service
+    from data_mask_studio.transfer_package.serialization import encode_payload
+
+    repo, config, package, payload, output = make_case(tmp_path)
+    unsupported = 'LEGACY-' + 'A1' * 12
+    document = json.loads(encode_payload(payload))
+    invalid = {**document['scalar_mappings'][0], 'code': unsupported}
+    document['scalar_mappings'] = [*document['scalar_mappings'], invalid] if mixed else [invalid]
+    if not mixed:
+        document['composite_mappings'] = []
+    rows = read_rows(config.source_path)
+    rows = [*rows, [unsupported, 'common', 'keep-hex']] if mixed else [rows[0], [unsupported, 'common', 'keep-hex']]
+    with config.source_path.open('w', encoding='utf-8', newline='') as stream:
+        csv.writer(stream).writerows(rows)
+    document['masked_file'] = asdict(compute_file_binding(config.source_path))
+    raw = json.dumps(document).encode('utf-8')
+    # Independently seal an authenticated v1 payload. The encoder under test
+    # must not be used to prepare invalid incoming packages after the fix.
+    content = seal_plaintext(raw, password=PASSWORD)
+    _, _, salt, nonce = service.HEADER.unpack(content[:service.HEADER.size])
+    assert AESGCM(service._key(PASSWORD, salt)).decrypt(nonce, content[service.HEADER.size:],
+                                                    content[:service.HEADER.size]) == raw
+    package.write_bytes(content)
+    originals = config.source_path.read_bytes(), package.read_bytes(), repo.database_path.read_bytes()
+    sentinel = b'previous complete output'
+    if existing:
+        output.write_bytes(sentinel)
+    calls = []
+    restore = module._restore_csv
+
+    def observe(*args, **kwargs):
+        calls.append(True)
+        return restore(*args, **kwargs)
+
+    monkeypatch.setattr(module, '_restore_csv', observe)
+    with pytest.raises(RestorationSecurityError) as error:
+        restore_csv_from_package(replace(config, missing_code_policy=MissingCodePolicy.ABORT),
+                                 output, package, PASSWORD, overwrite=existing)
+    assert calls == []  # Rejection precedes even the output-restoration staging path.
+    assert PASSWORD not in str(error.value) and unsupported not in str(error.value)
+    assert (output.read_bytes() == sentinel) if existing else not output.exists()
+    assert not list(tmp_path.glob('*.tmp'))
+    assert (config.source_path.read_bytes(), package.read_bytes(), repo.database_path.read_bytes()) == originals
 
 
 @pytest.mark.parametrize('change', ['byte', 'truncate', 'append', 'encoding', 'same_name', 'other_package', 'password', 'tamper'])

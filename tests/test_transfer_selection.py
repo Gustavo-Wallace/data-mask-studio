@@ -8,7 +8,7 @@ from data_mask_studio.anonymization import generate_token
 from data_mask_studio.normalization import NormalizationRule as Rule
 from data_mask_studio.processing.composite_identity import generate_composite_token
 from data_mask_studio.transfer_package import MaskedFileBinding, PackageError
-from data_mask_studio.transfer_package.selection import select_mappings
+from data_mask_studio.transfer_package.selection import select_mappings, select_transaction_mappings
 from data_mask_studio.transfer_package import selection
 from data_mask_studio.transfer_package.serialization import encode_payload
 from data_mask_studio.vault import MappingCandidate, VaultCipher, VaultRepository
@@ -93,7 +93,8 @@ def test_strict_type_separation(vault, kind):
             select_mappings(repo, scalar_codes=[scalars[0].code], composite_codes=[scalars[0].code])
 
 
-@pytest.mark.parametrize('value', [None, 12, '', 'bad', 'AA-abcdefghijkl', ' AA-ABCDEFGHIJKL', 'AA-ABCDEFGHIJKL\n'])
+@pytest.mark.parametrize('value', [None, 12, '', 'bad', 'AA-abcdefghijkl', ' AA-ABCDEFGHIJKL', 'AA-ABCDEFGHIJKL\n',
+                                 'LEGACY-' + 'A1' * 12, 'LEGACY-' + 'A' * 24])
 def test_invalid_identity_rejected_before_read(vault, value, monkeypatch):
     repo, _, _ = vault
     monkeypatch.setattr(repo, 'as_read_only', lambda: pytest.fail('must reject before reading'))
@@ -105,6 +106,63 @@ def test_empty_or_untyped_collection_rejected(vault):
     repo, scalars, _ = vault
     with pytest.raises(PackageError): select_mappings(repo)
     with pytest.raises(PackageError): select_mappings(repo, scalar_codes=scalars[0].code)
+
+
+def test_hex24_rejects_whole_mixed_selection_before_vault_or_transaction_reads(vault, monkeypatch):
+    repo, scalars, composites = vault
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('Unsupported identity must be rejected before reading any mapping')
+
+    monkeypatch.setattr(repo, 'as_read_only', forbidden)
+    with repo.transaction() as transaction:
+        monkeypatch.setattr(transaction, 'read_session', forbidden)
+        for select, source in ((select_mappings, repo), (select_transaction_mappings, transaction)):
+            with pytest.raises(PackageError):
+                select(source, scalar_codes=[scalars[0].code, 'LEGACY-' + 'A1' * 12],
+                       composite_codes=[composites[0].code])
+
+
+def test_rejecting_hex24_export_preserves_existing_vault_migration_audit_and_local_behavior(tmp_path, monkeypatch):
+    import hashlib
+    import hmac
+    from data_mask_studio.consultant import ConsultantService, ConsultationStatus
+    from data_mask_studio.html_restoration.scanner import is_valid_candidate
+    from data_mask_studio.integrity import IntegrityStatus
+    from data_mask_studio.restoration import classify_cell_format, restore_csv, MissingCodePolicy
+    from test_integrity import paths_for, auditor, HMAC_KEY, VAULT_KEY
+    from test_restoration import configuration, read_rows
+    import test_vault_migration as migration
+
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'isolated-appdata'))
+    paths = paths_for(tmp_path)
+    legacy = 'LEGACY-' + hmac.new(HMAC_KEY, ('LEGACY\0' + migration.ORIGINAL_VALUE).encode('utf-8'),
+                                  hashlib.sha256).hexdigest()[:24].upper()
+    monkeypatch.setattr(migration, 'CODE', legacy)
+    migration.create_v1_database(paths.vault_database_path, VaultCipher(VAULT_KEY))
+    repo = VaultRepository(paths.vault_database_path, VaultCipher(VAULT_KEY))
+    before = repo.get_decrypted_mapping(legacy)
+    assert before is not None and before.code == legacy and before.occurrence_count == 4
+    with pytest.raises(PackageError):
+        select_mappings(repo, scalar_codes=[legacy])
+    assert repo.get_decrypted_mapping(legacy) == before
+    report = auditor(paths).run()
+    assert report.schema_version == 4 and report.status is IntegrityStatus.INTACT
+    assert all(check.failures == 0 for check in report.checks)
+    assert classify_cell_format(legacy).lookup_code is None and not is_valid_candidate(legacy)
+
+    def forbidden():
+        pytest.fail('The existing consultant must still reject HEX-24 before a vault lookup')
+
+    result, = ConsultantService(forbidden).consult(legacy)
+    assert result.status is ConsultationStatus.INVALID
+    source = tmp_path / 'local.csv'
+    source.write_text('Value\n' + legacy + '\n', encoding='utf-8')
+    config = configuration(source, headers=('Value',), missing_policy=MissingCodePolicy.ABORT)
+    restored = restore_csv(config, tmp_path / 'local-restored.csv', repo)
+    assert read_rows(restored.output_path) == [['Value'], [legacy]]
+    assert restored.restored_codes == restored.missing_codes == 0 and restored.preserved_common_values == 1
+    assert repo.get_decrypted_mapping(legacy) == before
 
 
 @pytest.mark.parametrize('mutation', [

@@ -61,8 +61,8 @@ def _values(value):
 
 
 def _code(value, *, composite=False):
-    suffix = r"[A-Z2-7]{12}" if composite else r"(?:[A-Z2-7]{12}|[0-9A-F]{24})"
-    if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,23}-" + suffix, _text(value)):
+    # Both mapping kinds must use identities recognized by restoration.
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,23}-[A-Z2-7]{12}", _text(value)):
         raise ValueError
     return value
 

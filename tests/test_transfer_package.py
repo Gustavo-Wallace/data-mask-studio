@@ -103,10 +103,10 @@ def test_invalid_envelopes_fail_closed(payload, change):
     assert password not in str(error.value)
 
 
-def seal_plaintext(raw):
+def seal_plaintext(raw, *, password=PASSWORD):
     salt, nonce = os.urandom(16), os.urandom(12)
     header = service.HEADER.pack(service.MAGIC, 1, salt, nonce)
-    return header + AESGCM(service._key(PASSWORD, salt)).encrypt(nonce, raw, header)
+    return header + AESGCM(service._key(password, salt)).encrypt(nonce, raw, header)
 
 
 @pytest.mark.parametrize("change", [
@@ -213,11 +213,66 @@ def test_limits_and_public_validation(payload):
     with pytest.raises(PackageError): validate_payload(replace(payload, masked_file=MaskedFileBinding("bad", 0)))
 
 
-def test_multiple_scalar_mappings_and_legacy_identifier(payload):
+def test_multiple_scalar_mappings_reject_hex24_identifier(payload):
     first = payload.scalar_mappings[0]
     second = replace(first, code="LEGACY-" + "A1" * 12)
     value = replace(payload, scalar_mappings=(first, second))
+    with pytest.raises(PackageError):
+        encrypt_package(value, PASSWORD)
+
+
+@pytest.mark.parametrize("suffix", ["A" * 12, "Z7" * 6])
+def test_multiple_scalar_mappings_and_supported_identifier(payload, suffix):
+    first = payload.scalar_mappings[0]
+    second = replace(first, code="OTHER-" + suffix)
+    value = replace(payload, scalar_mappings=(first, second))
     assert decrypt_package(encrypt_package(value, PASSWORD), PASSWORD) == value
+
+
+@pytest.mark.parametrize("collection", ["scalar_mappings", "composite_mappings"])
+@pytest.mark.parametrize("suffix", ["A1" * 12, "A" * 24])
+def test_unsupported_identifiers_reject_entire_payload_across_all_package_gates(payload, tmp_path, collection, suffix):
+    invalid_code = "UNSUPPORTED-" + suffix
+    entries = getattr(payload, collection)
+    invalid = replace(entries[0], code=invalid_code)
+    value = replace(payload, **{collection: (*entries, invalid)})
+    for operation in (encode_payload, validate_payload):
+        with pytest.raises(PackageError) as error:
+            operation(value)
+        assert invalid_code not in str(error.value) and "Synthetic Person" not in str(error.value)
+    destination = tmp_path / "export.dmspackage"
+    with pytest.raises(PackageError):
+        write_package(destination, value, PASSWORD)
+    assert not destination.exists() and not list(tmp_path.glob("*.tmp"))
+    # Bypass only the encoder in the test fixture, not authentication or decode.
+    document = json.loads(encode_payload(payload))
+    document[collection].append({**document[collection][0], "code": invalid_code})
+    raw = json.dumps(document).encode("utf-8")
+    with pytest.raises(PackageError):
+        decode_payload(raw)
+    encrypted = seal_plaintext(raw)
+    with pytest.raises(PackageError):
+        decrypt_package(encrypted, PASSWORD)
+    incoming = tmp_path / "incoming.dmspackage"
+    incoming.write_bytes(encrypted)
+    with pytest.raises(PackageError):
+        read_package(incoming, PASSWORD)
+    assert incoming.read_bytes() == encrypted
+
+
+def test_hex24_export_is_rejected_before_kdf_or_file_staging(payload, tmp_path, monkeypatch):
+    invalid = replace(payload, scalar_mappings=(replace(payload.scalar_mappings[0], code="LEGACY-" + "A1" * 12),))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unsupported identifiers must be rejected before encryption or staging")
+
+    monkeypatch.setattr(service, "_key", forbidden)
+    monkeypatch.setattr(service.tempfile, "NamedTemporaryFile", forbidden)
+    with pytest.raises(PackageError):
+        encrypt_package(invalid, PASSWORD)
+    with pytest.raises(PackageError):
+        write_package(tmp_path / "invalid.dmspackage", invalid, PASSWORD)
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("password", ["", "short", "abcdefg", " " * 8, " " * 15])
