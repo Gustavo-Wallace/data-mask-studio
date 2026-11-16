@@ -45,20 +45,27 @@ SCENARIOS = {
 
 
 class InstrumentedRepository:
-    """Conta acessos unitários sem registrar códigos ou valores."""
+    """Conta chamadas de lookup escalares/em lote, não tokens nem queries SQL."""
 
     def __init__(self, repository: VaultRepository) -> None:
         self._repository = repository.as_read_only()
         self.lookup_calls = 0
         self.lookup_seconds = 0.0
 
+    @property
+    def database_path(self) -> Path:
+        return self._repository.database_path
+
     def as_read_only(self) -> "InstrumentedRepository":
         return self
 
     def get_decrypted_mapping(self, code: str):
+        return self._lookup(self._repository.get_decrypted_mapping, code)
+
+    def _lookup(self, operation, value):
         started = time.perf_counter()
         try:
-            return self._repository.get_decrypted_mapping(code)
+            return operation(value)
         finally:
             self.lookup_calls += 1
             self.lookup_seconds += time.perf_counter() - started
@@ -66,7 +73,16 @@ class InstrumentedRepository:
     @contextmanager
     def read_session(self, metrics=None):
         with self._repository.read_session(metrics) as session:
-            yield session
+            yield _InstrumentedReadSession(session, self)
+
+
+class _InstrumentedReadSession:
+    def __init__(self, session, repository: InstrumentedRepository) -> None:
+        self._session = session
+        self._repository = repository
+
+    def get_many(self, codes):
+        return self._repository._lookup(self._session.get_many, codes)
 
 
 def synthetic_code(index: int) -> str:
@@ -103,12 +119,14 @@ def create_fixture(directory: Path, scenario: Scenario) -> tuple[Path, VaultRepo
         else ""
     )
     with source.open("w", encoding="utf-8", newline="", buffering=1_048_576) as file:
-        file.write("<!doctype html><html><body><script>const rows = [];\n</script>\n")
+        file.write("<!doctype html><html><body>\n")
         for record in range(scenario.records):
             code = codes[record % len(codes)]
+            # Keep three occurrences per record in supported data contexts.
+            # Script tokens belong to the explicit negative security regression.
             file.write(
                 f'<article data-code="{code}"><p>{common}{code}</p>'
-                f'<script>rows.push({{"code":"{code}","safe":true}});</script>'
+                f'<span aria-label="{code}">Synthetic row</span>'
                 "</article>\n"
             )
         file.write("</body></html>\n")
