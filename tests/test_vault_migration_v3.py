@@ -1,4 +1,6 @@
 import sqlite3
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,7 @@ from data_mask_studio.backup import (
 )
 from data_mask_studio.gui.main_window import MainWindow
 from data_mask_studio.integrity import IntegrityAuditor, IntegrityStatus
+from data_mask_studio.integrity.models import AuditReport, CheckResult
 from data_mask_studio.normalization import NormalizationRule
 from data_mask_studio.profiles import ProfileRepository, ProfileService
 from data_mask_studio.vault import (
@@ -138,6 +141,17 @@ def audit_check(report, name: str):
     return next(item for item in report.checks if item.check_type == name)
 
 
+def assert_diagnostic_content_is_private(report) -> None:
+    # These two fields intentionally serialize filesystem metadata. Normalize
+    # only the fields, never matching text elsewhere in messages or findings.
+    diagnostic_text = replace(
+        report, database_path=Path("vault.db"), profiles_path=Path("profiles.json"),
+    ).to_safe_text()
+    assert ORIGINAL not in diagnostic_text
+    assert CANONICAL not in diagnostic_text
+    assert CODE not in diagnostic_text
+
+
 def test_v2_migration_reencrypts_and_preserves_codes_and_metadata(tmp_path: Path) -> None:
     path = tmp_path / "vault.db"
     cipher = VaultCipher(KEY)
@@ -233,7 +247,8 @@ def test_v2_migration_processes_multiple_bounded_batches(
 def test_read_only_diagnostic_reports_pending_migration_without_corruption(
     tmp_path: Path,
 ) -> None:
-    paths = environment_paths(tmp_path)
+    paths = environment_paths(tmp_path / "ci-run-123")
+    paths.directory.mkdir()
     create_v2_database(paths.vault_database_path, VaultCipher(KEY))
     before = encrypted_state(paths.vault_database_path)
 
@@ -248,9 +263,33 @@ def test_read_only_diagnostic_reports_pending_migration_without_corruption(
     assert aes.examined == 0
     assert aes.failures == 0
     assert encrypted_state(paths.vault_database_path) == before
-    assert ORIGINAL not in report.to_safe_text()
-    assert CANONICAL not in report.to_safe_text()
-    assert CODE not in report.to_safe_text()
+    assert report.database_path == paths.vault_database_path
+    assert report.profiles_path == paths.profiles_path
+    assert f"Cofre: {paths.vault_database_path}" in report.to_safe_text()
+    assert f"Perfis: {paths.profiles_path}" in report.to_safe_text()
+    assert_diagnostic_content_is_private(report)
+
+
+@pytest.mark.parametrize("field", ["check_type", "message", "identifiers"])
+@pytest.mark.parametrize("private", [
+    pytest.param(ORIGINAL, id="original"),
+    pytest.param(CANONICAL, id="canonical"),
+    pytest.param(CODE, id="token"),
+    pytest.param(str(Path("ci-run-123") / "vault.db"), id="metadata-path-in-finding"),
+])
+def test_diagnostic_privacy_assertion_still_rejects_values_in_serialized_findings(field, private):
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    finding = CheckResult("Migração pendente", IntegrityStatus.ATTENTION, 0, 0, "Verificação pendente.")
+    report = AuditReport(now, now, Path("ci-run-123") / "vault.db", Path("ci-run-123") / "profiles.json",
+                         2, (finding,))
+    assert CANONICAL in report.to_safe_text()  # Legitimate metadata, not a finding leak.
+    assert_diagnostic_content_is_private(report)
+    leaked = replace(report, checks=(replace(finding, **{
+        field: (private,) if field == "identifiers" else private,
+    }),))
+    assert private in leaked.to_safe_text()
+    with pytest.raises(AssertionError):
+        assert_diagnostic_content_is_private(leaked)
 
 
 def test_application_startup_migrates_v2_before_tabs_are_available(
