@@ -1812,12 +1812,21 @@ class AnonymizationWidget(QWidget):
             )
             fallback_notice = self._translator.text("masking.status.fallbacks", details=details)
         vault_notice = self._translator.text(
-            "masking.status.vault_updated" if result.new_mappings or result.updated_mappings
+            "masking.status.vault_updated" if (result.new_mappings or result.updated_mappings
+                                              or result.composite_mapping_occurrences)
             else "masking.status.vault_unchanged")
-        self._set_status_id("masking.status.completed", count=result.records_processed,
+        # Composite persistence exposes occurrence counts, not scalar-style
+        # creation/update totals. Keep those measures distinct in the feedback.
+        completion_id = "masking.status.completed"
+        composite_parameters = {}
+        if result.composite_mapping_occurrences:
+            completion_id = "masking.status.completed_composites"
+            composite_parameters["composite"] = result.composite_mapping_occurrences
+        self._set_status_id(completion_id, count=result.records_processed,
             new=result.new_mappings, updated=result.updated_mappings,
             vault_notice=vault_notice, fallback_notice=fallback_notice,
             state="warning" if result.normalization_fallbacks else "success",
+            **composite_parameters,
         )
         self._status_result = result
 
