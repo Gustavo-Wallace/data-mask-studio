@@ -769,8 +769,12 @@ class BatchRestorationWidget(QWidget):
             progress.completed_files + progress.error_files + self._restoration_ignored_files
         )
         if progress.current_total:
-            self.current_progress.setRange(0, progress.current_total)
-            self.current_progress.setValue(progress.current_value)
+            # Qt accepts signed 32-bit values; scale only the display, rounding
+            # down so an unfinished file cannot appear complete.
+            maximum = min(progress.current_total, 2 ** 31 - 1)
+            value = progress.current_value * maximum // progress.current_total
+            self.current_progress.setRange(0, maximum)
+            self.current_progress.setValue(value)
         else:
             self.current_progress.setRange(0, 0)
         self._current_progress = progress

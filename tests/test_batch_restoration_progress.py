@@ -17,6 +17,16 @@ from data_mask_studio.gui.batch_restoration_widget import BatchRestorationWidget
 from data_mask_studio.gui.batch_restoration_worker import (
     BatchRestorationAnalysisWorker, BatchRestorationProcessingWorker,
 )
+from data_mask_studio.i18n import Translator
+
+
+BYTE_TOTALS = [
+    pytest.param(None, id="unknown"), pytest.param(0, id="zero"),
+    pytest.param(1, id="one"), pytest.param(2 ** 31 - 1, id="int32-max"),
+    pytest.param(2 ** 31, id="2gib"), pytest.param(2 ** 32, id="4gib"),
+    pytest.param(2 ** 40 + 123, id="above-4gib"),
+    pytest.param(2 ** 63 + 123, id="above-float-precision"),
+]
 
 
 @pytest.fixture
@@ -292,3 +302,113 @@ def test_new_restoration_does_not_reuse_previous_incompatible_file_offset(page, 
     worker.finished.emit()
     app.processEvents()
     assert_idle(widget)
+
+
+@pytest.mark.parametrize("total", BYTE_TOTALS)
+def test_large_html_progress_is_bounded_without_changing_exact_byte_metrics(page, total):
+    app, widget, _ = page
+    worker = start(widget, "restoration")
+    maximum = min(total, 2 ** 31 - 1) if total else 0
+    values = sorted({0, total // 4, total // 2, total - 1, total}) if total else (0, 1, 2 ** 40)
+    previous = 0
+    for value in values:
+        # An omitted total is the service's unknown-total default, zero.
+        metrics = {"current_total": total} if total is not None else {}
+        progress = BatchRestorationProgress(1, 2, 0, 0, "synthetic-large.html", current_value=value, **metrics)
+        worker.progress.emit(progress)
+        assert (widget.current_progress.minimum(), widget.current_progress.maximum()) == (0, maximum)
+        assert widget._current_progress is progress
+        assert (progress.current_value, progress.current_total) == (value, total or 0)
+        assert "synthetic-large.html" in widget.current_progress_label.text()
+        assert overall_state(widget) == (0, 2, 0)
+        if total:
+            displayed = widget.current_progress.value()
+            assert previous <= displayed <= maximum
+            assert displayed == value * maximum // total
+            if value < total:
+                assert displayed < maximum and widget.current_progress.text() != "100%"
+            else:
+                assert displayed == maximum and widget.current_progress.text() == "100%"
+            previous = displayed
+    worker.finished.emit()
+    app.processEvents()
+    assert widget._processing_worker is None
+    assert_idle(widget)
+    assert overall_state(widget) == (0, 2, 0)
+
+
+@pytest.mark.parametrize("total", BYTE_TOTALS)
+@pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
+def test_byte_progress_terminal_states_do_not_fake_batch_completion(page, total, outcome):
+    app, widget, output = page
+    worker = start(widget, "restoration")
+    value = total - 1 if total else 2 ** 40
+    progress = BatchRestorationProgress(1, 2, 0, 0, "synthetic-large.html", value, total or 0)
+    worker.progress.emit(progress)
+    assert widget._current_progress is progress
+    if total:
+        assert 0 <= widget.current_progress.value() < widget.current_progress.maximum()
+        assert widget.current_progress.text() != "100%"
+    else:
+        assert widget.current_progress.maximum() == 0
+    if outcome == "failure":
+        worker.failed.emit(BatchRestorationError("Erro seguro no lote."))
+    else:
+        if outcome == "cancel":
+            widget.cancel()
+            assert worker._cancellation.is_set()
+        worker.completed.emit(BatchRestorationSummary(
+            2, 2 if outcome == "success" else 0, 0, 0, 0 if outcome == "success" else 2,
+            0, 0, output, 0.1, cancelled=outcome == "cancel",
+        ))
+    expected = (0, 2, 2 if outcome == "success" else 0)
+    assert overall_state(widget) == expected
+    assert_idle(widget)
+    assert widget._current_progress is None
+    assert widget.status_label.property("feedbackState") == {
+        "success": "success", "failure": "error", "cancel": "warning",
+    }[outcome]
+    worker.finished.emit()
+    app.processEvents()
+    assert widget._processing_worker is None
+    assert overall_state(widget) == expected
+    assert_idle(widget)
+
+
+def test_mixed_batch_and_retranslation_do_not_reuse_large_html_display_scale(page, tmp_path):
+    app, widget, output = page
+    html = tmp_path / "synthetic-large.html"
+    html.write_text("<p>SYNTHETIC</p>", encoding="utf-8")
+    widget.add_paths([html])
+    worker = start(widget, "restoration")
+    total = 2 ** 40 + 123
+    # CSV row counts have no total and must continue using the busy bar.
+    worker.progress.emit(BatchRestorationProgress(1, 3, 0, 0, "a.csv", 2 ** 32, 0))
+    assert widget.current_progress.maximum() == 0
+    progress = BatchRestorationProgress(2, 3, 1, 0, html.name, total // 2, total)
+    worker.progress.emit(progress)
+    scaled = (widget.current_progress.maximum(), widget.current_progress.value())
+    assert scaled == (2 ** 31 - 1, (total // 2) * (2 ** 31 - 1) // total)
+    assert overall_state(widget) == (0, 3, 1)
+    for locale in ("en", "pt-BR", "en"):
+        translator = Translator(locale)
+        widget.retranslate(translator)
+        assert widget._processing_worker is worker and widget._current_progress is progress
+        assert (progress.current_value, progress.current_total) == (total // 2, total)
+        assert (widget.current_progress.maximum(), widget.current_progress.value()) == scaled
+        assert overall_state(widget) == (0, 3, 1)
+        assert widget.current_progress_label.text() == translator.text(
+            "batch_restoration.current.progress", current=2, total=3, filename=html.name)
+    # A following CSV must not inherit either the scaled range or the HTML label.
+    worker.progress.emit(BatchRestorationProgress(3, 3, 2, 0, "b.csv", 5, 0))
+    assert widget.current_progress.maximum() == 0
+    assert "b.csv" in widget.current_progress_label.text()
+    assert html.name not in widget.current_progress_label.text()
+    assert overall_state(widget) == (0, 3, 2)
+    worker.completed.emit(BatchRestorationSummary(3, 3, 0, 0, 0, 0, 0, output, 0.1))
+    worker.finished.emit()
+    app.processEvents()
+    assert widget._processing_worker is None and widget._current_progress is None
+    assert overall_state(widget) == (0, 3, 3)
+    assert (widget.current_progress.maximum(), widget.current_progress.value()) == (1, 0)
+    assert widget.current_progress_label.text() == Translator("en").text("batch.current.idle")
