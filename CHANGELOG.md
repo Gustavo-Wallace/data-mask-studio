@@ -1,84 +1,80 @@
 # Changelog
 
+## 1.4.0 — Internationalization and User Experience Update
+
+- English and Brazilian Portuguese interface with saved language preferences.
+- System, Light and Dark themes applied on the next application launch.
+- Unified CSV and HTML restoration in Restore file.
+- Drag-and-drop file selection, including files and folders in batch workflows.
+- Column search, action filters and contextual help in Mask file.
+- Read-only preview of the final CSV column structure.
+- Configuration undo/redo for column actions and normalization.
+- Navigation icons, keyboard shortcuts and improved focus, tables and feedback.
+
 ## 1.3.0 — Selective Transfer Update
 
-- Pacotes seletivos `.dmspackage` criptografados por senha e vinculados ao CSV.
-- Restauração de CSV por pacote na interface sem cofre ou chaves locais do destinatário.
-- Refinamentos de navegação, tabelas e aproveitamento de espaço.
-- Controles recolhíveis, seletores protegidos contra rolagem e diálogos padronizados.
-- Feedback, progresso e ações de saída aprimorados em operações individuais e em lote.
-- Snapshots SQLite consistentes durante gravações concorrentes.
-- Validação de contadores e suporte a caminhos especiais em backups.
-- Proteção de perfis contra gravações concorrentes e revalidações inseguras.
-- Preservação do snapshot quando compactação e rollback falham.
+- Password-protected `.dmspackage` files bound to a CSV for selective restoration.
+- Package-based CSV restoration without the recipient's local vault or keys.
+- Improved navigation, controls, tables, dialogs, progress feedback and output actions.
+- More reliable backups during concurrent writes, with stronger validation and special-path support.
+- Safer profile updates and revalidation during batch processing.
+- Safety snapshots preserved when compaction cannot recover the original vault.
 
 ## 1.2.0 — Data Preparation Update
 
-- Ações por coluna Preservar, Mascarar e Excluir.
-- Normalização de colunas preservadas e renomeação de cabeçalhos de saída.
-- Colunas compostas com ações Preservar ou Mascarar e normalização independente.
-- Profile Format v2 com identidade mais rigorosa das colunas de origem.
-- Suporte a colunas compostas no processamento em lote e na restauração.
-- Inspeção e auditoria de integridade de mapeamentos compostos no cofre.
-- Vault Schema 4 com migração compatível de versões anteriores suportadas.
-- Reforços na proteção de chaves, concorrência e recuperação do ambiente.
-- Publicação de saídas mais segura e recuperável.
-- Restauração HTML sensível ao contexto.
-- Leituras consistentes do cofre durante consultas e restauração.
-- Validação mais rigorosa de colunas desconhecidas e arquivos temporários.
+- Preserve, Mask and Exclude columns, rename output headers and normalize preserved values.
+- Composite columns with Preserve/Mask actions and normalization in batch and restoration workflows.
+- Profile Format v2 improves column matching; supported vaults migrate to schema 4.
+- Integrity checks for composite mappings, stronger key protection and environment recovery.
+- Recoverable output publication and context-aware HTML restoration.
+- Consistent vault lookups and restoration, with stricter unknown-column and temporary-file checks.
 
 ## 1.1.0
 
-- Nova normalização `PERSON_NAME` para variações de caixa, diacríticos e whitespace.
-- Recuperação determinística de cabeçalhos CSV vazios com nomes `column_<posição>` e resolução de colisões.
-- Suporte de entrada a CSV UTF-16 LE/BE e UTF-32 LE/BE com BOM.
-- Integração das novas capacidades aos fluxos individual, em lote e de restauração.
-- Nenhuma alteração em criptografia, tokens, cofre, backups ou formatos persistentes.
+- Person-name normalization handles case, diacritics and whitespace variations.
+- Empty CSV headers receive consistent, collision-free names.
+- Support for UTF-16 LE/BE and UTF-32 LE/BE CSV input with BOM.
+- New CSV capabilities integrated across individual, batch and restoration workflows.
 
 ## 1.0.4
 
-- Otimização da análise e restauração de HTML comprovada por benchmarks sintéticos reproduzíveis.
-- Consultas agrupadas ao cofre, conexão somente leitura reutilizada e cache limitado durante a restauração de HTML.
-- README principal em inglês e README.pt-BR.md como versão oficial em português.
-- Correção responsiva da captura de tela no GitHub Pages.
-- Nenhuma alteração em criptografia, tokens, cofre, backups ou formatos persistentes.
+- Faster HTML analysis and restoration with more efficient vault lookups.
+- English main README with an official Brazilian Portuguese version.
+- Improved screenshot scaling on the website.
 
 ## 1.0.3
 
-- Tema visual escuro consistente independentemente do tema do Windows.
-- Correção da abertura por clique dos links públicos na janela Sobre.
-- Consolidação da indicação pública da licença GPL-3.0-only e do copyright do autor.
-- Nenhuma alteração em criptografia, tokens, cofre, backups ou formatos persistentes.
+- Consistent dark appearance regardless of the Windows theme.
+- Fixed public links in About.
+- Clearer GPL-3.0-only licensing and author attribution.
 
 ## 1.0.2
 
-- Correção da inspeção e anonimização de CSVs com uma única coluna.
-- Diagnóstico seguro de linhas CSV com colunas faltantes ou excedentes.
-- Reinicialização consistente do progresso na restauração HTML.
-- Nenhuma alteração nos tokens, no cofre, no schema ou nos formatos existentes.
+- Correct inspection and masking of single-column CSVs.
+- Safe diagnostics for CSV rows with missing or extra columns.
+- Consistent progress reset in HTML restoration.
 
 ## 1.0.1
 
-- Reformulação da apresentação do README e captura segura da interface.
-- Correção dos links do diálogo Sobre.
-- Template seguro para relatos de bugs.
-- Pequenos ajustes no GitHub Actions.
-- Nenhuma alteração nos tokens, no cofre ou nos formatos existentes.
+- README presentation refresh and safe interface capture.
+- Corrected About dialog links.
+- Bug-report template guides users to provide safe diagnostic information.
 
 ## 1.0.0
 
-- Primeiro lançamento estável.
-- Identidade visual oficial DMS e informações públicas no diálogo Sobre.
-- Consolidação de anonimização e restauração individual e em lote para CSV e HTML.
-- Cofre local criptografado, backups, auditoria de integridade e manutenção.
-- Contrato de compatibilidade para tokens, schema 3 e backups existentes.
-- Distribuição portátil e instalador por usuário para Windows.
+- First stable Windows release with official branding and public information in About.
+- Individual and batch CSV masking, with CSV and HTML restoration.
+- Encrypted local vault, password-protected backups, integrity auditing and maintenance.
+- Compatibility contract for existing tokens, schema 3 vaults and backups.
+- Portable ZIP and per-user Windows installer.
 
-## Marcos anteriores
+<a id="marcos-anteriores"></a>
 
-- 0.11.x: revisão da navegação, responsividade e acessibilidade da interface.
-- 0.10.x: detecção assistida e otimizações para arquivos de alta cardinalidade.
-- 0.9.x: integridade, manutenção e migração segura do cofre para schema 3.
-- 0.8.x: restauração em lote e recuperação segura do ambiente.
-- 0.5.x–0.7.x: distribuição Windows, restauração, backup e auditoria.
-- 0.1.x–0.4.x: leitura de CSV, configuração de colunas, anonimização e cofre local.
+## Earlier milestones
+
+- 0.11.x: clearer navigation, responsive layout and improved accessibility.
+- 0.10.x: assisted detection and improved handling of files with many unique values.
+- 0.9.x: integrity, maintenance and safe vault migration to schema 3.
+- 0.8.x: batch restoration and safe environment recovery.
+- 0.5.x–0.7.x: Windows distribution, restoration, backup and auditing.
+- 0.1.x–0.4.x: CSV reading, column configuration, masking and local vault.

@@ -42,160 +42,195 @@ def test_bilingual_readmes_have_navigation_branding_and_public_links() -> None:
     assert "mascaramento" in portuguese.casefold()
 
 
-@pytest.mark.parametrize("filename", [
-    "data-mask-studio-main.png", "data-mask-studio-batch.png", "data-mask-studio-package.png",
-])
+
+SCREENSHOTS = tuple(
+    f"data-mask-studio-{page}{suffix}.png"
+    for suffix in ("", "-pt-br") for page in ("main", "batch", "package")
+)
+
+
+@pytest.mark.parametrize("filename", SCREENSHOTS)
 def test_readme_capture_is_safe_sized_and_dimensioned(filename: str) -> None:
     capture = ROOT / "docs" / "images" / filename
-
     assert capture.is_file()
     assert capture.stat().st_size < 600 * 1024
     image = QImage(str(capture))
     assert not image.isNull()
-    assert (image.width(), image.height()) == (1280, 820)
+    assert (image.width(), image.height()) == ((1600, 1000) if "package" in filename else (1280, 820))
+    assert image.textKeys() == []  # No private paths in embedded metadata.
 
 
 @pytest.mark.parametrize("filename", ["README.md", "README.pt-BR.md"])
-def test_readmes_share_three_versioned_screenshots_without_obsolete_variants(filename: str) -> None:
+def test_readmes_use_three_current_screenshots_in_their_own_language(filename: str) -> None:
     content = (ROOT / filename).read_text(encoding="utf-8")
     screenshots = re.findall(r'<img src="(docs/images/[^"]+)" alt="([^"]+)"', content)
-
+    suffix = "-pt-br" if filename == "README.pt-BR.md" else ""
     assert {path for path, _alt in screenshots} == {
-        "docs/images/data-mask-studio-main.png",
-        "docs/images/data-mask-studio-batch.png",
-        "docs/images/data-mask-studio-package.png",
+        f"docs/images/data-mask-studio-{page}{suffix}.png" for page in ("main", "batch", "package")
     }
     assert len(screenshots) == 3
     for path, alt in screenshots:
-        assert (ROOT / path).is_file()
-        assert alt
+        assert (ROOT / path).is_file() and alt
     assert "<details>" in content and "</details>" in content
-    assert "1.3.0" in content
+    assert "1.4.0" in content
 
 
-@pytest.mark.parametrize(
-    ("filename", "required"),
-    (
-        (
-            "README.md",
-            (
-                "Version 1.3.0 retains vault schema 4",
-                "package format v1, introduced in 1.3.0",
-                "**Local vault:**",
-                "**Selective transfer package:**",
-                "**Full environment backup:**",
-                "unchanged masked CSV",
-                "8-character minimum password",
-                "minimum 12 characters",
-                "no fallback to the local vault",
-                "not HTML or batch operations",
-                "64 MiB",
-            ),
-        ),
-        (
-            "README.pt-BR.md",
-            (
-                "A versão 1.3.0 mantém o schema 4",
-                "formato v1 do pacote, introduzido na 1.3.0",
-                "**Cofre local:**",
-                "**Pacote seletivo de transferência:**",
-                "**Backup completo do ambiente:**",
-                "CSV mascarado sem alterações",
-                "senha de no mínimo 8 caracteres",
-                "mínimo de 12 caracteres",
-                "não há fallback para o cofre local",
-                "não para HTML ou operações em lote",
-                "64 MiB",
-            ),
-        ),
-    ),
-)
-def test_readmes_describe_versioned_capabilities_and_restoration_requirements(
-    filename: str, required: tuple[str, ...]
-) -> None:
+@pytest.mark.parametrize(("filename", "required"), (
+    ("README.md", (
+        "Version 1.4.0 retains vault schema 4 and Base32-12 tokens",
+        "package format v1, introduced in 1.3.0", "**Local vault:**",
+        "**Selective transfer package:**", "**Full environment backup:**",
+        "unchanged masked CSV", "8-character minimum password", "minimum 12 characters",
+        "no fallback to the local vault", "not HTML or batch operations", "64 MiB",
+        "In “Restore file”, select a CSV or HTML/HTM", "HTML uses the local vault",
+        "Vault and maintenance → Overview → Update diagnostic",
+        "Individual file publication is atomic", "recoverable, not jointly atomic",
+        "System, Light or Dark", "Configuration Undo/Redo", "identifier restrictions",
+    )),
+    ("README.pt-BR.md", (
+        "A versão 1.4.0 mantém o schema 4 do cofre e tokens Base32-12",
+        "formato v1 do pacote, introduzido na 1.3.0", "**Cofre local:**",
+        "**Pacote seletivo de transferência:**", "**Backup completo do ambiente:**",
+        "CSV mascarado sem alterações", "senha de no mínimo 8 caracteres", "mínimo de 12 caracteres",
+        "não há fallback para o cofre local", "não para HTML ou operações em lote", "64 MiB",
+        "Em “Restaurar arquivo”, selecione um CSV ou HTML/HTM", "HTML usa o cofre local",
+        "Cofre e manutenção → Visão geral → Atualizar diagnóstico",
+        "A publicação de cada arquivo é atômica", "recuperável, não conjuntamente atômico",
+        "Sistema, Claro ou Escuro", "Desfazer/refazer", "restrições de identificadores",
+    )),
+))
+def test_readmes_describe_current_capabilities_and_restoration_requirements(filename, required):
     content = (ROOT / filename).read_text(encoding="utf-8")
-
     for phrase in required:
         assert phrase in content
     for contract in (".dmspackage", ".dmsbackup", "AES-256-GCM", "Windows DPAPI"):
         assert contract in content
-    assert "/releases/latest" in content
-    assert "/releases/download/" not in content
-    assert "DataMaskStudio-Setup-1.3.0.exe" not in content
-    assert "DataMaskStudio-Portable-1.3.0.zip" not in content
+    assert "/releases/latest" in content and "/releases/download/" not in content
+    assert "HEX-24" not in content  # Detailed restrictions belong in COMPATIBILITY.md.
+    assert "“Restore CSV” tab" not in content and "aba “Restaurar CSV”" not in content
+    assert "“Restore HTML” tab" not in content and "aba “Restaurar HTML”" not in content
+    assert not re.search(r"DataMaskStudio-(?:Setup|Portable)-[0-9]", content)
 
 
-def test_changelog_keeps_concise_1_3_0_notes_and_historical_releases() -> None:
+def test_changelog_preserves_release_order_historical_facts_and_bullet_structure():
     content = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    current, historical = content.split("## 1.2.0 — Data Preparation Update", 1)
-
-    assert current.startswith("# Changelog\n\n## 1.3.0 — Selective Transfer Update\n\n")
-    assert [line for line in current.splitlines() if line.startswith("- ")] == [
-        "- Pacotes seletivos `.dmspackage` criptografados por senha e vinculados ao CSV.",
-        "- Restauração de CSV por pacote na interface sem cofre ou chaves locais do destinatário.",
-        "- Refinamentos de navegação, tabelas e aproveitamento de espaço.",
-        "- Controles recolhíveis, seletores protegidos contra rolagem e diálogos padronizados.",
-        "- Feedback, progresso e ações de saída aprimorados em operações individuais e em lote.",
-        "- Snapshots SQLite consistentes durante gravações concorrentes.",
-        "- Validação de contadores e suporte a caminhos especiais em backups.",
-        "- Proteção de perfis contra gravações concorrentes e revalidações inseguras.",
-        "- Preservação do snapshot quando compactação e rollback falham.",
+    # Protect release attribution and compatibility facts, not entire sentences
+    # or the old pre-cleanup bullet counts. Counts follow the approved style.
+    expected = {
+        "1.3.0 — Selective Transfer Update": (
+            (4, 6), (".dmspackage", "recipient", "vault", "concurrent writes", "profile", "snapshot", "compaction"),
+        ),
+        "1.2.0 — Data Preparation Update": (
+            (4, 6), ("preserve", "mask", "exclude", "composite", "profile format v2", "schema 4", "html", "recoverable"),
+        ),
+        "1.1.0": (
+            (4, 6), ("normalization", "headers", "utf-16 le/be", "utf-32 le/be", "bom", "restoration"),
+        ),
+        "1.0.4": ((2, 4), ("html", "readme", "portuguese", "screenshot")),
+        "1.0.3": ((2, 4), ("dark", "windows", "about", "gpl-3.0-only")),
+        "1.0.2": ((2, 4), ("single-column", "missing", "extra", "progress", "html")),
+        "1.0.1": ((2, 4), ("readme", "about", "bug-report")),
+        "1.0.0": ((4, 6), ("stable", "csv", "html", "vault", "backup", "tokens", "schema 3", "installer")),
+        "Earlier milestones": ((6, 6), ("schema 3", "recovery", "vault")),
+    }
+    entries = re.split(r"^## ", content, flags=re.MULTILINE)[2:]
+    assert [entry.splitlines()[0] for entry in entries] == list(expected)
+    for entry in entries:
+        heading, *body = entry.splitlines()
+        lines = [line for line in body if line and line != '<a id="marcos-anteriores"></a>']
+        assert all(line.startswith("- ") for line in lines), heading
+        (minimum, maximum), facts = expected[heading]
+        assert minimum <= len(lines) <= maximum, heading
+        for fact in facts:
+            assert fact in "\n".join(lines).casefold(), (heading, fact)
+    assert re.findall(r"^- (0\.[^:]+):", entries[-1], flags=re.MULTILINE) == [
+        "0.11.x", "0.10.x", "0.9.x", "0.8.x", "0.5.x–0.7.x", "0.1.x–0.4.x",
     ]
-    assert "## 1.1.0" in historical
+    assert '<a id="marcos-anteriores"></a>' in content
 
 
-def test_compatibility_distinguishes_transfer_and_backup_format_contracts() -> None:
+def test_changelog_uses_one_flat_current_release_entry():
+    content = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    current = content.split("## 1.3.0", 1)[0]
+    assert current.startswith("# Changelog\n\n## 1.4.0 — Internationalization and User Experience Update\n\n")
+    assert "### " not in content and "Unreleased" not in content
+    bullets = [line for line in current.splitlines() if line.startswith("- ")]
+    assert len(bullets) == 8
+    assert all(len(line) <= 100 for line in bullets)
+    topics = (
+        ("english", "brazilian portuguese", "language"),
+        ("system", "light", "dark"),
+        ("csv", "html", "restoration"),
+        ("drag-and-drop", "batch"),
+        ("column search", "action filters", "contextual help"),
+        ("read-only", "column structure"),
+        ("configuration", "undo/redo", "normalization"),
+        ("navigation", "keyboard shortcuts"),
+    )
+    for topic in topics:
+        assert any(all(term in bullet.casefold() for term in topic) for bullet in bullets), topic
+
+
+def test_compatibility_distinguishes_transfer_and_backup_format_contracts():
     content = (ROOT / "COMPATIBILITY.md").read_text(encoding="utf-8")
-
     for contract in (
-        "## Versão 1.3.0",
-        "A versão 1.3.0 mantém",
-        "schema 4", "Profile Format v2", "perfis v1 válidos",
-        "formato v1 de backup `.dmsbackup`", "`.dmspackage` tem formato v1 próprio",
-        "SHA-256 dos bytes", "não há substituição silenciosa da fonte",
-        "64 MiB", "até 1 GiB", "a interface não oferece esse ajuste",
-        "não garante que versões antigas consigam abrir um cofre já migrado",
-        "dms-vault-compaction-*",
+        "## Version 1.4.0", "vault schema 4", "Profile Format v2", "valid v1 profiles",
+        "backup format v1", "uses its own format v1", "SHA-256", "64 MiB", "up to 1 GiB",
+        "interface does not offer", "does not guarantee that older application versions",
+        "dms-vault-compaction-*", "HEX-24", "including authenticated packages accepted by the earlier codec",
+        "during `.dmspackage` export and import", "entire package is rejected before restoration",
+        "without filtering, converting or truncating", "Package restoration of HEX-24 identifiers is not supported",
+        "Base32-12 tokens remain unchanged", "does not migrate or rewrite existing vaults",
+        "Package format v1 and its encryption remain unchanged",
+        "Vault and maintenance → Overview → Update diagnostic",
+        "Individual files use atomic creation or replacement", "recoverable, not a single atomic transaction",
+        "one published file does not prove that both were published",
     ):
         assert contract in content
 
 
 @pytest.mark.parametrize("filename", [
-    "README.md", "README.pt-BR.md", "CHANGELOG.md", "COMPATIBILITY.md",
-    "PRIVACY.md", "SECURITY.md",
+    "README.md", "README.pt-BR.md", "CHANGELOG.md", "COMPATIBILITY.md", "PRIVACY.md", "SECURITY.md",
 ])
-def test_public_documentation_uses_neutral_release_wording(filename: str) -> None:
+def test_public_documentation_uses_final_release_wording(filename):
     content = (ROOT / filename).read_text(encoding="utf-8").casefold()
-
-    for phrase in (
-        "em preparação", "ainda não foi publicada", "ainda não publicada",
-        "futura 1.3.0", "prévia", "coming soon", "coming in 1.3.0",
-        "upcoming", "in preparation", "not yet released", "not been published",
-        "preview", "unreleased",
-    ):
+    for phrase in ("em preparação", "ainda não lançada", "prevista", "ainda não publicada",
+                   "coming soon", "upcoming", "in preparation", "not yet released", "unreleased"):
         assert phrase not in content
-    assert not re.search(
-        r"1\.3\.0\s+(?:is\s+(?:now\s+)?(?:published|released|the latest)|"
-        r"has been (?:published|released)|(?:já )?foi publicada|"
-        r"(?:já )?está (?:publicada|disponível))",
-        content,
-    )
 
 
-def test_security_policy_tracks_published_stable_releases_and_private_reports() -> None:
+def test_security_policy_tracks_published_stable_releases_and_private_reports():
     content = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    for phrase in (
+        "latest stable version actually published through GitHub Releases",
+        "Older release series are not guaranteed to receive backported fixes",
+        "Do not open a public issue", "privately", "Security Advisories",
+        "Never submit real vaults, keys, CSV or HTML files",
+        "`.dmsbackup` backups or `.dmspackage` packages", "synthetic data",
+        "without including sensitive data",
+    ):
+        assert phrase in content
+    assert "1.0.x" not in content and "1.3.0" not in content
 
-    assert "versão estável mais recente efetivamente publicada no GitHub Releases" in content
-    assert "Séries anteriores não têm garantia de receber essas correções retroativamente" in content
-    assert "1.0.x" not in content
-    assert "1.3.0" not in content
-    assert "Não abra uma issue pública" in content
-    assert "de forma privada" in content
-    assert "Security Advisories" in content
-    assert "Nunca envie cofres, chaves, arquivos CSV ou HTML reais" in content
-    assert "backups `.dmsbackup` ou pacotes `.dmspackage`" in content
-    assert "dados sintéticos" in content
-    assert "sem incluir dados sensíveis" in content
+
+def test_markdown_inventory_has_one_portuguese_exception():
+    import subprocess
+
+    tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
+    expected = {
+        "CHANGELOG.md": "# Changelog", "COMPATIBILITY.md": "# Compatibility and recovery",
+        "PRIVACY.md": "# Privacy", "SECURITY.md": "# Security",
+        "README.md": "English |", "README.pt-BR.md": "[English](README.md) | Português (Brasil)",
+    }
+    assert {name for name in tracked if Path(name).suffix.lower() == ".md"} == set(expected)
+    for filename, opening in expected.items():
+        content = (ROOT / filename).read_text(encoding="utf-8")
+        assert re.sub(r'^<a id="[^"]+"></a>\n\n', "", content).startswith(opening)
+    privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8")
+    assert "no telemetry, user accounts, synchronization or automatic uploads" in privacy
+    assert "%LOCALAPPDATA%\\DataMaskStudio" in privacy
+    assert "do not include local keys or every vault mapping" in privacy
+    assert "original values, complete codes, keys and passwords" in privacy
 
 
 def test_repository_declares_gpl_3_0_only_and_includes_official_license() -> None:

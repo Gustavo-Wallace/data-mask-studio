@@ -1,11 +1,17 @@
-# Segurança
+<a id="segurança"></a>
 
-## Versões mantidas
+# Security
 
-Correções de segurança são avaliadas para a versão estável mais recente efetivamente publicada no GitHub Releases. Séries anteriores não têm garantia de receber essas correções retroativamente.
+<a id="versões-mantidas"></a>
 
-## Relato de vulnerabilidades
+## Supported versions
 
-Não abra uma issue pública para vulnerabilidades que possam expor dados. Relate a falha de forma privada pelo recurso **Security Advisories** deste repositório no GitHub.
+Security fixes are evaluated for the latest stable version actually published through GitHub Releases. Older release series are not guaranteed to receive backported fixes.
 
-Nunca envie cofres, chaves, arquivos CSV ou HTML reais, backups `.dmsbackup` ou pacotes `.dmspackage`. Um relatório útil pode informar a versão afetada, o ambiente, passos mínimos para reproduzir com dados sintéticos, o impacto observado e uma sugestão de correção, sem incluir dados sensíveis.
+<a id="relato-de-vulnerabilidades"></a>
+
+## Reporting vulnerabilities
+
+Do not open a public issue for vulnerabilities that could expose data. Report the issue privately through this repository's **Security Advisories** feature on GitHub.
+
+Never submit real vaults, keys, CSV or HTML files, `.dmsbackup` backups or `.dmspackage` packages. A useful report can include the affected version, environment, minimal reproduction steps using synthetic data, observed impact and a suggested correction, without including sensitive data.

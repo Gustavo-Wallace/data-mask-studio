@@ -35,10 +35,10 @@ Each release provides a per-user Windows installer (`DataMaskStudio-Setup-<versi
 ## Interface
 
 <p align="center">
-  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0: CSV column actions, output headers, prefixes and normalization, with synthetic data" width="900"></a>
+  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio 1.4.0: CSV column actions, output headers, prefixes and normalization, with synthetic data" width="900"></a>
 </p>
 
-Data Mask Studio 1.3.0 with isolated synthetic data. The Windows interface is shown in Portuguese. Open an image for full-resolution detail.
+Data Mask Studio 1.4.0 with isolated synthetic data and the English interface. Open an image for full-resolution detail.
 
 <details>
 <summary>Batch processing and transfer-package restoration</summary>
@@ -49,7 +49,7 @@ Three synthetic CSVs successfully processed with a saved profile:
 
 Selective restoration from a matching encrypted `.dmspackage`, with the password cleared after completion:
 
-<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0: successful CSV restoration from a transfer package with synthetic data" width="900"></a>
+<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Data Mask Studio 1.4.0: successful CSV restoration from a transfer package with synthetic data" width="900"></a>
 
 </details>
 
@@ -57,7 +57,9 @@ Selective restoration from a matching encrypted `.dmspackage`, with the password
 
 - CSV preparation and masking, individually or in batches with saved profiles.
 - Preserve, mask or exclude columns; normalize values, rename output headers and compose columns.
-- Assisted column detection.
+- Assisted column detection; column search, action filters and output schema preview.
+- Configuration Undo/Redo, contextual help, keyboard shortcuts and drag-and-drop selection.
+- Portuguese/English interface and System, Light or Dark themes in Settings.
 - Deterministic masking with vault-controlled or selective package-based restoration.
 - Optional encrypted transfer packages (`.dmspackage`) generated alongside an individual masked CSV.
 - CSV and HTML restoration.
@@ -73,12 +75,12 @@ For the installer edition, run the Setup file and follow the wizard. Installatio
 
 ## Basic workflow
 
-1. Select a CSV and choose the columns to mask.
+1. In “Mask file”, select a CSV and choose the columns to mask.
 2. Configure prefixes and normalization rules, then validate the configuration.
 3. Generate the masked CSV, optionally with a password-protected transfer package, or use a saved profile for batch processing.
-4. Use the “Restore CSV” tab to recover selected tabular data from the local vault or from the matching package and its password.
-5. Use the “Restore HTML” tab for local HTML files and dashboards, using the local vault.
-6. Use the local consultant when you need to inspect a specific code.
+4. In “Restore file”, select a CSV or HTML/HTM file. CSV restoration uses the local vault or a matching package and its password; HTML uses the local vault.
+5. Use “Browse vault” to inspect a specific code, and “Backup and recovery” for full environment backups.
+6. Run integrity checks in “Vault and maintenance → Overview → Update diagnostic”.
 
 ## Security and privacy
 
@@ -90,11 +92,11 @@ The executables are not digitally signed yet, so Windows may display a SmartScre
 
 ## Architecture overview
 
-The PySide6 desktop interface coordinates separate services for CSV and HTML processing, profiles, backups, and vault maintenance. Sensitive mappings are protected in a local SQLite vault with AES-256-GCM, while local keys are protected by Windows DPAPI. Processing paths use bounded-memory streaming and publish generated files atomically.
+The PySide6 desktop interface coordinates separate services for CSV and HTML processing, profiles, backups, and vault maintenance. Sensitive mappings are protected in a local SQLite vault with AES-256-GCM, while local keys are protected by Windows DPAPI. CSV rows are processed as a stream. Individual file publication is atomic; the CSV/package pair is recoverable, not jointly atomic.
 
 ## Compatibility and recovery
 
-Version 1.3.0 retains vault schema 4 and the existing token formats. Supported older vaults are migrated using the original keys. See [COMPATIBILITY.md](COMPATIBILITY.md) for format limits and recovery guidance.
+Version 1.4.0 retains vault schema 4 and Base32-12 tokens. Supported older vaults are migrated using the original keys. See [COMPATIBILITY.md](COMPATIBILITY.md) for identifier restrictions, format limits and recovery guidance.
 
 - **Local vault:** restoration needs the vault and its original local keys, protected by Windows DPAPI.
 - **Selective transfer package:** contains only the restoration mappings for its linked CSV, not the full environment. The recipient needs the unchanged masked CSV, the `.dmspackage`, its password and a DMS version supporting package format v1, introduced in 1.3.0; no sender vault or DPAPI keys are needed. Creation requires at least one Mask action and an 8-character minimum password. Missing mappings abort restoration; there is no fallback to the local vault.

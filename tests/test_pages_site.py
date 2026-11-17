@@ -311,12 +311,12 @@ def test_product_screenshot_preserves_aspect_ratio_responsively() -> None:
     assert container is not None
     assert "max-width: 100%" in container.group(1).casefold()
 
-    for page, _language, _title, _canonical in PAGES:
+    for page, language, _title, _canonical in PAGES:
         _, inspector = inspect_page(page)
         screenshots = [
             image
             for image in inspector.attributes_for("img")
-            if image.get("src", "").endswith("data-mask-studio-main.png")
+            if Path(image.get("src", "")).name == f"data-mask-studio-main{'-pt-br' if language == 'pt-BR' else ''}.png"
         ]
         assert len(screenshots) == 1
         assert screenshots[0].get("width") == "1280"
@@ -337,8 +337,8 @@ def test_versioned_screenshots_are_shared_local_assets_with_full_size_links(
     screenshots = [image for image in inspector.attributes_for("img")
                    if image.get("src", "").endswith(".png")]
     links = {anchor.get("href") for anchor in inspector.attributes_for("a")}
-    expected = {"data-mask-studio-main.png", "data-mask-studio-batch.png",
-                "data-mask-studio-package.png"}
+    suffix = "-pt-br" if language == "pt-BR" else ""
+    expected = {f"data-mask-studio-{name}{suffix}.png" for name in ("main", "batch", "package")}
 
     assert {Path(image["src"]).name for image in screenshots} == expected
     assert len(screenshots) == len(expected)
@@ -346,8 +346,9 @@ def test_versioned_screenshots_are_shared_local_assets_with_full_size_links(
         assert (page.parent / image["src"]).resolve().parent == (DOCS / "images").resolve()
         assert image["src"] in links
         assert image.get("alt")
-        assert (image.get("width"), image.get("height")) == ("1280", "820")
-        if not image["src"].endswith("data-mask-studio-main.png"):
+        package = "data-mask-studio-package" in image["src"]
+        assert (image.get("width"), image.get("height")) == (("1600", "1000") if package else ("1280", "820"))
+        if "data-mask-studio-main" not in image["src"]:
             assert image.get("loading") == "lazy"
     assert not (DOCS / "assets" / "data-mask-studio-main.png").exists()
 
@@ -384,9 +385,9 @@ def test_pages_present_versioned_capabilities_without_prerelease_labels(
 
     for phrase in (
         "em preparação", "ainda não foi publicada", "ainda não publicada",
-        "futura 1.3.0", "prévia", "coming soon", "coming in 1.3.0",
+        "futura 1.3.0", "prévia da versão", "coming soon", "coming in 1.3.0",
         "upcoming", "in preparation", "not yet released", "not been published",
-        "preview", "unreleased",
+        "1.4 preview", "unreleased",
     ):
         assert phrase not in public_text
     assert not re.search(
@@ -396,9 +397,9 @@ def test_pages_present_versioned_capabilities_without_prerelease_labels(
         public_text,
     )
     required = (
-        "DMS 1.3.0 supports password-protected"
+        "DMS 1.4.0 supports password-protected"
         if language == "en" else
-        "O DMS 1.3.0 suporta arquivos"
+        "O DMS 1.4.0 suporta arquivos"
     )
     assert required in " ".join(inspector.text_parts)
 

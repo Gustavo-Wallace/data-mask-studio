@@ -22,8 +22,8 @@ def test_compatibility_document_records_recovery_guarantees() -> None:
         "AES-256-GCM",
         "Windows DPAPI",
         "schema 3",
-        "fallback exato",
-        "rollback integral",
-        "API de backup do SQLite",
+        "exact fallback",
+        "fully rolls back",
+        "SQLite's backup API",
     ):
         assert required in content

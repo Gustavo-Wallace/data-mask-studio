@@ -35,21 +35,21 @@ A release contém o instalador por usuário para Windows (`DataMaskStudio-Setup-
 ## Captura da interface
 
 <p align="center">
-  <a href="docs/images/data-mask-studio-main.png"><img src="docs/images/data-mask-studio-main.png" alt="Data Mask Studio 1.3.0: ações por coluna, cabeçalhos de saída, prefixos e normalização de CSV, com dados sintéticos" width="900"></a>
+  <a href="docs/images/data-mask-studio-main-pt-br.png"><img src="docs/images/data-mask-studio-main-pt-br.png" alt="Data Mask Studio 1.4.0: ações por coluna, cabeçalhos de saída, prefixos e normalização de CSV, com dados sintéticos" width="900"></a>
 </p>
 
-Data Mask Studio 1.3.0 com dados sintéticos isolados e interface Windows em português. Abra uma imagem para ver os detalhes na resolução original.
+Data Mask Studio 1.4.0 com dados sintéticos isolados e interface Windows em português. Abra uma imagem para ver os detalhes na resolução original.
 
 <details>
 <summary>Processamento em lote e restauração por pacote de transferência</summary>
 
 Três CSVs sintéticos processados com sucesso usando um perfil salvo:
 
-<a href="docs/images/data-mask-studio-batch.png"><img src="docs/images/data-mask-studio-batch.png" alt="Processamento em lote no Data Mask Studio: três CSVs concluídos e resumo final de 360 registros processados" width="900"></a>
+<a href="docs/images/data-mask-studio-batch-pt-br.png"><img src="docs/images/data-mask-studio-batch-pt-br.png" alt="Processamento em lote no Data Mask Studio: três CSVs concluídos e resumo final de 360 registros processados" width="900"></a>
 
 Restauração seletiva com o `.dmspackage` criptografado correspondente, com a senha limpa após a conclusão:
 
-<a href="docs/images/data-mask-studio-package.png"><img src="docs/images/data-mask-studio-package.png" alt="Data Mask Studio 1.3.0: restauração de CSV por pacote de transferência concluída com dados sintéticos" width="900"></a>
+<a href="docs/images/data-mask-studio-package-pt-br.png"><img src="docs/images/data-mask-studio-package-pt-br.png" alt="Data Mask Studio 1.4.0: restauração de CSV por pacote de transferência concluída com dados sintéticos" width="900"></a>
 
 </details>
 
@@ -57,7 +57,9 @@ Restauração seletiva com o `.dmspackage` criptografado correspondente, com a s
 
 - Preparação e mascaramento de CSV, individualmente ou em lote com perfis salvos.
 - Preservar, mascarar ou excluir colunas; normalizar valores, renomear cabeçalhos de saída e compor colunas.
-- Detecção assistida de colunas.
+- Detecção assistida, busca e filtros de ação por coluna e prévia da estrutura de saída.
+- Desfazer/refazer configurações, ajuda contextual, atalhos e seleção por arrastar e soltar.
+- Interface em português/inglês e temas Sistema, Claro ou Escuro em Configurações.
 - Mascaramento determinístico com restauração pelo cofre ou por pacote seletivo.
 - Pacotes de transferência criptografados (`.dmspackage`) opcionais, gerados junto ao CSV mascarado individual.
 - Restauração de CSV e HTML.
@@ -73,12 +75,12 @@ No instalador, execute o arquivo Setup e siga o assistente. A instalação é fe
 
 ## Fluxo básico
 
-1. Selecione um CSV e escolha as colunas que serão mascaradas.
+1. Em “Mascarar arquivo”, selecione um CSV e escolha as colunas que serão mascaradas.
 2. Configure prefixos e normalizações e valide a configuração.
 3. Gere o CSV mascarado, opcionalmente com um pacote de transferência protegido por senha, ou utilize um perfil no processamento em lote.
-4. Para recuperar dados tabulares, use a aba “Restaurar CSV” com o cofre local ou com o pacote correspondente e sua senha.
-5. Para arquivos HTML e dashboards locais, use a aba “Restaurar HTML” com o cofre local.
-6. Consulte códigos específicos pelo consultor local quando necessário.
+4. Em “Restaurar arquivo”, selecione um CSV ou HTML/HTM. A restauração de CSV usa o cofre local ou o pacote correspondente e sua senha; HTML usa o cofre local.
+5. Use “Consultar cofre” para inspecionar códigos específicos e “Backup e recuperação” para backups completos do ambiente.
+6. Execute a auditoria de integridade em “Cofre e manutenção → Visão geral → Atualizar diagnóstico”.
 
 ## Segurança e privacidade
 
@@ -90,11 +92,11 @@ Os executáveis ainda não possuem assinatura digital, portanto o Windows pode a
 
 ## Arquitetura resumida
 
-A interface desktop em PySide6 coordena serviços separados de processamento de CSV e HTML, perfis, backups e manutenção do cofre. Os mapeamentos sensíveis são protegidos em um cofre SQLite local com AES-256-GCM, enquanto as chaves locais são protegidas pelo Windows DPAPI. Os fluxos de processamento usam memória limitada e publicam arquivos gerados de forma atômica.
+A interface desktop em PySide6 coordena serviços separados de processamento de CSV e HTML, perfis, backups e manutenção do cofre. Os mapeamentos sensíveis são protegidos em um cofre SQLite local com AES-256-GCM, enquanto as chaves locais são protegidas pelo Windows DPAPI. As linhas CSV são processadas em fluxo. A publicação de cada arquivo é atômica; o par CSV/pacote é recuperável, não conjuntamente atômico.
 
 ## Compatibilidade e recuperação
 
-A versão 1.3.0 mantém o schema 4 do cofre e os formatos existentes dos tokens. Cofres antigos suportados são migrados usando as chaves originais. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para os limites dos formatos e as orientações de recuperação.
+A versão 1.4.0 mantém o schema 4 do cofre e tokens Base32-12. Cofres antigos suportados são migrados usando as chaves originais. Consulte [COMPATIBILITY.md](COMPATIBILITY.md) para restrições de identificadores, limites dos formatos e orientações de recuperação.
 
 - **Cofre local:** a restauração exige o cofre e suas chaves locais originais, protegidas pelo Windows DPAPI.
 - **Pacote seletivo de transferência:** contém apenas os mapeamentos de restauração do CSV vinculado, não o ambiente completo. O destinatário precisa do CSV mascarado sem alterações, do `.dmspackage`, da senha e de uma versão do DMS com suporte ao formato v1 do pacote, introduzido na 1.3.0; não precisa do cofre nem das chaves DPAPI do remetente. A criação exige ao menos uma ação Mascarar e senha de no mínimo 8 caracteres. Mapeamentos ausentes interrompem a restauração; não há fallback para o cofre local.

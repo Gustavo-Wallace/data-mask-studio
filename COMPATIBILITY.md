@@ -1,43 +1,63 @@
-# Compatibilidade e recuperação
+<a id="compatibilidade-e-recuperação"></a>
 
-## Versão 1.3.0
+# Compatibility and recovery
 
-A versão 1.3.0 mantém o schema 4 do cofre, o Profile Format v2 (com leitura de perfis v1 válidos), o formato v1 de backup `.dmsbackup` e os formatos existentes de tokens. O `.dmspackage` tem formato v1 próprio, independente do schema do cofre e do formato de backup.
+<a id="versão-130"></a>
 
-Cofres dos schemas 1, 2 e 3 continuam com migrações suportadas até o schema 4, desde que as chaves originais estejam disponíveis. Isso não garante que versões antigas consigam abrir um cofre já migrado. Backups com schemas suportados são verificados e migrados no ambiente de preparação antes da instalação; backups produzidos por versões do aplicativo posteriores à instalada são considerados incompatíveis.
+## Version 1.4.0
 
-## Restauração local, transferência e backup
+Version 1.4.0 retains vault schema 4, Profile Format v2 (including support for valid v1 profiles), backup format v1 for `.dmsbackup` and the current Base32-12 token format. `.dmspackage` uses its own format v1, independent of the vault schema and backup format.
 
-- **Cofre local:** exige o banco e as chaves originais protegidas pelo Windows DPAPI. Copiar apenas o banco ou os arquivos DPAPI não substitui um backup portátil.
-- **Transferência seletiva (`.dmspackage`):** exporta apenas os mapeamentos escalares e compostos necessários ao CSV gerado, não as chaves locais, todos os mapeamentos do cofre ou os perfis. O destinatário usa o CSV vinculado, o pacote, a senha e uma versão com suporte ao formato v1. Não há importação para o cofre do destinatário nem fallback para ele.
-- **Backup do ambiente (`.dmsbackup`):** protege por senha as chaves locais, o cofre e os perfis quando presentes. Não inclui CSVs, HTMLs nem pacotes de transferência. Na recuperação, as chaves são novamente protegidas pelo DPAPI do ambiente de destino. Senha mínima de criação: 12 caracteres, contra 8 nos pacotes.
+Vault schemas 1, 2 and 3 still have supported migrations to schema 4, provided the original keys are available. This does not guarantee that older application versions can open an already migrated vault. Backups with supported schemas are verified and migrated in a staging environment before installation; backups produced by application versions newer than the installed version are incompatible.
 
-Pacotes e backups são sensíveis. Sem suas senhas não há recuperação remota; não os compartilhe publicamente como exemplos ou diagnósticos.
+## Transfer-package identifier compatibility
 
-## Limites dos pacotes de transferência
+Version 1.4 rejects unsupported HEX-24 identifiers during `.dmspackage` export and import, including authenticated packages accepted by the earlier codec. The entire package is rejected before restoration, without filtering, converting or truncating entries. Package restoration of HEX-24 identifiers is not supported.
 
-A interface gera pacotes opcionalmente no mascaramento individual de CSV com ao menos uma ação Mascarar e os utiliza em Restaurar CSV. HTML e processamento em lote continuam usando o cofre local. Um pacote não permite restaurar outro CSV: o vínculo verifica o tamanho e o SHA-256 dos bytes, inclusive cabeçalhos, codificação e quebras de linha. Não edite o CSV entre geração e restauração. Senha incorreta, vínculo inválido ou mapeamento necessário ausente impedem a restauração; não há substituição silenciosa da fonte.
+Base32-12 tokens remain unchanged. This validation does not migrate or rewrite existing vaults or change supported migrations, integrity auditing or local restoration behavior. Package format v1 and its encryption remain unchanged.
 
-O formato preserva os valores originais e canônicos necessários às políticas de restauração existentes, não um histórico completo do cofre. Normalizações e composições não garantem reconstrução byte a byte de cada representação de entrada; colunas excluídas não são recuperadas pelo pacote.
+<a id="restauração-local-transferência-e-backup"></a>
 
-O limite padrão é de 64 MiB de payload descriptografado, não de tamanho do CSV. O processamento do pacote ocorre em memória, e grandes conjuntos de valores únicos ou valores longos podem atingir esse limite. Chamadores da API podem definir um orçamento maior, até 1 GiB; a interface não oferece esse ajuste. Esses limites não são negociados pelo arquivo e não tornam o formato ilimitado.
+## Local restoration, transfer and backup
 
-## Contrato da versão 1.0.0
+- **Local vault:** requires the database and original Windows DPAPI-protected keys. Copying only the database or DPAPI files does not replace a portable backup.
+- **Selective transfer (`.dmspackage`):** exports only scalar and composite mappings needed for the generated CSV, not local keys, every vault mapping or profiles. The recipient uses the bound CSV, package, password and a version supporting format v1. There is no import into the recipient's vault or fallback to it.
+- **Environment backup (`.dmsbackup`):** password-protects local keys, the vault and profiles when present. It does not include CSVs, HTML files or transfer packages. Recovery protects the keys again through DPAPI in the destination environment. Minimum creation password: 12 characters, compared with 8 for packages.
 
-Atualizações compatíveis da série 1.0.x não devem alterar tokens ou códigos já gerados, nem impedir a abertura de cofres e backups válidos existentes. Permanecem estáveis o HMAC-SHA256, Base32 truncado, AES-256-GCM, AAD versionado, Windows DPAPI, schema 3, normalizações e fallback exato.
+Packages and backups are sensitive. Without their passwords there is no remote recovery; do not share them publicly as examples or diagnostics.
 
-Cofres schema 2 são migrados automaticamente para schema 3 em operações que permitem escrita. A migração usa uma transação imediata, preserva códigos, valores, variações, ocorrências e datas, e executa rollback integral em caso de falha. A migração é idempotente.
+<a id="limites-dos-pacotes-de-transferência"></a>
 
-Snapshots de manutenção e backup utilizam a API de backup do SQLite para incorporar alterações confirmadas no WAL. Diagnósticos somente leitura não classificam uma migração pendente como adulteração.
+## Transfer-package limits
 
-## Recuperação
+The interface optionally generates packages during individual CSV masking with at least one Mask action. In Restore file, select a CSV to use the local vault or its package; HTML and batch processing still use the local vault. A package cannot restore another CSV: binding verifies the size and SHA-256 of its bytes, including headers, encoding and line endings. Do not edit the CSV between generation and restoration. An incorrect password, invalid binding or missing required mapping prevents restoration; the source is never silently substituted.
 
-1. Feche todas as instâncias do Data Mask Studio.
-2. Abra a área Backup e recuperação.
-3. Selecione um arquivo `.dmsbackup` criado pelo aplicativo e informe sua senha.
-4. Revise o resumo antes de confirmar a restauração.
-5. Após a restauração, execute a verificação de Integridade.
+Individual files use atomic creation or replacement. Publication of the CSV and `.dmspackage` pair is recoverable, not a single atomic transaction: interruption can leave an operation pending recovery. Preserve its artifacts and evidence; one published file does not prove that both were published.
 
-A restauração usa preparação, verificação e recuperação do ambiente anterior em caso de falha. Uma falha de recuperação exige revisão manual; não descarte as evidências nem presuma que o ambiente está pronto para uso. A validação do backup não substitui a autenticação dos registros realizada antes de instalar o ambiente restaurado. A desinstalação não remove `%LOCALAPPDATA%\DataMaskStudio` por padrão.
+The format preserves the original and canonical values needed by existing restoration policies, not the vault's complete history. Normalization and composition do not guarantee byte-for-byte reconstruction of every input representation; excluded columns cannot be recovered through the package.
 
-Snapshots consistentes usam a API de backup do SQLite, incluindo alterações confirmadas no WAL. Se a compactação e seu rollback falharem, o snapshot de segurança permanece em uma subpasta `dms-vault-compaction-*` do ambiente local para revisão manual. Esse snapshot não substitui um `.dmsbackup` e ainda depende das chaves locais originais.
+The default limit is 64 MiB of decrypted payload, not CSV size. Package processing occurs in memory, and large sets of unique or long values can reach this limit. API callers can set a larger budget, up to 1 GiB; the interface does not offer this adjustment. These limits are not negotiated by the file and do not make the format unlimited.
+
+<a id="contrato-da-versão-100"></a>
+
+## Version 1.0.0 contract
+
+Compatible updates in the 1.0.x series must not change previously generated tokens or codes, or prevent valid existing vaults and backups from opening. HMAC-SHA256, truncated Base32, AES-256-GCM, versioned AAD, Windows DPAPI, schema 3, normalization and exact fallback remain stable.
+
+Schema 2 vaults are automatically migrated to schema 3 by operations that allow writing. Migration uses an immediate transaction, preserves codes, values, variations, occurrences and dates, and fully rolls back on failure. Migration is idempotent.
+
+Maintenance and backup snapshots use SQLite's backup API to incorporate committed WAL changes. Read-only diagnostics do not classify a pending migration as tampering.
+
+<a id="recuperação"></a>
+
+## Recovery
+
+1. Close all Data Mask Studio instances.
+2. Open Backup and recovery.
+3. Select a `.dmsbackup` file created by the application and enter its password.
+4. Review the summary before confirming restoration.
+5. After restoration, run Vault and maintenance → Overview → Update diagnostic.
+
+Restoration uses staging, verification and recovery of the previous environment on failure. A recovery failure requires manual review; do not discard evidence or assume the environment is ready for use. Backup validation does not replace the record authentication performed before installing the restored environment. Uninstallation does not remove `%LOCALAPPDATA%\DataMaskStudio` by default.
+
+Consistent snapshots use SQLite's backup API, including committed WAL changes. If compaction and rollback both fail, the safety snapshot remains in a `dms-vault-compaction-*` subdirectory of the local environment for manual review. This snapshot does not replace a `.dmsbackup` and still requires the original local keys.

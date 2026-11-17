@@ -1,9 +1,11 @@
-# Privacidade
+<a id="privacidade"></a>
 
-O Data Mask Studio processa arquivos localmente no computador do usuário. A aplicação não possui telemetria, conta de usuário, sincronização ou envio automático de arquivos, códigos, métricas ou diagnósticos.
+# Privacy
 
-O cofre, as chaves protegidas pelo Windows DPAPI, os perfis e as configurações permanecem em `%LOCALAPPDATA%\DataMaskStudio`. Arquivos anonimizados, restaurados, backups e pacotes de transferência são gravados somente nos destinos escolhidos pelo usuário.
+Data Mask Studio processes files locally on the user's computer. The application has no telemetry, user accounts, synchronization or automatic uploads of files, codes, metrics or diagnostics.
 
-Pacotes `.dmspackage` contêm mapeamentos sensíveis selecionados para o CSV vinculado, protegidos por senha; não são enviados automaticamente. Diferentemente de um backup completo, não incluem as chaves locais nem todos os mapeamentos do cofre.
+The vault, Windows DPAPI-protected keys, profiles and settings remain in `%LOCALAPPDATA%\DataMaskStudio`. Masked and restored files, backups and transfer packages are written only to destinations chosen by the user.
 
-Relatórios de integridade e manutenção evitam exibir valores originais, códigos completos, chaves e senhas. Antes de compartilhar qualquer diagnóstico, confirme que ele não foi combinado com dados reais por ferramentas externas.
+`.dmspackage` files contain sensitive mappings selected for the bound CSV, protected by a password; they are not uploaded automatically. Unlike a full backup, they do not include local keys or every vault mapping.
+
+Integrity and maintenance reports avoid displaying original values, complete codes, keys and passwords. Before sharing any diagnostic, check that external tools have not combined it with real data.
