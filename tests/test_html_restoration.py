@@ -475,6 +475,6 @@ def test_readme_mentions_html_restoration_compactly() -> None:
     english = Path("README.md").read_text(encoding="utf-8")
     portuguese = Path("README.pt-BR.md").read_text(encoding="utf-8")
     assert "local HTML files and dashboards" in english
-    assert "“Restore HTML” tab" in english
+    assert "“Restore file”" in english
     assert "arquivos HTML e dashboards locais" in portuguese
-    assert "aba “Restaurar HTML”" in portuguese
+    assert "“Restaurar arquivo”" in portuguese

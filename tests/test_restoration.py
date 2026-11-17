@@ -409,8 +409,8 @@ def test_readme_mentions_csv_restoration_compactly() -> None:
     portuguese = Path("README.pt-BR.md").read_text(encoding="utf-8")
 
     assert "selectively restore masked CSV files" in english
-    assert "“Restore CSV” tab" in english
+    assert "“Restore file”" in english
     assert "permite restaurar seletivamente CSVs mascarados" in portuguese
-    assert "aba “Restaurar CSV”" in portuguese
+    assert "“Restaurar arquivo”" in portuguese
     assert "## Roadmap" not in english
     assert "## Roadmap" not in portuguese
