@@ -326,7 +326,7 @@ def test_product_screenshot_preserves_aspect_ratio_responsively() -> None:
 def test_site_does_not_change_application_version() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert project["project"]["version"] == "1.3.0"
+    assert project["project"]["version"] == "1.4.0"
 
 
 @pytest.mark.parametrize("page,language,title,canonical", PAGES)

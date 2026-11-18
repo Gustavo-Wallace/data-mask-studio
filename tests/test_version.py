@@ -5,17 +5,17 @@ from data_mask_studio import metadata
 from data_mask_studio.metadata import application_version
 
 
-def test_project_version_is_1_3_0() -> None:
+def test_project_version_is_1_4_0() -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-    assert project["project"]["version"] == "1.3.0"
-    assert application_version() == "1.3.0"
+    assert project["project"]["version"] == "1.4.0"
+    assert application_version() == "1.4.0"
 
 
 def test_checkout_version_takes_precedence_over_installed_metadata(monkeypatch) -> None:
     monkeypatch.setattr(metadata, "version", lambda _name: "1.2.0")
 
-    assert application_version() == "1.3.0"
+    assert application_version() == "1.4.0"
 
 
 def test_installed_application_reads_package_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -26,11 +26,11 @@ def test_installed_application_reads_package_metadata(tmp_path: Path, monkeypatc
 
     def installed_version(name: str) -> str:
         requested_distributions.append(name)
-        return "1.3.0"
+        return "1.4.0"
 
     monkeypatch.setattr(metadata, "version", installed_version)
 
-    assert application_version() == "1.3.0"
+    assert application_version() == "1.4.0"
     assert requested_distributions == ["data-mask-studio"]
 
 

@@ -63,7 +63,7 @@ def test_repeated_about_retranslation_does_not_add_metadata_reads(app, tmp_path,
         window.retranslate(translator)
         app.processEvents()
         assert dialog.isVisible() is visible
-        assert translator.text("about.version", version="1.3.0") in plain_text(dialog.details_label)
+        assert translator.text("about.version", version="1.4.0") in plain_text(dialog.details_label)
         assert translator.text("about.schema", schema=SCHEMA_VERSION) in plain_text(dialog.details_label)
     assert reads == [project_file], f"Expected first-use read only; observed {len(reads)} reads"
 
